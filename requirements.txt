@@ -1,2 +1,28 @@
--e .[qsp,dev]
+# Build and editable-install support
+setuptools>=69
+wheel>=0.43
 
+# Quantum circuits and numerical calculation
+qiskit>=1.4,<3
+numpy>=1.26,<3
+scipy>=1.12,<2
+pandas>=2.2,<3
+
+# Notebook execution and visualization
+matplotlib>=3.8,<4
+pylatexenc>=2.10,<3
+jupyterlab>=4.1,<5
+notebook>=7.1,<8
+ipykernel>=6.29,<7
+nbconvert>=7.16,<8
+nbformat>=5.10,<6
+
+# QSP phase synthesis
+pyqsp>=0.1.6,<0.3
+
+# Tests and linting
+pytest>=8,<9
+ruff>=0.5,<1
+
+# Install this package from src/ in editable mode.
+-e .
