@@ -10,26 +10,43 @@ Pauli 和で与えたハミルトニアンについて、次の回路レベル�
 
 回路構成関数はハミルトニアンの密行列を作りません。密行列を使うのは、小規模検証の厳密解だけです。
 
-## セットアップ (Windows PowerShell)
+## セットアップ（VS Code）
 
-Python 3.10 以上を用意して、リポジトリ直下で実行します。
+Python 3.10 以上と、VS Code の Python・Jupyter 拡張を用意します。スクリプトは `.venv` の作成と依存関係の導入だけを行い、ブラウザ版 Jupyter は起動しません。
+
+### Windows PowerShell
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup_venv.ps1
-.\.venv\Scripts\Activate.ps1
-jupyter lab notebooks\resource_comparison.ipynb
 ```
 
-手動で行う場合:
+`python` 以外のコマンド名を使う場合は、たとえば次のように指定できます。
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m ipykernel install --user --name hamiltonian-resources
+.\setup_venv.ps1 -PythonCommand py
 ```
+
+### macOS / Linux
+
+```bash
+bash setup_venv.sh
+```
+
+特定の Python を使う場合:
+
+```bash
+PYTHON=python3.12 bash setup_venv.sh
+```
+
+セットアップ後、VS Code で `notebooks/resource_comparison.ipynb` を直接開きます。カーネルが自動選択されない場合は、Notebook 右上のカーネル選択から次を指定してください。
+
+```text
+Windows: .venv\Scripts\python.exe
+macOS/Linux: .venv/bin/python
+```
+
+`.vscode/settings.json` が workspace 内の `.venv` を検索対象として指定します。ユーザー領域への Jupyter kernelspec 登録は行わないため、環境はプロジェクト内で完結します。
 
 ## 構造
 

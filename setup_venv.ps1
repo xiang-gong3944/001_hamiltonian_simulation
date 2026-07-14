@@ -1,23 +1,39 @@
-$ErrorActionPreference = "Stop"
+param(
+    [string]$PythonCommand = "python"
+)
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+$ErrorActionPreference = "Stop"
+$projectRoot = $PSScriptRoot
+Set-Location -LiteralPath $projectRoot
+
+if (-not (Get-Command $PythonCommand -ErrorAction SilentlyContinue)) {
     throw "Python 3.10+ が見つかりません。python.org 等から Python をインストールしてください。"
 }
 
 try {
-    $versionText = & python --version 2>&1
+    $versionText = & $PythonCommand --version 2>&1
+    & $PythonCommand -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
 } catch {
     throw "python コマンドを実行できません。Python 3.10+ をインストールし、PATH を確認してください。"
 }
 if ($LASTEXITCODE -ne 0) {
-    throw "python コマンドを実行できません。Python 3.10+ をインストールし、PATH を確認してください。"
+    throw "Python 3.10 以上が必要です。検出された Python: $versionText"
 }
 Write-Host "Using $versionText"
 
-python -m venv .venv
-& .\.venv\Scripts\python.exe -m pip install --upgrade pip
-& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-& .\.venv\Scripts\python.exe -m ipykernel install --user --name hamiltonian-resources --display-name "Python (hamiltonian-resources)"
+$venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 
-Write-Host "準備完了: .\.venv\Scripts\Activate.ps1"
-Write-Host "Notebook: jupyter lab notebooks\resource_comparison.ipynb"
+if (-not (Test-Path -LiteralPath $venvPython)) {
+    & $PythonCommand -m venv (Join-Path $projectRoot ".venv")
+}
+
+# --upgrade-strategy eager also fixes incompatible packages left in an existing venv.
+& $venvPython -m pip install --upgrade pip setuptools wheel
+& $venvPython -m pip install --upgrade --upgrade-strategy eager -r requirements.txt
+& $venvPython -m pip check
+
+Write-Host ""
+Write-Host "準備完了。VS Code で notebooks\resource_comparison.ipynb を開いてください。"
+Write-Host "カーネルが自動選択されない場合は、次を指定してください:"
+Write-Host "  $venvPython"
+Write-Host "このスクリプトはブラウザ版 Jupyter を起動しません。"
