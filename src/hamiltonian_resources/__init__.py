@@ -7,7 +7,11 @@ from .benchmark import (
     estimate_resources_analytically,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
-from .multiproduct import build_multiproduct_circuit, multiproduct_coefficients
+from .multiproduct import (
+    build_multiproduct_circuit,
+    multiproduct_coefficients,
+    optimal_mpf_exponents,
+)
 from .qsvt import (
     build_hamiltonian_qsvt_circuit,
     build_qsvt_circuit,
@@ -34,6 +38,7 @@ __all__ = [
     "estimate_resources_analytically",
     "heisenberg_chain",
     "multiproduct_coefficients",
+    "optimal_mpf_exponents",
     "synthesize_hamsim_phases",
     "transverse_field_ising",
 ]

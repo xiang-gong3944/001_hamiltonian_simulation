@@ -9,7 +9,11 @@ from typing import Callable
 import pandas as pd
 
 from .hamiltonians import PauliHamiltonian
-from .multiproduct import build_multiproduct_circuit, multiproduct_coefficients
+from .multiproduct import (
+    build_multiproduct_circuit,
+    multiproduct_coefficients,
+    optimal_mpf_exponents,
+)
 from .qsvt import build_hamiltonian_qsvt_circuit, estimate_qsvt_degree
 from .resources import ResourceEstimate, count_circuit_resources, t_cost_for_z_rotation
 from .trotter import build_trotter_circuit
@@ -21,7 +25,7 @@ class BenchmarkConfig:
     target_error: float = 1e-3
     synthesis_error_fraction: float = 0.1
     trotter_order: int = 2
-    mpf_exponents: tuple[int, ...] = (1, 2, 4)
+    mpf_m: int = 3
     optimization_level: int = 1
 
     def __post_init__(self) -> None:
@@ -29,6 +33,7 @@ class BenchmarkConfig:
             raise ValueError("time must be positive and target_error must lie in (0, 1)")
         if not 0 < self.synthesis_error_fraction < 1:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
+        optimal_mpf_exponents(self.mpf_m)
 
 
 def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) -> dict[str, int]:
@@ -43,7 +48,7 @@ def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) ->
     alpha_time = hamiltonian.alpha * config.time
     p = config.trotter_order
     trotter_reps = max(1, math.ceil(((alpha_time ** (p + 1)) / budget) ** (1 / p)))
-    mpf_order = 2 * len(config.mpf_exponents)
+    mpf_order = 2 * config.mpf_m
     mpf_segments = max(
         1, math.ceil(((alpha_time ** (mpf_order + 1)) / budget) ** (1 / mpf_order))
     )
@@ -72,6 +77,7 @@ def estimate_resources_analytically(
     scaling comparisons rather than hardware-specific compilation claims.
     """
     params = choose_parameters(hamiltonian, config)
+    mpf_exponents = optimal_mpf_exponents(config.mpf_m)
     weights = [sum(ch != "I" for ch in label) for label, _ in hamiltonian.terms]
     mean_ladder_cx = sum(2 * max(0, w - 1) for w in weights) / len(weights)
     synth_error = config.target_error * config.synthesis_error_fraction
@@ -83,12 +89,12 @@ def estimate_resources_analytically(
         cnots = math.ceil(rotations * mean_ladder_cx)
         qubits = hamiltonian.num_qubits
     elif algorithm == "multiproduct":
-        branch_bits = max(1, math.ceil(math.log2(len(config.mpf_exponents))))
+        branch_bits = max(1, math.ceil(math.log2(config.mpf_m)))
         base_rotations = sum(
             _suzuki_term_occurrences(
                 hamiltonian.term_count, k * params["mpf_segments"], 2
             )
-            for k in config.mpf_exponents
+            for k in mpf_exponents
         )
         rotations = base_rotations * (2**branch_bits) + 2 * (2**branch_bits - 1)
         cnots = math.ceil(
@@ -154,22 +160,22 @@ def benchmark_scaling(
         if transpile_circuits:
             circuits = {
                 "trotter": build_trotter_circuit(
-                hamiltonian,
-                config.time,
-                parameters["trotter_reps"],
-                config.trotter_order,
-            ),
+                    hamiltonian,
+                    config.time,
+                    parameters["trotter_reps"],
+                    config.trotter_order,
+                ),
                 "multiproduct": build_multiproduct_circuit(
-                hamiltonian,
-                config.time,
-                config.mpf_exponents,
-                parameters["mpf_segments"],
-            ),
+                    hamiltonian,
+                    config.time,
+                    config.mpf_m,
+                    parameters["mpf_segments"],
+                ),
                 "qsvt": build_hamiltonian_qsvt_circuit(
-                hamiltonian,
-                [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
-                [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
-            ),
+                    hamiltonian,
+                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
+                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
+                ),
             }
         for algorithm in ("trotter", "multiproduct", "qsvt"):
             if circuits is None:
@@ -183,9 +189,7 @@ def benchmark_scaling(
                 )
             estimate = resource.as_dict()
             if algorithm == "multiproduct":
-                lcu_scale = float(
-                    sum(abs(multiproduct_coefficients(config.mpf_exponents)))
-                )
+                lcu_scale = float(sum(abs(multiproduct_coefficients(config.mpf_m))))
                 nominal_success_probability = 1 / lcu_scale**2
             elif algorithm == "qsvt":
                 lcu_scale = 2.0

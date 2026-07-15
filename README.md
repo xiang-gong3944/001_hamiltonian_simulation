@@ -83,6 +83,18 @@ print(table[["system_size", "algorithm", "t_count", "cnot_count"]])
 
 `benchmark_scaling(..., transpile_circuits=False)`（既定）は大規模向けの明示的な分解コストモデルです。`True` は実回路を Qiskit で基底ゲートへ分解するので、小規模な校正に使ってください。
 
+MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
+
+```python
+from hamiltonian_resources import (
+    build_multiproduct_circuit, optimal_mpf_exponents, transverse_field_ising,
+)
+
+print(optimal_mpf_exponents(3))  # (1, 2, 6)
+H = transverse_field_ising(2)
+mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=1)
+```
+
 ## 比較上の重要な前提
 
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。

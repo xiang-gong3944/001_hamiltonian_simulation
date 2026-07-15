@@ -33,7 +33,7 @@ def compare_with_exact(
     initial_state: np.ndarray | None = None,
     trotter_order: int = 2,
     reps: int = 1,
-    mpf_exponents: tuple[int, ...] = (1, 2),
+    mpf_m: int = 2,
 ) -> dict[str, float | str]:
     """Run a small circuit and compare its output with exp(-iHt)|psi>.
 
@@ -51,9 +51,7 @@ def compare_with_exact(
         actual = np.asarray(Statevector(psi).evolve(circuit).data)
         success_probability = 1.0
     elif method == "multiproduct":
-        circuit = build_multiproduct_circuit(
-            hamiltonian, time, mpf_exponents, segments=reps
-        )
+        circuit = build_multiproduct_circuit(hamiltonian, time, mpf_m, segments=reps)
         ancillas = circuit.num_qubits - hamiltonian.num_qubits
         joint = np.zeros(2**circuit.num_qubits, dtype=complex)
         joint[:: 2**ancillas] = psi
@@ -71,4 +69,3 @@ def compare_with_exact(
         "fidelity": fidelity,
         "success_probability": success_probability,
     }
-

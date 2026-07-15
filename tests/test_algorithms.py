@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from qiskit import QuantumCircuit
 
 from hamiltonian_resources import (
@@ -8,25 +9,69 @@ from hamiltonian_resources import (
     build_multiproduct_circuit,
     build_qsvt_circuit,
     build_trotter_circuit,
+    choose_parameters,
     compare_with_exact,
+    estimate_resources_analytically,
     multiproduct_coefficients,
+    optimal_mpf_exponents,
     transverse_field_ising,
 )
 from hamiltonian_resources.resources import count_circuit_resources
 
 
-def test_multiproduct_order_conditions():
-    exponents = np.array([1, 2, 4])
-    coefficients = multiproduct_coefficients(exponents)
-    assert np.isclose(sum(coefficients), 1)
-    assert np.isclose(sum(coefficients / exponents**2), 0)
-    assert np.isclose(sum(coefficients / exponents**4), 0)
+OPTIMAL_MPF_EXPONENTS = {
+    2: (1, 2),
+    3: (1, 2, 6),
+    4: (1, 2, 3, 10),
+    5: (1, 2, 3, 5, 17),
+    6: (1, 2, 3, 4, 6, 21),
+    7: (1, 2, 3, 4, 5, 9, 34),
+    8: (1, 2, 3, 4, 5, 6, 12, 45),
+    9: (1, 2, 3, 4, 5, 6, 8, 15, 58),
+    10: (1, 2, 3, 4, 5, 6, 7, 10, 18, 72),
+    11: (1, 2, 3, 4, 5, 6, 7, 8, 12, 22, 88),
+    12: (1, 2, 3, 4, 5, 6, 7, 8, 10, 14, 27, 106),
+    13: (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 16, 31, 121),
+    14: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 19, 37, 147),
+    15: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 22, 42, 170),
+}
+
+
+@pytest.mark.parametrize(("m", "expected"), OPTIMAL_MPF_EXPONENTS.items())
+def test_optimal_mpf_exponents(m, expected):
+    exponents = optimal_mpf_exponents(m)
+    assert exponents == expected
+    assert len(exponents) == m
+    assert all(isinstance(k, int) and k > 0 for k in exponents)
+    assert len(set(exponents)) == m
+
+
+@pytest.mark.parametrize("m", [1, 16])
+def test_optimal_mpf_exponents_rejects_unsupported_orders(m):
+    with pytest.raises(ValueError, match="between 2 and 15"):
+        optimal_mpf_exponents(m)
+
+
+@pytest.mark.parametrize("m", [2.0, "2", True])
+def test_optimal_mpf_exponents_rejects_nonintegers(m):
+    with pytest.raises(TypeError, match="integer"):
+        optimal_mpf_exponents(m)
+
+
+@pytest.mark.parametrize("m", OPTIMAL_MPF_EXPONENTS)
+def test_multiproduct_order_conditions_are_stable(m):
+    exponents = np.asarray(optimal_mpf_exponents(m), dtype=float)
+    coefficients = multiproduct_coefficients(m)
+    assert np.isclose(sum(coefficients), 1, atol=1e-14)
+    for q in range(1, m):
+        assert np.isclose(sum(coefficients / exponents ** (2 * q)), 0, atol=1e-14)
+    assert sum(abs(coefficients)) < 2
 
 
 def test_all_builders_return_circuits():
     hamiltonian = transverse_field_ising(2)
     trotter = build_trotter_circuit(hamiltonian, 0.1, reps=1)
-    mpf = build_multiproduct_circuit(hamiltonian, 0.1, (1, 2))
+    mpf = build_multiproduct_circuit(hamiltonian, 0.1, m=2)
     qsvt = build_qsvt_circuit(hamiltonian, [0.1, 0.2, 0.1])
     hamsim_qsvt = build_hamiltonian_qsvt_circuit(
         hamiltonian, [0.1, 0.2, 0.1], [0.3, 0.4]
@@ -36,6 +81,24 @@ def test_all_builders_return_circuits():
     assert mpf.num_qubits > 2
     assert qsvt.metadata["degree"] == 2
     assert hamsim_qsvt.num_qubits == qsvt.num_qubits + 1
+
+
+def test_multiproduct_circuit_uses_registered_schedule_and_segments():
+    circuit = build_multiproduct_circuit(
+        transverse_field_ising(2), 0.1, m=3, segments=2
+    )
+    assert circuit.metadata["m"] == 3
+    assert circuit.metadata["exponents"] == (1, 2, 6)
+    assert circuit.metadata["segments"] == 2
+    assert circuit.metadata["formal_order"] == 6
+    branch_labels = [
+        instruction.operation.base_gate.label
+        for instruction in circuit.data
+        if getattr(instruction.operation, "base_gate", None) is not None
+        and instruction.operation.base_gate.label is not None
+        and instruction.operation.base_gate.label.startswith("S2^")
+    ]
+    assert branch_labels == ["S2^2", "S2^4", "S2^12"]
 
 
 def test_commuting_trotter_is_exact_on_state():
@@ -63,3 +126,28 @@ def test_analytical_benchmark_does_not_build_large_unitaries():
     assert set(frame["counting_mode"]) == {"analytical-model"}
     assert (frame["t_count"] > 0).all()
     assert (frame["nominal_success_probability"] <= 1).all()
+
+
+def test_multiproduct_consumers_use_m_parameter():
+    hamiltonian = transverse_field_ising(2)
+    config = BenchmarkConfig(time=0.1, target_error=1e-2, mpf_m=3)
+    parameters = choose_parameters(hamiltonian, config)
+    estimate = estimate_resources_analytically(hamiltonian, config, "multiproduct")
+    result = compare_with_exact(
+        hamiltonian, 0.1, method="multiproduct", reps=1, mpf_m=3
+    )
+    branch_bits = 2
+    base_rotations = (
+        (2 * hamiltonian.term_count - 1)
+        * parameters["mpf_segments"]
+        * sum(OPTIMAL_MPF_EXPONENTS[3])
+    )
+    assert estimate.rotation_count == base_rotations * 2**branch_bits + 2 * (
+        2**branch_bits - 1
+    )
+    assert result["fidelity"] > 0.99
+
+
+def test_benchmark_config_rejects_unsupported_m():
+    with pytest.raises(ValueError, match="between 2 and 15"):
+        BenchmarkConfig(mpf_m=16)
