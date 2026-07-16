@@ -9,7 +9,7 @@ from qiskit.quantum_info import Statevector
 from scipy.linalg import expm
 
 from .hamiltonians import PauliHamiltonian
-from .multiproduct import build_multiproduct_circuit
+from .multiproduct import MPFSchedule, build_multiproduct_circuit
 from .qsvt import build_hamiltonian_qsvt_circuit
 from .trotter import build_trotter_circuit
 
@@ -35,6 +35,7 @@ def compare_with_exact(
     trotter_order: int = 2,
     reps: int = 1,
     mpf_m: int = 2,
+    mpf_schedule: MPFSchedule = "new",
     qsvt_epsilon: float = 1e-3,
     amplitude_amplification: bool = True,
 ) -> dict[str, float | str]:
@@ -59,6 +60,7 @@ def compare_with_exact(
             time,
             mpf_m,
             segments=reps,
+            schedule=mpf_schedule,
             amplitude_amplification=amplitude_amplification,
         )
         ancillas = circuit.num_qubits - hamiltonian.num_qubits

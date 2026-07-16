@@ -8,6 +8,7 @@ from .benchmark import (
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
+    MPFSchedule,
     build_multiproduct_circuit,
     multiproduct_coefficients,
     optimal_mpf_exponents,
@@ -25,6 +26,7 @@ from .trotter import build_trotter_circuit
 __all__ = [
     "BenchmarkConfig",
     "HamiltonianSimulationPhases",
+    "MPFSchedule",
     "PauliHamiltonian",
     "ResourceEstimate",
     "benchmark_scaling",

@@ -10,6 +10,7 @@ import pandas as pd
 
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
+    MPFSchedule,
     build_multiproduct_circuit,
     optimal_mpf_exponents,
 )
@@ -25,6 +26,7 @@ class BenchmarkConfig:
     synthesis_error_fraction: float = 0.1
     trotter_order: int = 2
     mpf_m: int = 3
+    mpf_schedule: MPFSchedule = "new"
     optimization_level: int = 1
 
     def __post_init__(self) -> None:
@@ -32,7 +34,7 @@ class BenchmarkConfig:
             raise ValueError("time must be positive and target_error must lie in (0, 1)")
         if not 0 < self.synthesis_error_fraction < 1:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
-        optimal_mpf_exponents(self.mpf_m)
+        optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
 
 
 def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) -> dict[str, int]:
@@ -76,7 +78,10 @@ def estimate_resources_analytically(
     scaling comparisons rather than hardware-specific compilation claims.
     """
     params = choose_parameters(hamiltonian, config)
-    mpf_exponents = optimal_mpf_exponents(config.mpf_m)
+    mpf_exponents = optimal_mpf_exponents(
+        config.mpf_m,
+        schedule=config.mpf_schedule,
+    )
     weights = [sum(ch != "I" for ch in label) for label, _ in hamiltonian.terms]
     mean_ladder_cx = sum(2 * max(0, w - 1) for w in weights) / len(weights)
     synth_error = config.target_error * config.synthesis_error_fraction
@@ -169,6 +174,7 @@ def benchmark_scaling(
                     config.time,
                     config.mpf_m,
                     parameters["mpf_segments"],
+                    schedule=config.mpf_schedule,
                 ),
                 "qsvt": build_hamiltonian_qsvt_circuit(
                     hamiltonian,

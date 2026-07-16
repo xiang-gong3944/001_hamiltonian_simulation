@@ -32,7 +32,25 @@ from hamiltonian_resources.qsvt import (
 from hamiltonian_resources.multiproduct import _build_multiproduct_step_lcu
 
 
-OPTIMAL_MPF_EXPONENTS = {
+NEW_MPF_EXPONENTS = {
+    2: (1, 2),
+    3: (1, 2, 4),
+    4: (1, 2, 3, 7),
+    5: (1, 2, 3, 5, 12),
+    6: (1, 2, 3, 4, 6, 16),
+    7: (1, 2, 3, 4, 5, 9, 22),
+    8: (1, 2, 3, 4, 5, 6, 11, 29),
+    9: (1, 2, 3, 4, 5, 6, 8, 14, 37),
+    10: (1, 2, 3, 4, 5, 6, 7, 10, 18, 46),
+    11: (1, 2, 3, 4, 5, 6, 7, 8, 12, 22, 56),
+    12: (1, 2, 3, 4, 5, 6, 7, 8, 10, 14, 26, 66),
+    13: (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 16, 30, 78),
+    14: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 19, 35, 91),
+    15: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 22, 40, 104),
+}
+
+
+LEGACY_MPF_EXPONENTS = {
     2: (1, 2),
     3: (1, 2, 6),
     4: (1, 2, 3, 10),
@@ -57,14 +75,16 @@ def _zero_ancilla_block(circuit, system_qubits):
     return unitary[np.ix_(selected, selected)]
 
 
-def _classical_mpf_step(hamiltonian, step_time, m):
+def _classical_mpf_step(hamiltonian, step_time, m, schedule="new"):
     return sum(
         coefficient
         * Operator(
             build_trotter_circuit(hamiltonian, step_time, exponent, order=2)
         ).data
         for coefficient, exponent in zip(
-            multiproduct_coefficients(m), optimal_mpf_exponents(m), strict=True
+            multiproduct_coefficients(m, schedule=schedule),
+            optimal_mpf_exponents(m, schedule=schedule),
+            strict=True,
         )
     )
 
@@ -116,13 +136,28 @@ def test_qsvt_components_have_common_scale_and_correct_zero_blocks():
     assert np.allclose(_zero_ancilla_block(sine, 1), expected_sine, atol=1e-5)
 
 
-@pytest.mark.parametrize(("m", "expected"), OPTIMAL_MPF_EXPONENTS.items())
-def test_optimal_mpf_exponents(m, expected):
+@pytest.mark.parametrize(("m", "expected"), NEW_MPF_EXPONENTS.items())
+def test_new_mpf_exponents_are_the_default(m, expected):
     exponents = optimal_mpf_exponents(m)
     assert exponents == expected
     assert len(exponents) == m
     assert all(isinstance(k, int) and k > 0 for k in exponents)
     assert len(set(exponents)) == m
+
+
+@pytest.mark.parametrize(("m", "expected"), LEGACY_MPF_EXPONENTS.items())
+def test_legacy_mpf_exponents_remain_selectable(m, expected):
+    assert optimal_mpf_exponents(m, schedule="legacy") == expected
+
+
+@pytest.mark.parametrize("m", range(3, 16))
+def test_new_mpf_schedule_reduces_controlled_u2_queries(m):
+    assert sum(NEW_MPF_EXPONENTS[m]) < sum(LEGACY_MPF_EXPONENTS[m])
+
+
+def test_mpf_schedule_rejects_unknown_name():
+    with pytest.raises(ValueError, match="schedule"):
+        optimal_mpf_exponents(3, schedule="unknown")
 
 
 @pytest.mark.parametrize("m", [1, 16])
@@ -137,10 +172,14 @@ def test_optimal_mpf_exponents_rejects_nonintegers(m):
         optimal_mpf_exponents(m)
 
 
-@pytest.mark.parametrize("m", OPTIMAL_MPF_EXPONENTS)
-def test_multiproduct_order_conditions_are_stable(m):
-    exponents = np.asarray(optimal_mpf_exponents(m), dtype=float)
-    coefficients = multiproduct_coefficients(m)
+@pytest.mark.parametrize("schedule", ["new", "legacy"])
+@pytest.mark.parametrize("m", NEW_MPF_EXPONENTS)
+def test_multiproduct_order_conditions_are_stable(m, schedule):
+    exponents = np.asarray(
+        optimal_mpf_exponents(m, schedule=schedule),
+        dtype=float,
+    )
+    coefficients = multiproduct_coefficients(m, schedule=schedule)
     assert np.isclose(sum(coefficients), 1, atol=1e-14)
     for q in range(1, m):
         assert np.isclose(sum(coefficients / exponents ** (2 * q)), 0, atol=1e-14)
@@ -288,14 +327,16 @@ def test_multiproduct_circuit_amplifies_each_registered_segment():
         transverse_field_ising(2), 0.1, m=3, segments=2
     )
     assert circuit.metadata["m"] == 3
-    assert circuit.metadata["exponents"] == (1, 2, 6)
+    assert circuit.metadata["schedule"] == "new"
+    assert circuit.metadata["exponents"] == (1, 2, 4)
+    assert circuit.metadata["exponent_sum"] == 7
     assert circuit.metadata["segments"] == 2
     assert circuit.metadata["step_time"] == pytest.approx(0.05)
     assert circuit.metadata["formal_order"] == 6
     assert circuit.metadata["lcu_normalization"] == 2.0
     assert circuit.metadata["amplitude_amplification"] is True
     assert circuit.metadata["base_lcu_uses_per_segment"] == 3
-    assert circuit.metadata["trotter_step_queries"] == 3 * 2 * (1 + 2 + 6)
+    assert circuit.metadata["trotter_step_queries"] == 3 * 2 * (1 + 2 + 4)
     assert len(circuit.data) == 2
 
 
@@ -439,11 +480,37 @@ def test_multiproduct_consumers_use_m_parameter():
     base_rotations = (
         (2 * hamiltonian.term_count - 1)
         * parameters["mpf_segments"]
-        * sum(OPTIMAL_MPF_EXPONENTS[3])
+        * sum(NEW_MPF_EXPONENTS[3])
     )
     assert estimate.rotation_count == base_rotations * 2**branch_bits + 2 * (
         2**branch_bits - 1
     )
+    assert result["fidelity"] > 0.99
+
+
+def test_multiproduct_schedule_propagates_through_consumers():
+    hamiltonian = transverse_field_ising(1)
+    new_config = BenchmarkConfig(mpf_m=3)
+    legacy_config = BenchmarkConfig(mpf_m=3, mpf_schedule="legacy")
+    new_estimate = estimate_resources_analytically(
+        hamiltonian,
+        new_config,
+        "multiproduct",
+    )
+    legacy_estimate = estimate_resources_analytically(
+        hamiltonian,
+        legacy_config,
+        "multiproduct",
+    )
+    result = compare_with_exact(
+        hamiltonian,
+        0.1,
+        method="multiproduct",
+        mpf_m=3,
+        mpf_schedule="legacy",
+    )
+
+    assert new_estimate.rotation_count < legacy_estimate.rotation_count
     assert result["fidelity"] > 0.99
 
 

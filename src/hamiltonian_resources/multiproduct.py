@@ -9,6 +9,7 @@ before the same branch register is reused for the next simulation segment.
 from __future__ import annotations
 
 from numbers import Integral
+from typing import Literal
 
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
@@ -24,9 +25,28 @@ from .trotter import build_trotter_circuit
 
 
 _OAA_NORMALIZATION = 2.0
+MPFSchedule = Literal["new", "legacy"]
 
 
-_OPTIMAL_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
+_NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
+    2: (1, 2),
+    3: (1, 2, 4),
+    4: (1, 2, 3, 7),
+    5: (1, 2, 3, 5, 12),
+    6: (1, 2, 3, 4, 6, 16),
+    7: (1, 2, 3, 4, 5, 9, 22),
+    8: (1, 2, 3, 4, 5, 6, 11, 29),
+    9: (1, 2, 3, 4, 5, 6, 8, 14, 37),
+    10: (1, 2, 3, 4, 5, 6, 7, 10, 18, 46),
+    11: (1, 2, 3, 4, 5, 6, 7, 8, 12, 22, 56),
+    12: (1, 2, 3, 4, 5, 6, 7, 8, 10, 14, 26, 66),
+    13: (1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 16, 30, 78),
+    14: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 19, 35, 91),
+    15: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 22, 40, 104),
+}
+
+
+_LEGACY_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
     2: (1, 2),
     3: (1, 2, 6),
     4: (1, 2, 3, 10),
@@ -44,23 +64,42 @@ _OPTIMAL_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
 }
 
 
-def optimal_mpf_exponents(m: int) -> tuple[int, ...]:
-    """Return the registered well-conditioned MPF schedule with ``m`` terms."""
+def optimal_mpf_exponents(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> tuple[int, ...]:
+    """Return one registered well-conditioned exponent schedule.
+
+    ``new`` is the default table optimized for the three-query OAA construction:
+    it reduces ``sum(k_j)`` while retaining coefficient 1-norm below two.
+    ``legacy`` preserves the previous, more conservatively conditioned table.
+    """
     if isinstance(m, bool) or not isinstance(m, Integral):
         raise TypeError("m must be an integer")
+    if schedule == "new":
+        table = _NEW_MPF_EXPONENTS
+    elif schedule == "legacy":
+        table = _LEGACY_MPF_EXPONENTS
+    else:
+        raise ValueError("schedule must be 'new' or 'legacy'")
     try:
-        return _OPTIMAL_MPF_EXPONENTS[int(m)]
+        return table[int(m)]
     except KeyError as error:
         raise ValueError("m must lie between 2 and 15") from error
 
 
-def multiproduct_coefficients(m: int) -> np.ndarray:
-    """Return the coefficients for the registered ``m``-term MPF.
+def multiproduct_coefficients(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> np.ndarray:
+    """Return coefficients for one registered ``m``-term MPF schedule.
 
     The direct product formula avoids the ill-conditioned Vandermonde solve
     while satisfying the cancellation conditions through formal order ``2m``.
     """
-    ks = optimal_mpf_exponents(m)
+    ks = optimal_mpf_exponents(m, schedule=schedule)
     coefficients = np.ones(len(ks), dtype=float)
     for j, k_j in enumerate(ks):
         k_j_squared = k_j**2
@@ -114,6 +153,8 @@ def _build_multiproduct_step_lcu(
     hamiltonian: PauliHamiltonian,
     step_time: float,
     m: int,
+    *,
+    schedule: MPFSchedule = "new",
 ) -> QuantumCircuit:
     """Build one normalized coherent MPF step before amplification.
 
@@ -125,8 +166,8 @@ def _build_multiproduct_step_lcu(
     if not np.isfinite(step_time):
         raise ValueError("step_time must be finite")
 
-    exponents = optimal_mpf_exponents(m)
-    coefficients = multiproduct_coefficients(m)
+    exponents = optimal_mpf_exponents(m, schedule=schedule)
+    coefficients = multiproduct_coefficients(m, schedule=schedule)
     coefficient_l1 = float(np.sum(np.abs(coefficients)))
     if coefficient_l1 >= _OAA_NORMALIZATION:
         raise ValueError("the MPF coefficient 1-norm must be less than 2")
@@ -157,7 +198,9 @@ def _build_multiproduct_step_lcu(
     circuit.metadata = {
         "algorithm": "multiproduct-step-lcu",
         "m": int(m),
+        "schedule": schedule,
         "exponents": exponents,
+        "exponent_sum": int(sum(exponents)),
         "coefficients": coefficients.tolist(),
         "coefficient_l1_norm": coefficient_l1,
         "padding_weight": padding_weight,
@@ -183,6 +226,7 @@ def build_multiproduct_circuit(
     m: int = 2,
     segments: int = 1,
     *,
+    schedule: MPFSchedule = "new",
     amplitude_amplification: bool = True,
 ) -> QuantumCircuit:
     """Repeat robustly amplified MPF-step unitaries on shared ancillas.
@@ -203,8 +247,8 @@ def build_multiproduct_circuit(
     if not amplitude_amplification and segments != 1:
         raise ValueError("unamplified MPF is only supported for segments=1")
 
-    exponents = optimal_mpf_exponents(m)
-    coefficients = multiproduct_coefficients(m)
+    exponents = optimal_mpf_exponents(m, schedule=schedule)
+    coefficients = multiproduct_coefficients(m, schedule=schedule)
     coefficient_l1 = float(np.sum(np.abs(coefficients)))
     if coefficient_l1 >= _OAA_NORMALIZATION:
         raise ValueError("the MPF coefficient 1-norm must be less than 2")
@@ -225,7 +269,9 @@ def build_multiproduct_circuit(
         if amplitude_amplification
         else "single-unamplified-step",
         "m": int(m),
+        "schedule": schedule,
         "exponents": exponents,
+        "exponent_sum": int(sum(exponents)),
         "segments": int(segments),
         "step_time": step_time,
         "coefficients": coefficients.tolist(),
@@ -262,7 +308,12 @@ def build_multiproduct_circuit(
         circuit.metadata = metadata
         return circuit
 
-    base_step = _build_multiproduct_step_lcu(hamiltonian, step_time, m)
+    base_step = _build_multiproduct_step_lcu(
+        hamiltonian,
+        step_time,
+        m,
+        schedule=schedule,
+    )
     if amplitude_amplification:
         step = build_three_step_oaa(
             base_step,
