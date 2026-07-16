@@ -302,7 +302,9 @@ def build_multiproduct_circuit(
             postselection="none",
             trotter_step_queries_per_segment=0,
             trotter_step_queries=0,
-            logical_gate_counts_per_segment={key: 0 for key in logical_counts_per_segment},
+            logical_gate_counts_per_segment={
+                key: 0 for key in logical_counts_per_segment
+            },
             logical_gate_counts={key: 0 for key in logical_counts_per_segment},
         )
         circuit.metadata = metadata

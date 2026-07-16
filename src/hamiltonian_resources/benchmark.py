@@ -21,6 +21,8 @@ from .trotter import build_trotter_circuit
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
+    """Shared benchmark inputs, including the selected MPF exponent table."""
+
     time: float = 1.0
     target_error: float = 1e-3
     synthesis_error_fraction: float = 0.1
@@ -75,7 +77,9 @@ def estimate_resources_analytically(
 
     Pauli-rotation ladders are counted directly. Multi-controlled LCU gates use
     explicit upper-bound-style decomposition models, making this suitable for
-    scaling comparisons rather than hardware-specific compilation claims.
+    scaling comparisons rather than hardware-specific compilation claims. The
+    MPF expression is a legacy estimate: it uses the selected exponents but does
+    not yet fully model identity padding, branch width, or the OAA factor.
     """
     params = choose_parameters(hamiltonian, config)
     mpf_exponents = optimal_mpf_exponents(

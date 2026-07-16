@@ -42,8 +42,9 @@ def compare_with_exact(
     """Run a small circuit and compare its output with exp(-iHt)|psi>.
 
     MPF and QSVT results condition on all non-system registers being zero and
-    report the corresponding success probability. This routine is intentionally
-    dense and should only be used for small systems.
+    report the corresponding success probability. ``mpf_schedule`` selects the
+    exponent table independently of the MPF order ``mpf_m``. This routine is
+    intentionally dense and should only be used for small systems.
     """
     psi = zero_state(hamiltonian.num_qubits) if initial_state is None else np.asarray(initial_state)
     if psi.shape != (2**hamiltonian.num_qubits,) or not np.isclose(np.linalg.norm(psi), 1):

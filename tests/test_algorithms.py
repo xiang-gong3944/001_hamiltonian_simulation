@@ -214,6 +214,41 @@ def test_multiproduct_step_lcu_has_normalization_two(m):
     assert step.data[1].operation.definition is not None
 
 
+def test_multiproduct_select_gate_contains_signed_and_padding_branches():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("X", 0.6), ("Z", -0.4)])
+    step_time = 0.3
+    m = 3
+    step = _build_multiproduct_step_lcu(hamiltonian, step_time, m)
+    select = step.data[1].operation
+    select_matrix = Operator(select).data
+    branch_width = select.num_qubits - hamiltonian.num_qubits
+    system_dimension = 2**hamiltonian.num_qubits
+    coefficients = multiproduct_coefficients(m)
+    exponents = optimal_mpf_exponents(m)
+
+    for branch_value in range(2**branch_width):
+        selected = branch_value + 2**branch_width * np.arange(system_dimension)
+        branch_block = select_matrix[np.ix_(selected, selected)]
+        if branch_value < m:
+            expected = np.sign(coefficients[branch_value]) * Operator(
+                build_trotter_circuit(
+                    hamiltonian,
+                    step_time,
+                    exponents[branch_value],
+                    order=2,
+                )
+            ).data
+        elif branch_value == m:
+            expected = np.eye(system_dimension)
+        elif branch_value == m + 1:
+            expected = -np.eye(system_dimension)
+        else:
+            expected = np.eye(system_dimension)
+        assert np.allclose(branch_block, expected, atol=1e-12)
+
+
 def test_all_builders_return_circuits():
     hamiltonian = transverse_field_ising(2)
     trotter = build_trotter_circuit(hamiltonian, 0.1, reps=1)
@@ -337,6 +372,18 @@ def test_multiproduct_circuit_amplifies_each_registered_segment():
     assert circuit.metadata["amplitude_amplification"] is True
     assert circuit.metadata["base_lcu_uses_per_segment"] == 3
     assert circuit.metadata["trotter_step_queries"] == 3 * 2 * (1 + 2 + 4)
+    assert circuit.metadata["logical_gate_counts_per_segment"] == {
+        "prepare": 6,
+        "select": 3,
+        "good_reflection": 2,
+        "controlled_u2": 21,
+    }
+    assert circuit.metadata["logical_gate_counts"] == {
+        "prepare": 12,
+        "select": 6,
+        "good_reflection": 4,
+        "controlled_u2": 42,
+    }
     assert len(circuit.data) == 2
 
 
@@ -353,37 +400,133 @@ def test_multiproduct_unamplified_public_block_is_one_half_step():
     assert circuit.metadata["amplitude_amplification"] is False
 
 
-@pytest.mark.parametrize(("m", "segments"), [(2, 1), (2, 3), (3, 2)])
-def test_multiproduct_amplified_segments_match_classical_composition(m, segments):
+@pytest.mark.parametrize(("m", "schedule"), [(2, "new"), (3, "new"), (3, "legacy")])
+def test_multiproduct_oaa_has_exact_cubic_good_block(m, schedule):
     from hamiltonian_resources import PauliHamiltonian
 
-    hamiltonian = PauliHamiltonian.from_terms(1, [("X", 0.6), ("Z", -0.4)])
-    time = 0.06
-    circuit = build_multiproduct_circuit(
-        hamiltonian, time, m=m, segments=segments
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("XI", 0.7), ("ZZ", -0.9), ("IY", 0.4)],
     )
-    step = _classical_mpf_step(hamiltonian, time / segments, m)
-    target = np.linalg.matrix_power(step, segments)
+    step_time = 0.7
+    multiproduct = _classical_mpf_step(
+        hamiltonian,
+        step_time,
+        m,
+        schedule,
+    )
+    unamplified = build_multiproduct_circuit(
+        hamiltonian,
+        step_time,
+        m=m,
+        schedule=schedule,
+        amplitude_amplification=False,
+    )
+    amplified = build_multiproduct_circuit(
+        hamiltonian,
+        step_time,
+        m=m,
+        schedule=schedule,
+    )
+    block = multiproduct / 2
+    expected_amplified = 3 * block - 4 * block @ block.conj().T @ block
 
-    assert np.allclose(_zero_ancilla_block(circuit, 1), target, atol=2e-7)
+    assert np.allclose(
+        _zero_ancilla_block(unamplified, 2),
+        block,
+        atol=1e-12,
+    )
+    assert np.allclose(
+        _zero_ancilla_block(amplified, 2),
+        expected_amplified,
+        atol=5e-12,
+    )
 
 
-def test_multiproduct_random_state_has_amplified_success():
+def test_multiproduct_random_state_success_matches_good_blocks():
+    from hamiltonian_resources import PauliHamiltonian
+
     rng = np.random.default_rng(2468)
     initial_state = rng.normal(size=4) + 1j * rng.normal(size=4)
     initial_state /= np.linalg.norm(initial_state)
-    result = compare_with_exact(
-        transverse_field_ising(2),
-        0.08,
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("XI", 0.7), ("ZZ", -0.9), ("IY", 0.4)],
+    )
+    time = 0.7
+    multiproduct = _classical_mpf_step(hamiltonian, time, 2)
+    block_before = multiproduct / 2
+    block_after = (
+        3 * block_before
+        - 4 * block_before @ block_before.conj().T @ block_before
+    )
+    before = compare_with_exact(
+        hamiltonian,
+        time,
         method="multiproduct",
         initial_state=initial_state,
-        reps=2,
-        mpf_m=3,
+        mpf_m=2,
+        amplitude_amplification=False,
+    )
+    after = compare_with_exact(
+        hamiltonian,
+        time,
+        method="multiproduct",
+        initial_state=initial_state,
+        mpf_m=2,
     )
 
-    assert result["state_error"] < 1e-5
-    assert result["fidelity"] > 0.999999
-    assert result["success_probability"] > 0.999999
+    expected_before = np.linalg.norm(block_before @ initial_state) ** 2
+    expected_after = np.linalg.norm(block_after @ initial_state) ** 2
+    assert before["success_probability"] == pytest.approx(expected_before, abs=1e-12)
+    assert after["success_probability"] == pytest.approx(expected_after, abs=1e-12)
+    assert after["success_probability"] > before["success_probability"]
+
+
+def test_multiproduct_shared_ancilla_segments_converge_to_exact_evolution():
+    rng = np.random.default_rng(2026)
+    initial_state = rng.normal(size=4) + 1j * rng.normal(size=4)
+    initial_state /= np.linalg.norm(initial_state)
+    hamiltonian = transverse_field_ising(2, coupling=1.0, field=0.7)
+    segment_counts = (1, 2, 4)
+    circuits = [
+        build_multiproduct_circuit(hamiltonian, 0.6, m=2, segments=segments)
+        for segments in segment_counts
+    ]
+    results = [
+        compare_with_exact(
+            hamiltonian,
+            0.6,
+            method="multiproduct",
+            initial_state=initial_state,
+            reps=segments,
+            mpf_m=2,
+        )
+        for segments in segment_counts
+    ]
+    errors = [result["state_error"] for result in results]
+
+    assert errors[0] > errors[1] > errors[2]
+    assert all(result["success_probability"] > 0.999 for result in results)
+    assert len({circuit.num_qubits for circuit in circuits}) == 1
+    assert [len(circuit.data) for circuit in circuits] == list(segment_counts)
+
+
+def test_named_multiproduct_gates_remain_transpilable_for_resource_counting():
+    circuit = build_multiproduct_circuit(
+        transverse_field_ising(1),
+        0.1,
+        m=2,
+        amplitude_amplification=False,
+    )
+    estimate = count_circuit_resources(
+        circuit,
+        total_synthesis_error=1e-4,
+        optimization_level=0,
+    )
+
+    assert estimate.cnot_count > 0
+    assert estimate.rotation_count > 0
 
 
 def test_multiproduct_supports_negative_and_zero_time():

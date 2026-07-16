@@ -107,6 +107,8 @@ print(check)
 
 MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な
 Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
+既定の`schedule="new"`は3-step OAA込みのquery数を抑える表で、
+`schedule="legacy"`を指定すると以前の1-normが小さい表を使用できます。
 時間を `segments` 個に分け、各segment内で
 `sum_j a_j S_2(step_time / k_j)**k_j` をcoherent LCUとして作ります。
 係数1-normは正負の相殺identity branchで2へpaddingされ、既定では各segmentを
@@ -117,7 +119,8 @@ from hamiltonian_resources import (
     build_multiproduct_circuit, optimal_mpf_exponents, transverse_field_ising,
 )
 
-print(optimal_mpf_exponents(3))  # (1, 2, 6)
+print(optimal_mpf_exponents(3))                    # (1, 2, 4)
+print(optimal_mpf_exponents(3, schedule="legacy")) # (1, 2, 6)
 H = transverse_field_ising(2)
 mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=2)
 ```
@@ -131,7 +134,7 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。
 3. **固定誤差の次数選択**: `choose_parameters` は比較可能な保守的スケーリング proxy であり、ハミルトニアン固有の厳密誤差上界ではありません。小規模では `compare_with_exact` で校正してください。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
-5. **MPF**: 各segmentの増幅前zero-branch blockはweighted sumの1/2です。既定の回路はsegmentごとに3回のLCU呼び出しでrobust OAAを行います。metadataには係数、実際の1-norm、padding、正規化2、segment時間、Trotter-step query数を分けて保存します。
+5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。metadataにはschedule、係数1-norm、padding、論理Gate数、controlled-`U2` query数を保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
 7. **QSVT解析コストの現状**: `transpile_circuits=True`は新しいQSVT回路全体を数えますが、既定の大規模向け解析式にはquadrature抽出とOAAの定数がまだ反映されていません。QSVTの解析リソース値を最終比較に使うのは、次のリソースモデル整理後とします。
 8. **MPF解析コストの現状**: `transpile_circuits=True`はsegmentごとのLCUとOAAを含む具体回路を数えます。既定の解析式と`choose_parameters`はlegacy estimateであり、新しいsegment構成、normalization 2、OAA factor 3をまだ反映していません。
