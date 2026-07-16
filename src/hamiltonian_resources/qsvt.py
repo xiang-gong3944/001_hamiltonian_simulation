@@ -373,7 +373,12 @@ def build_hamiltonian_qsvt_circuit(
             "block_scale": 1.0,
             "amplitude_amplification": bool(amplitude_amplification),
             "good_subspace": "no ancillas",
-            "registers": {"component": 0, "quadrature": 0, "index": 0, "system": hamiltonian.num_qubits},
+            "registers": {
+                "component": 0,
+                "quadrature": 0,
+                "index": 0,
+                "system": hamiltonian.num_qubits,
+            },
             "base_block_encoding_queries": 0,
             "base_circuit_uses": 0,
         }

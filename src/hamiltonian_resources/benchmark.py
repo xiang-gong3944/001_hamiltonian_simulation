@@ -144,12 +144,11 @@ def benchmark_scaling(
 ) -> pd.DataFrame:
     """Count all algorithms at each system size under one error budget.
 
-    QSVT uses a phase list of the selected length for structural resource
-    counting. Phase values affect T synthesis only weakly through special-angle
-    coincidences; deterministic irrational-looking values avoid such artifacts.
-    Use ``synthesize_hamsim_phases`` when numerical QSP response matters. The
-    default analytical model does not allocate large circuits. Set
-    ``transpile_circuits=True`` to compile concrete circuits for small systems.
+    The default analytical model does not allocate large circuits. Its QSVT
+    formula is a legacy structural estimate and does not yet include the
+    quadrature-extraction and robust-OAA constants of the concrete circuit.
+    Set ``transpile_circuits=True`` to synthesize real QSP phases and compile
+    the complete circuit for small systems.
     """
     records: list[dict[str, int | float | str]] = []
     synthesis_error = config.target_error * config.synthesis_error_fraction

@@ -169,6 +169,59 @@ def test_qsvt_rejects_invalid_precision(epsilon):
         build_hamiltonian_qsvt_circuit(transverse_field_ising(1), 0.1, epsilon)
 
 
+def test_qsvt_exact_comparison_reports_amplified_success():
+    rng = np.random.default_rng(1234)
+    initial_state = rng.normal(size=4) + 1j * rng.normal(size=4)
+    initial_state /= np.linalg.norm(initial_state)
+    result = compare_with_exact(
+        transverse_field_ising(2),
+        0.08,
+        method="qsvt",
+        initial_state=initial_state,
+        qsvt_epsilon=2e-2,
+    )
+
+    assert result["state_error"] < 2e-2
+    assert result["fidelity"] > 0.999
+    assert result["success_probability"] > 0.99
+
+
+def test_qsvt_unamplified_success_is_one_quarter_up_to_scale():
+    rng = np.random.default_rng(5678)
+    initial_state = rng.normal(size=2) + 1j * rng.normal(size=2)
+    initial_state /= np.linalg.norm(initial_state)
+    epsilon = 1e-2
+    result = compare_with_exact(
+        transverse_field_ising(1),
+        0.2,
+        method="qsvt",
+        initial_state=initial_state,
+        qsvt_epsilon=epsilon,
+        amplitude_amplification=False,
+    )
+    expected_scale = 1 - epsilon / 18
+
+    assert result["state_error"] < epsilon
+    assert result["success_probability"] == pytest.approx(expected_scale**2 / 4, abs=1e-4)
+
+
+def test_qsvt_builder_never_forms_dense_hamiltonian(monkeypatch):
+    from hamiltonian_resources import PauliHamiltonian
+
+    def fail_if_called(self):
+        raise AssertionError("dense matrix construction is forbidden in circuit builders")
+
+    monkeypatch.setattr(PauliHamiltonian, "matrix", fail_if_called)
+    circuit = build_hamiltonian_qsvt_circuit(transverse_field_ising(2), 0.05, 2e-2)
+    assert circuit.metadata["registers"]["system"] == 2
+
+
+@pytest.mark.parametrize("time", [np.inf, -np.inf, np.nan])
+def test_qsvt_rejects_nonfinite_time(time):
+    with pytest.raises(ValueError, match="time"):
+        build_hamiltonian_qsvt_circuit(transverse_field_ising(1), time, 1e-2)
+
+
 def test_multiproduct_circuit_uses_registered_schedule_and_segments():
     circuit = build_multiproduct_circuit(
         transverse_field_ising(2), 0.1, m=3, segments=2

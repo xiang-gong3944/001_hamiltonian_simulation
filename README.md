@@ -55,7 +55,7 @@ src/hamiltonian_resources/
   hamiltonians.py    # Pauli 和入力、TFIM、Heisenberg 鎖
   trotter.py         # 積公式回路
   circuit_utils.py   # PREPARE / SELECT / block encoding
-  qsvt.py            # QSVT 回路、次数見積り、pyqsp 位相合成
+  qsvt.py            # Jacobi--Anger 位相合成、QSVT、LCU、robust OAA
   multiproduct.py    # MPF 係数と coherent-LCU 回路
   simulation.py      # 小規模な厳密解との比較
   resources.py       # transpile 後の CX と T 見積り
@@ -81,6 +81,26 @@ table = benchmark_scaling(
 print(table[["system_size", "algorithm", "t_count", "cnot_count"]])
 ```
 
+QSVT回路は時刻と回路近似誤差を直接指定します。既定では、cos/sinの
+coherent LCUに続けて1回のrobust oblivious amplitude amplificationを行います。
+
+```python
+from hamiltonian_resources import (
+    build_hamiltonian_qsvt_circuit,
+    compare_with_exact,
+    transverse_field_ising,
+)
+
+H = transverse_field_ising(2)
+circuit = build_hamiltonian_qsvt_circuit(H, time=0.2, epsilon=1e-3)
+check = compare_with_exact(H, 0.2, method="qsvt", qsvt_epsilon=1e-3)
+print(check)
+```
+
+`amplitude_amplification=False`では、all-zero ancilla blockは概ね
+`scale * exp(-i H t) / 2`で、成功確率は`scale**2 / 4`です。増幅後は同じblockが
+`exp(-i H t)`に近づきます。
+
 `benchmark_scaling(..., transpile_circuits=False)`（既定）は大規模向けの明示的な分解コストモデルです。`True` は実回路を Qiskit で基底ゲートへ分解するので、小規模な校正に使ってください。
 
 MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
@@ -100,9 +120,10 @@ mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=1)
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。
 3. **固定誤差の次数選択**: `choose_parameters` は比較可能な保守的スケーリング proxy であり、ハミルトニアン固有の厳密誤差上界ではありません。小規模では `compare_with_exact` で校正してください。
-4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は別の definite-parity QSP 列です。`synthesize_hamsim_phases` は各成分を生成し、`build_qsvt_circuit` は一成分、`build_hamiltonian_qsvt_circuit` は追加 LCU qubit で両成分を結合した回路を作ります。
+4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
 5. **MPF**: 回路の zero-branch block は weighted sum を係数 1-norm で割ったものです。したがって postselection 成功率（または振幅増幅コスト）を無視して Trotter と比較してはいけません。回路 metadata に係数、1-norm、postselection 条件を保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
+7. **QSVT解析コストの現状**: `transpile_circuits=True`は新しいQSVT回路全体を数えますが、既定の大規模向け解析式にはquadrature抽出とOAAの定数がまだ反映されていません。QSVTの解析リソース値を最終比較に使うのは、次のリソースモデル整理後とします。
 
 ## テスト
 
