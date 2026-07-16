@@ -23,6 +23,7 @@ from scipy.special import gammaln, jv
 from .circuit_utils import (
     append_zero_projector_phase,
     build_block_encoding,
+    build_three_step_oaa,
 )
 from .hamiltonians import PauliHamiltonian
 
@@ -313,23 +314,12 @@ def _apply_three_step_oaa(
     system_qubits: int,
 ) -> QuantumCircuit:
     """Apply one robust OAA round to a block with amplitude close to 1/2."""
-    ancilla_count = base.num_qubits - system_qubits
-    if ancilla_count < 1:
-        raise ValueError("OAA requires at least one good-subspace ancilla")
-
-    ancillas = QuantumRegister(ancilla_count, "ancilla")
-    system = QuantumRegister(system_qubits, "system")
-    amplified = QuantumCircuit(ancillas, system, name="QSVT_hamsim_oaa")
-    base_gate = base.to_gate(label="U_hamsim/2")
-    targets = [*ancillas, *system]
-
-    amplified.append(base_gate, targets)
-    append_zero_projector_phase(amplified, ancillas, np.pi)
-    amplified.append(base_gate.inverse(), targets)
-    append_zero_projector_phase(amplified, ancillas, np.pi)
-    amplified.append(base_gate, targets)
-    # U R U^dagger R U has block 4a^3-3a; correct its known sign.
-    amplified.global_phase += np.pi
+    amplified = build_three_step_oaa(
+        base,
+        system_qubits,
+        name="QSVT_hamsim_oaa",
+        gate_label="U_hamsim/2",
+    )
 
     metadata = dict(base.metadata or {})
     metadata.update(

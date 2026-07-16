@@ -52,6 +52,42 @@ def append_zero_projector_phase(circuit: QuantumCircuit, ancillas, angle: float)
         circuit.x(qubit)
 
 
+def build_three_step_oaa(
+    base: QuantumCircuit,
+    system_qubits: int,
+    *,
+    name: str = "robust_oaa",
+    gate_label: str = "U/2",
+) -> QuantumCircuit:
+    """Return one robust oblivious-amplitude-amplification round.
+
+    ``base`` must place all good-subspace ancillas before the system register,
+    with the all-zero ancilla state defining the desired block. If that block
+    is ``A/2``, the returned ``-U R U^dagger R U`` construction has a block
+    close to ``A`` when ``A`` is close to unitary.
+    """
+    if isinstance(system_qubits, bool) or not isinstance(system_qubits, int):
+        raise TypeError("system_qubits must be an integer")
+    if system_qubits < 1 or system_qubits >= base.num_qubits:
+        raise ValueError("OAA requires system qubits and at least one ancilla")
+
+    ancilla_count = base.num_qubits - system_qubits
+    ancillas = QuantumRegister(ancilla_count, "ancilla")
+    system = QuantumRegister(system_qubits, "system")
+    amplified = QuantumCircuit(ancillas, system, name=name)
+    base_gate = base.to_gate(label=gate_label)
+    targets = [*ancillas, *system]
+
+    amplified.append(base_gate, targets)
+    append_zero_projector_phase(amplified, ancillas, np.pi)
+    amplified.append(base_gate.inverse(), targets)
+    append_zero_projector_phase(amplified, ancillas, np.pi)
+    amplified.append(base_gate, targets)
+    # U R U^dagger R U has block 4a^3 - 3a; correct its known sign.
+    amplified.global_phase += np.pi
+    return amplified
+
+
 def pauli_lcu_oracles(
     hamiltonian: PauliHamiltonian,
 ) -> tuple[Gate, QuantumCircuit]:
