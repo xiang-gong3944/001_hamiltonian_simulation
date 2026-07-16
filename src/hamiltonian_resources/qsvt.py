@@ -23,7 +23,6 @@ from scipy.special import gammaln, jv
 from .circuit_utils import (
     append_zero_projector_phase,
     build_block_encoding,
-    pauli_lcu_oracles,
 )
 from .hamiltonians import PauliHamiltonian
 
@@ -257,62 +256,131 @@ def _build_qsvt_component_circuit(
     return circuit
 
 
-# Temporary compatibility builders.  The public raw-phase API is removed in
-# the next implementation step, after the complete Hamiltonian circuit exists.
-def build_qsvt_circuit(
+def _build_hamiltonian_lcu_circuit(
     hamiltonian: PauliHamiltonian,
-    phases: Sequence[float],
+    phases: HamiltonianSimulationPhases,
 ) -> QuantumCircuit:
-    """Build the legacy alternating walk circuit (temporary compatibility)."""
-    phase_values = np.asarray(phases, dtype=float)
-    if phase_values.ndim != 1 or len(phase_values) < 2:
-        raise ValueError("at least two one-dimensional QSP phases are required")
-    prepare, select = pauli_lcu_oracles(hamiltonian)
-    select_gate = select.to_gate(label="SELECT")
-    index = QuantumRegister(prepare.num_qubits, "index")
+    """Build the pre-amplification block encoding of s exp(-iHt)/2."""
+    cosine = _build_qsvt_component_circuit(
+        hamiltonian, phases.cosine, component="cos"
+    ).to_gate(label="QSVT_cos")
+    sine = _build_qsvt_component_circuit(
+        hamiltonian, phases.sine, component="sin"
+    ).to_gate(label="QSVT_sin")
+    component = QuantumRegister(1, "component")
+    quadrature = QuantumRegister(1, "quadrature")
+    index_count = cosine.num_qubits - hamiltonian.num_qubits - 1
+    index = QuantumRegister(index_count, "index")
     system = QuantumRegister(hamiltonian.num_qubits, "system")
-    circuit = QuantumCircuit(index, system, name=f"QSVT-d{len(phase_values)-1}")
+    circuit = QuantumCircuit(
+        component, quadrature, index, system, name="QSVT_hamsim_unamplified"
+    )
 
-    def projector_phase(phi: float) -> None:
-        circuit.append(prepare.inverse(), index)
-        append_zero_projector_phase(circuit, index, 2 * float(phi))
-        circuit.append(prepare, index)
+    targets = [*quadrature, *index, *system]
+    circuit.h(component)
+    circuit.append(cosine.control(1, ctrl_state=0), [*component, *targets])
+    circuit.append(sine.control(1, ctrl_state=1), [*component, *targets])
+    circuit.sdg(component)
+    circuit.h(component)
 
-    circuit.append(prepare, index)
-    projector_phase(phase_values[0])
-    for phi in phase_values[1:]:
-        circuit.append(select_gate, [*index, *system])
-        circuit.append(prepare.inverse(), index)
-        append_zero_projector_phase(circuit, index, np.pi)
-        circuit.append(prepare, index)
-        projector_phase(phi)
-    circuit.append(prepare.inverse(), index)
-    circuit.metadata = {"algorithm": "qsvt", "degree": len(phase_values) - 1}
+    base_queries = 2 * (phases.cosine_degree + phases.sine_degree)
+    circuit.metadata = {
+        "algorithm": "qsvt-hamiltonian-simulation",
+        "construction": "explicit-cos-sin-lcu",
+        "cosine_degree": phases.cosine_degree,
+        "sine_degree": phases.sine_degree,
+        "alpha": hamiltonian.alpha,
+        "alpha_time": phases.alpha_time,
+        "epsilon": phases.epsilon,
+        "polynomial_scale": phases.scale,
+        "block_scale": 2 / phases.scale,
+        "amplitude_amplification": False,
+        "good_subspace": "component, quadrature, and index registers all-zero",
+        "registers": {
+            "component": 1,
+            "quadrature": 1,
+            "index": index_count,
+            "system": hamiltonian.num_qubits,
+        },
+        "base_block_encoding_queries": base_queries,
+        "base_circuit_uses": 1,
+    }
     return circuit
+
+
+def _apply_three_step_oaa(
+    base: QuantumCircuit,
+    system_qubits: int,
+) -> QuantumCircuit:
+    """Apply one robust OAA round to a block with amplitude close to 1/2."""
+    ancilla_count = base.num_qubits - system_qubits
+    if ancilla_count < 1:
+        raise ValueError("OAA requires at least one good-subspace ancilla")
+
+    ancillas = QuantumRegister(ancilla_count, "ancilla")
+    system = QuantumRegister(system_qubits, "system")
+    amplified = QuantumCircuit(ancillas, system, name="QSVT_hamsim_oaa")
+    base_gate = base.to_gate(label="U_hamsim/2")
+    targets = [*ancillas, *system]
+
+    amplified.append(base_gate, targets)
+    append_zero_projector_phase(amplified, ancillas, np.pi)
+    amplified.append(base_gate.inverse(), targets)
+    append_zero_projector_phase(amplified, ancillas, np.pi)
+    amplified.append(base_gate, targets)
+    # U R U^dagger R U has block 4a^3-3a; correct its known sign.
+    amplified.global_phase += np.pi
+
+    metadata = dict(base.metadata or {})
+    metadata.update(
+        amplitude_amplification=True,
+        block_scale=1.0,
+        base_circuit_uses=3,
+        base_block_encoding_queries=3 * int(metadata["base_block_encoding_queries"]),
+        oaa_sequence="-U R U^dagger R U",
+    )
+    amplified.metadata = metadata
+    return amplified
 
 
 def build_hamiltonian_qsvt_circuit(
     hamiltonian: PauliHamiltonian,
-    cosine_phases: Sequence[float],
-    sine_phases: Sequence[float],
+    time: float,
+    epsilon: float,
+    *,
+    amplitude_amplification: bool = True,
 ) -> QuantumCircuit:
-    """Build the legacy raw-phase Hamiltonian circuit (temporary compatibility)."""
-    cosine = build_qsvt_circuit(hamiltonian, cosine_phases).to_gate(label="QSVT_cos")
-    sine = build_qsvt_circuit(hamiltonian, sine_phases).to_gate(label="QSVT_sin")
-    branch = QuantumRegister(1, "component")
-    index_count = cosine.num_qubits - hamiltonian.num_qubits
-    index = QuantumRegister(index_count, "index")
-    system = QuantumRegister(hamiltonian.num_qubits, "system")
-    circuit = QuantumCircuit(branch, index, system, name="QSVT_hamsim")
-    circuit.h(branch)
-    circuit.append(cosine.control(1, ctrl_state=0), [*branch, *index, *system])
-    circuit.append(sine.control(1, ctrl_state=1), [*branch, *index, *system])
-    circuit.sdg(branch)
-    circuit.h(branch)
-    circuit.metadata = {
-        "algorithm": "qsvt-hamiltonian-simulation",
-        "cosine_degree": len(cosine_phases) - 1,
-        "sine_degree": len(sine_phases) - 1,
-        "alpha": hamiltonian.alpha,
-    }
-    return circuit
+    """Build a coherent QSVT approximation of ``exp(-i H time)``.
+
+    Without amplitude amplification the all-zero ancilla block is approximately
+    ``scale * exp(-i H time) / 2``.  The default performs one robust OAA round,
+    producing a near-deterministic block encoding of the propagator.
+    """
+    if not np.isfinite(time):
+        raise ValueError("time must be finite")
+    if not 0 < epsilon < 0.5:
+        raise ValueError("epsilon must lie in (0, 1/2)")
+    if time == 0:
+        system = QuantumRegister(hamiltonian.num_qubits, "system")
+        identity = QuantumCircuit(system, name="QSVT_hamsim_identity")
+        identity.metadata = {
+            "algorithm": "qsvt-hamiltonian-simulation",
+            "construction": "zero-time-identity",
+            "alpha": hamiltonian.alpha,
+            "alpha_time": 0.0,
+            "epsilon": float(epsilon),
+            "polynomial_scale": 1.0,
+            "block_scale": 1.0,
+            "amplitude_amplification": bool(amplitude_amplification),
+            "good_subspace": "no ancillas",
+            "registers": {"component": 0, "quadrature": 0, "index": 0, "system": hamiltonian.num_qubits},
+            "base_block_encoding_queries": 0,
+            "base_circuit_uses": 0,
+        }
+        return identity
+
+    phases = synthesize_hamsim_phases(hamiltonian.alpha * float(time), epsilon)
+    base = _build_hamiltonian_lcu_circuit(hamiltonian, phases)
+    if not amplitude_amplification:
+        return base
+    return _apply_three_step_oaa(base, hamiltonian.num_qubits)

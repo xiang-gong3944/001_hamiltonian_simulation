@@ -9,7 +9,6 @@ from hamiltonian_resources import (
     benchmark_scaling,
     build_hamiltonian_qsvt_circuit,
     build_multiproduct_circuit,
-    build_qsvt_circuit,
     build_trotter_circuit,
     choose_parameters,
     compare_with_exact,
@@ -119,15 +118,55 @@ def test_all_builders_return_circuits():
     hamiltonian = transverse_field_ising(2)
     trotter = build_trotter_circuit(hamiltonian, 0.1, reps=1)
     mpf = build_multiproduct_circuit(hamiltonian, 0.1, m=2)
-    qsvt = build_qsvt_circuit(hamiltonian, [0.1, 0.2, 0.1])
-    hamsim_qsvt = build_hamiltonian_qsvt_circuit(
-        hamiltonian, [0.1, 0.2, 0.1], [0.3, 0.4]
-    )
-    assert all(isinstance(c, QuantumCircuit) for c in (trotter, mpf, qsvt))
+    hamsim_qsvt = build_hamiltonian_qsvt_circuit(hamiltonian, 0.1, 1e-2)
+    assert all(isinstance(c, QuantumCircuit) for c in (trotter, mpf, hamsim_qsvt))
     assert trotter.num_qubits == 2
     assert mpf.num_qubits > 2
-    assert qsvt.metadata["degree"] == 2
-    assert hamsim_qsvt.num_qubits == qsvt.num_qubits + 1
+    assert hamsim_qsvt.num_qubits > 2
+    assert hamsim_qsvt.metadata["amplitude_amplification"] is True
+
+
+def test_qsvt_hamiltonian_lcu_and_oaa_zero_blocks():
+    from scipy.linalg import expm
+
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 0.3), ("X", 0.7)])
+    time = 0.7
+    epsilon = 1e-3
+    unamplified = build_hamiltonian_qsvt_circuit(
+        hamiltonian, time, epsilon, amplitude_amplification=False
+    )
+    amplified = build_hamiltonian_qsvt_circuit(hamiltonian, time, epsilon)
+    target = expm(-1j * time * hamiltonian.matrix())
+    scale = unamplified.metadata["polynomial_scale"]
+
+    assert np.allclose(
+        _zero_ancilla_block(unamplified, 1), scale * target / 2, atol=1e-5
+    )
+    assert np.allclose(_zero_ancilla_block(amplified, 1), target, atol=5e-4)
+    assert amplified.metadata["base_circuit_uses"] == 3
+
+
+def test_qsvt_supports_negative_and_zero_time():
+    hamiltonian = transverse_field_ising(1)
+    forward = build_hamiltonian_qsvt_circuit(hamiltonian, 0.2, 1e-2)
+    backward = build_hamiltonian_qsvt_circuit(hamiltonian, -0.2, 1e-2)
+    identity = build_hamiltonian_qsvt_circuit(hamiltonian, 0.0, 1e-2)
+
+    assert np.allclose(
+        _zero_ancilla_block(backward, 1),
+        _zero_ancilla_block(forward, 1).conj().T,
+        atol=5e-3,
+    )
+    assert identity.num_qubits == 1
+    assert np.allclose(Operator(identity).data, np.eye(2))
+
+
+@pytest.mark.parametrize("epsilon", [0.0, -1e-3, 0.5, 1.0])
+def test_qsvt_rejects_invalid_precision(epsilon):
+    with pytest.raises(ValueError, match="epsilon"):
+        build_hamiltonian_qsvt_circuit(transverse_field_ising(1), 0.1, epsilon)
 
 
 def test_multiproduct_circuit_uses_registered_schedule_and_segments():

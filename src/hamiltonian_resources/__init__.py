@@ -13,8 +13,8 @@ from .multiproduct import (
     optimal_mpf_exponents,
 )
 from .qsvt import (
+    HamiltonianSimulationPhases,
     build_hamiltonian_qsvt_circuit,
-    build_qsvt_circuit,
     estimate_qsvt_degree,
     synthesize_hamsim_phases,
 )
@@ -24,12 +24,12 @@ from .trotter import build_trotter_circuit
 
 __all__ = [
     "BenchmarkConfig",
+    "HamiltonianSimulationPhases",
     "PauliHamiltonian",
     "ResourceEstimate",
     "benchmark_scaling",
     "build_multiproduct_circuit",
     "build_hamiltonian_qsvt_circuit",
-    "build_qsvt_circuit",
     "build_trotter_circuit",
     "choose_parameters",
     "compare_with_exact",

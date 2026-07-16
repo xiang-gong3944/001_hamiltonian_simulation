@@ -173,8 +173,8 @@ def benchmark_scaling(
                 ),
                 "qsvt": build_hamiltonian_qsvt_circuit(
                     hamiltonian,
-                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
-                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
+                    config.time,
+                    config.target_error * (1 - config.synthesis_error_fraction),
                 ),
             }
         for algorithm in ("trotter", "multiproduct", "qsvt"):
