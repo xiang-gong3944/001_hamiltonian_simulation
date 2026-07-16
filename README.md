@@ -62,6 +62,8 @@ src/hamiltonian_resources/
   benchmark.py       # 固定誤差のパラメータ選択とスケーリング
 notebooks/
   resource_comparison.ipynb
+  qsvt_validation.ipynb
+  mpf_validation.ipynb
 tests/
 ```
 
