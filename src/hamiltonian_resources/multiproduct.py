@@ -18,6 +18,9 @@ from .hamiltonians import PauliHamiltonian
 from .trotter import build_trotter_circuit
 
 
+_OAA_NORMALIZATION = 2.0
+
+
 _OPTIMAL_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
     2: (1, 2),
     3: (1, 2, 6),
@@ -60,6 +63,73 @@ def multiproduct_coefficients(m: int) -> np.ndarray:
             if q != j:
                 coefficients[j] *= k_j_squared / (k_j_squared - k_q**2)
     return coefficients
+
+
+def _build_multiproduct_step_lcu(
+    hamiltonian: PauliHamiltonian,
+    step_time: float,
+    m: int,
+) -> QuantumCircuit:
+    """Build one normalized coherent MPF step before amplification.
+
+    The all-zero branch block is exactly
+    ``sum_j a_j S_2(step_time / k_j) ** k_j / 2``. Two cancelling identity
+    branches pad the coefficient 1-norm to two, which is the normalization
+    required by one round of three-step robust OAA.
+    """
+    if not np.isfinite(step_time):
+        raise ValueError("step_time must be finite")
+
+    exponents = optimal_mpf_exponents(m)
+    coefficients = multiproduct_coefficients(m)
+    coefficient_l1 = float(np.sum(np.abs(coefficients)))
+    if coefficient_l1 >= _OAA_NORMALIZATION:
+        raise ValueError("the MPF coefficient 1-norm must be less than 2")
+
+    padding_weight = _OAA_NORMALIZATION - coefficient_l1
+    branch_weights = np.concatenate(
+        (coefficients, [padding_weight / 2, -padding_weight / 2])
+    )
+    prepare = state_preparation(
+        np.sqrt(np.abs(branch_weights) / _OAA_NORMALIZATION),
+        name="PREPARE_MPF",
+    )
+
+    branch = QuantumRegister(prepare.num_qubits, "branch")
+    system = QuantumRegister(hamiltonian.num_qubits, "system")
+    circuit = QuantumCircuit(branch, system, name=f"MPF_step_{2 * m}")
+    circuit.append(prepare, branch)
+    for j, weight in enumerate(branch_weights):
+        if j < len(exponents):
+            exponent = exponents[j]
+            approximation = build_trotter_circuit(
+                hamiltonian,
+                step_time,
+                reps=exponent,
+                order=2,
+            ).to_gate(label=f"S2({step_time:g}/{exponent})^{exponent}")
+            circuit.append(
+                approximation.control(len(branch), ctrl_state=j),
+                [*branch, *system],
+            )
+        if weight < 0:
+            append_phase_on_index(circuit, branch, j, np.pi)
+    circuit.append(prepare.inverse(), branch)
+    circuit.metadata = {
+        "algorithm": "multiproduct-step-lcu",
+        "m": int(m),
+        "exponents": exponents,
+        "coefficients": coefficients.tolist(),
+        "coefficient_l1_norm": coefficient_l1,
+        "padding_weight": padding_weight,
+        "lcu_normalization": _OAA_NORMALIZATION,
+        "formal_order": 2 * int(m),
+        "step_time": float(step_time),
+        "amplitude_amplification": False,
+        "good_subspace": "branch register all-zero",
+        "trotter_step_queries": int(sum(exponents)),
+    }
+    return circuit
 
 
 def build_multiproduct_circuit(

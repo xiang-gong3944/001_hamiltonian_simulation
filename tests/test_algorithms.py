@@ -23,6 +23,7 @@ from hamiltonian_resources.qsvt import (
     _build_qsvt_component_circuit,
     synthesize_hamsim_phases,
 )
+from hamiltonian_resources.multiproduct import _build_multiproduct_step_lcu
 
 
 OPTIMAL_MPF_EXPONENTS = {
@@ -112,6 +113,34 @@ def test_multiproduct_order_conditions_are_stable(m):
     for q in range(1, m):
         assert np.isclose(sum(coefficients / exponents ** (2 * q)), 0, atol=1e-14)
     assert sum(abs(coefficients)) < 2
+
+
+@pytest.mark.parametrize("m", [2, 3])
+def test_multiproduct_step_lcu_has_normalization_two(m):
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 0.3), ("X", -0.7)])
+    step_time = 0.2
+    step = _build_multiproduct_step_lcu(hamiltonian, step_time, m)
+    coefficients = multiproduct_coefficients(m)
+    exponents = optimal_mpf_exponents(m)
+    target = sum(
+        coefficient
+        * Operator(
+            build_trotter_circuit(hamiltonian, step_time, exponent, order=2)
+        ).data
+        for coefficient, exponent in zip(coefficients, exponents, strict=True)
+    )
+
+    assert np.allclose(_zero_ancilla_block(step, 1), target / 2, atol=1e-12)
+    assert step.metadata["coefficient_l1_norm"] == pytest.approx(
+        sum(abs(coefficients))
+    )
+    assert step.metadata["padding_weight"] == pytest.approx(
+        2 - sum(abs(coefficients))
+    )
+    assert step.metadata["lcu_normalization"] == 2.0
+    assert step.metadata["trotter_step_queries"] == sum(exponents)
 
 
 def test_all_builders_return_circuits():
