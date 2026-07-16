@@ -85,6 +85,6 @@ def build_block_encoding(hamiltonian: PauliHamiltonian) -> QuantumCircuit:
     system = QuantumRegister(hamiltonian.num_qubits, "system")
     circuit = QuantumCircuit(anc, system, name="U_H")
     circuit.append(prepare, anc)
-    circuit.append(select, [*anc, *system])
+    circuit.append(select.to_gate(label="SELECT"), [*anc, *system])
     circuit.append(prepare.inverse(), anc)
     return circuit

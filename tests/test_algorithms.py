@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
+from qiskit.quantum_info import Operator
+from scipy.linalg import cosm, sinm
 
 from hamiltonian_resources import (
     BenchmarkConfig,
@@ -17,6 +19,11 @@ from hamiltonian_resources import (
     transverse_field_ising,
 )
 from hamiltonian_resources.resources import count_circuit_resources
+from hamiltonian_resources.circuit_utils import build_block_encoding
+from hamiltonian_resources.qsvt import (
+    _build_qsvt_component_circuit,
+    synthesize_hamsim_phases,
+)
 
 
 OPTIMAL_MPF_EXPONENTS = {
@@ -35,6 +42,46 @@ OPTIMAL_MPF_EXPONENTS = {
     14: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 19, 37, 147),
     15: (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 22, 42, 170),
 }
+
+
+def _zero_ancilla_block(circuit, system_qubits):
+    unitary = Operator(circuit).data
+    ancillas = circuit.num_qubits - system_qubits
+    selected = np.arange(2**system_qubits) * 2**ancillas
+    return unitary[np.ix_(selected, selected)]
+
+
+def test_pauli_lcu_zero_block_matches_normalized_hamiltonian():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(
+        1,
+        [("I", 0.2), ("X", -0.7), ("Z", 0.3)],
+    )
+    block = _zero_ancilla_block(build_block_encoding(hamiltonian), 1)
+    assert np.allclose(block, hamiltonian.matrix() / hamiltonian.alpha, atol=1e-12)
+
+
+def test_qsvt_components_have_common_scale_and_correct_zero_blocks():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 0.3), ("X", 0.7)])
+    time = 0.7
+    phases = synthesize_hamsim_phases(hamiltonian.alpha * time, 1e-3)
+
+    cosine = _build_qsvt_component_circuit(
+        hamiltonian, phases.cosine, component="cos"
+    )
+    sine = _build_qsvt_component_circuit(hamiltonian, phases.sine, component="sin")
+    expected_cosine = phases.scale * cosm(time * hamiltonian.matrix())
+    expected_sine = phases.scale * sinm(time * hamiltonian.matrix())
+
+    assert phases.cosine_tail_bound < 1e-3 / 18
+    assert phases.sine_tail_bound < 1e-3 / 18
+    assert phases.cosine_phase_residual < 1e-3 / 18
+    assert phases.sine_phase_residual < 1e-3 / 18
+    assert np.allclose(_zero_ancilla_block(cosine, 1), expected_cosine, atol=1e-5)
+    assert np.allclose(_zero_ancilla_block(sine, 1), expected_sine, atol=1e-5)
 
 
 @pytest.mark.parametrize(("m", "expected"), OPTIMAL_MPF_EXPONENTS.items())
