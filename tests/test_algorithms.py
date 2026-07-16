@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
+from qiskit.circuit import Gate
 from qiskit.quantum_info import Operator
 from scipy.linalg import cosm, sinm
 
@@ -18,7 +19,12 @@ from hamiltonian_resources import (
     transverse_field_ising,
 )
 from hamiltonian_resources.resources import count_circuit_resources
-from hamiltonian_resources.circuit_utils import build_block_encoding
+from hamiltonian_resources.circuit_utils import (
+    build_block_encoding,
+    index_state_phase_gate,
+    state_preparation,
+    zero_projector_phase_gate,
+)
 from hamiltonian_resources.qsvt import (
     _build_qsvt_component_circuit,
     synthesize_hamsim_phases,
@@ -61,6 +67,20 @@ def _classical_mpf_step(hamiltonian, step_time, m):
             multiproduct_coefficients(m), optimal_mpf_exponents(m), strict=True
         )
     )
+
+
+def test_named_lcu_primitives_preserve_their_gate_definitions():
+    prepare = state_preparation(np.array([np.sqrt(0.25), np.sqrt(0.75)]), "PREPARE_TEST")
+    phase = index_state_phase_gate(2, 2, 0.37)
+    reflection = zero_projector_phase_gate(2, np.pi, name="GOOD_REFLECTION")
+
+    assert all(isinstance(gate, Gate) for gate in (prepare, phase, reflection))
+    assert all(gate.definition is not None for gate in (prepare, phase, reflection))
+    expected_phase = np.eye(4, dtype=complex)
+    expected_phase[2, 2] = np.exp(0.37j)
+    expected_reflection = np.diag([-1, 1, 1, 1])
+    assert np.allclose(Operator(phase).data, expected_phase, atol=1e-12)
+    assert np.allclose(Operator(reflection).data, expected_reflection, atol=1e-12)
 
 
 def test_pauli_lcu_zero_block_matches_normalized_hamiltonian():
@@ -147,6 +167,12 @@ def test_multiproduct_step_lcu_has_normalization_two(m):
     )
     assert step.metadata["lcu_normalization"] == 2.0
     assert step.metadata["trotter_step_queries"] == sum(exponents)
+    assert [instruction.operation.name for instruction in step.data] == [
+        "state_preparation",
+        "SELECT_MPF",
+        "state_preparation_dg",
+    ]
+    assert step.data[1].operation.definition is not None
 
 
 def test_all_builders_return_circuits():

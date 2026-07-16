@@ -21,9 +21,9 @@ from qiskit import QuantumCircuit, QuantumRegister
 from scipy.special import gammaln, jv
 
 from .circuit_utils import (
-    append_zero_projector_phase,
     build_block_encoding,
     build_three_step_oaa,
+    zero_projector_phase_gate,
 )
 from .hamiltonians import PauliHamiltonian
 
@@ -195,7 +195,12 @@ def _append_exact_projector_phase(
 ) -> None:
     """Append exp(i phi (2 Pi-I)), retaining its global phase."""
     circuit.global_phase -= float(phi)
-    append_zero_projector_phase(circuit, ancillas, 2 * float(phi))
+    phase = zero_projector_phase_gate(
+        len(ancillas),
+        2 * float(phi),
+        name="QSVT_PROJECTOR_PHASE",
+    )
+    circuit.append(phase, ancillas)
 
 
 def _build_qsvt_response_circuit(

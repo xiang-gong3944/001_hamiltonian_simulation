@@ -12,10 +12,11 @@ from numbers import Integral
 
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
+from qiskit.circuit import Gate
 
 from .circuit_utils import (
-    append_phase_on_index,
     build_three_step_oaa,
+    index_state_phase_gate,
     state_preparation,
 )
 from .hamiltonians import PauliHamiltonian
@@ -69,6 +70,46 @@ def multiproduct_coefficients(m: int) -> np.ndarray:
     return coefficients
 
 
+def _multiproduct_select_gate(
+    hamiltonian: PauliHamiltonian,
+    step_time: float,
+    exponents: tuple[int, ...],
+    branch_weights: np.ndarray,
+    branch_width: int,
+) -> Gate:
+    """Return the named signed SELECT gate for one MPF LCU step.
+
+    Physical MPF branches contain controlled second-order product formulas.
+    The final two branches are cancelling positive and negative identities;
+    any remaining computational states are unused identity branches.
+    """
+    branch = QuantumRegister(branch_width, "branch")
+    system = QuantumRegister(hamiltonian.num_qubits, "system")
+    select = QuantumCircuit(branch, system, name="SELECT_MPF")
+    for j, weight in enumerate(branch_weights):
+        if j < len(exponents):
+            exponent = exponents[j]
+            approximation = build_trotter_circuit(
+                hamiltonian,
+                step_time,
+                reps=exponent,
+                order=2,
+            ).to_gate(label=f"S2({step_time:g}/{exponent})^{exponent}")
+            select.append(
+                approximation.control(branch_width, ctrl_state=j),
+                [*branch, *system],
+            )
+        if weight < 0:
+            sign = index_state_phase_gate(
+                branch_width,
+                j,
+                np.pi,
+                name="MPF_BRANCH_SIGN",
+            )
+            select.append(sign, branch)
+    return select.to_gate(label="SELECT_MPF")
+
+
 def _build_multiproduct_step_lcu(
     hamiltonian: PauliHamiltonian,
     step_time: float,
@@ -99,25 +140,19 @@ def _build_multiproduct_step_lcu(
         name="PREPARE_MPF",
     )
 
-    branch = QuantumRegister(prepare.num_qubits, "branch")
+    branch_width = prepare.num_qubits
+    select = _multiproduct_select_gate(
+        hamiltonian,
+        step_time,
+        exponents,
+        branch_weights,
+        branch_width,
+    )
+    branch = QuantumRegister(branch_width, "branch")
     system = QuantumRegister(hamiltonian.num_qubits, "system")
     circuit = QuantumCircuit(branch, system, name=f"MPF_step_{2 * m}")
     circuit.append(prepare, branch)
-    for j, weight in enumerate(branch_weights):
-        if j < len(exponents):
-            exponent = exponents[j]
-            approximation = build_trotter_circuit(
-                hamiltonian,
-                step_time,
-                reps=exponent,
-                order=2,
-            ).to_gate(label=f"S2({step_time:g}/{exponent})^{exponent}")
-            circuit.append(
-                approximation.control(len(branch), ctrl_state=j),
-                [*branch, *system],
-            )
-        if weight < 0:
-            append_phase_on_index(circuit, branch, j, np.pi)
+    circuit.append(select, [*branch, *system])
     circuit.append(prepare.inverse(), branch)
     circuit.metadata = {
         "algorithm": "multiproduct-step-lcu",
@@ -132,6 +167,12 @@ def _build_multiproduct_step_lcu(
         "amplitude_amplification": False,
         "good_subspace": "branch register all-zero",
         "trotter_step_queries": int(sum(exponents)),
+        "logical_gate_counts": {
+            "prepare": 2,
+            "select": 1,
+            "good_reflection": 0,
+            "controlled_u2": int(sum(exponents)),
+        },
     }
     return circuit
 
@@ -144,12 +185,14 @@ def build_multiproduct_circuit(
     *,
     amplitude_amplification: bool = True,
 ) -> QuantumCircuit:
-    """Build ``M(time / segments) ** segments`` as coherent MPF steps.
+    """Repeat robustly amplified MPF-step unitaries on shared ancillas.
 
-    Each ``M`` is a normalized LCU of ``S_2(step_time/k_j)**k_j``. By
-    default, one three-step robust-OAA round is applied to every segment before
-    the branch register is reused. The unamplified form is exposed only for
-    validating a single LCU step.
+    Before amplification the good block is ``B=M(step_time)/2``. One robust
+    OAA round transforms it exactly to ``3B - 4 B B^dagger B``, which is close
+    to ``M`` to the extent that the MPF approximation is unitary. The amplified
+    step unitary is then repeated on the same branch register; its final good
+    block is therefore not asserted to equal ``M**segments`` exactly. The
+    unamplified form is exposed only for validating a single LCU step.
     """
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
@@ -169,6 +212,12 @@ def build_multiproduct_circuit(
     step_time = float(time) / int(segments)
     oaa_factor = 3 if amplitude_amplification else 1
     per_segment_queries = oaa_factor * sum(exponents)
+    logical_counts_per_segment = {
+        "prepare": 2 * oaa_factor,
+        "select": oaa_factor,
+        "good_reflection": 2 if amplitude_amplification else 0,
+        "controlled_u2": int(per_segment_queries),
+    }
 
     metadata = {
         "algorithm": "multiproduct",
@@ -190,6 +239,11 @@ def build_multiproduct_circuit(
         "trotter_step_queries_per_segment": int(per_segment_queries),
         "trotter_step_queries": int(segments * per_segment_queries),
         "base_lcu_uses_per_segment": oaa_factor,
+        "logical_gate_counts_per_segment": logical_counts_per_segment,
+        "logical_gate_counts": {
+            key: int(segments * value)
+            for key, value in logical_counts_per_segment.items()
+        },
         "registers": {"branch": 0, "system": hamiltonian.num_qubits},
     }
 
@@ -202,6 +256,8 @@ def build_multiproduct_circuit(
             postselection="none",
             trotter_step_queries_per_segment=0,
             trotter_step_queries=0,
+            logical_gate_counts_per_segment={key: 0 for key in logical_counts_per_segment},
+            logical_gate_counts={key: 0 for key in logical_counts_per_segment},
         )
         circuit.metadata = metadata
         return circuit
