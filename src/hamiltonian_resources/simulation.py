@@ -54,14 +54,28 @@ def compare_with_exact(
         actual = np.asarray(Statevector(psi).evolve(circuit).data)
         success_probability = 1.0
     elif method == "multiproduct":
-        circuit = build_multiproduct_circuit(hamiltonian, time, mpf_m, segments=reps)
+        circuit = build_multiproduct_circuit(
+            hamiltonian,
+            time,
+            mpf_m,
+            segments=reps,
+            amplitude_amplification=amplitude_amplification,
+        )
         ancillas = circuit.num_qubits - hamiltonian.num_qubits
-        joint = np.zeros(2**circuit.num_qubits, dtype=complex)
-        joint[:: 2**ancillas] = psi
-        output = np.asarray(Statevector(joint).evolve(circuit).data)
-        postselected = output[:: 2**ancillas]
-        success_probability = float(np.vdot(postselected, postselected).real)
-        actual = postselected / np.sqrt(success_probability)
+        if ancillas == 0:
+            actual = np.asarray(Statevector(psi).evolve(circuit).data)
+            success_probability = 1.0
+        else:
+            joint = np.zeros(2**circuit.num_qubits, dtype=complex)
+            joint[:: 2**ancillas] = psi
+            output = np.asarray(Statevector(joint).evolve(circuit).data)
+            postselected = output[:: 2**ancillas]
+            success_probability = float(np.vdot(postselected, postselected).real)
+            if success_probability <= np.finfo(float).eps:
+                raise RuntimeError(
+                    "MPF all-zero postselection probability is numerically zero"
+                )
+            actual = postselected / np.sqrt(success_probability)
     elif method == "qsvt":
         circuit = build_hamiltonian_qsvt_circuit(
             hamiltonian,

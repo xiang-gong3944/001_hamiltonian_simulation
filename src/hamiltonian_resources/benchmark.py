@@ -11,7 +11,6 @@ import pandas as pd
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
     build_multiproduct_circuit,
-    multiproduct_coefficients,
     optimal_mpf_exponents,
 )
 from .qsvt import build_hamiltonian_qsvt_circuit, estimate_qsvt_degree
@@ -145,8 +144,9 @@ def benchmark_scaling(
     """Count all algorithms at each system size under one error budget.
 
     The default analytical model does not allocate large circuits. Its QSVT
-    formula is a legacy structural estimate and does not yet include the
-    quadrature-extraction and robust-OAA constants of the concrete circuit.
+    and MPF formulas are legacy structural estimates and do not yet include
+    the quadrature-extraction or per-segment robust-OAA constants of the
+    concrete circuits.
     Set ``transpile_circuits=True`` to synthesize real QSP phases and compile
     the complete circuit for small systems.
     """
@@ -188,8 +188,8 @@ def benchmark_scaling(
                 )
             estimate = resource.as_dict()
             if algorithm == "multiproduct":
-                lcu_scale = float(sum(abs(multiproduct_coefficients(config.mpf_m))))
-                nominal_success_probability = 1 / lcu_scale**2
+                lcu_scale = 2.0
+                nominal_success_probability = 1.0
             elif algorithm == "qsvt":
                 lcu_scale = 2.0
                 nominal_success_probability = 0.25

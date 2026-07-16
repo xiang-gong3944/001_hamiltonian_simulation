@@ -54,9 +54,9 @@ macOS/Linux: .venv/bin/python
 src/hamiltonian_resources/
   hamiltonians.py    # Pauli 和入力、TFIM、Heisenberg 鎖
   trotter.py         # 積公式回路
-  circuit_utils.py   # PREPARE / SELECT / block encoding
+  circuit_utils.py   # PREPARE / SELECT / block encoding / robust OAA
   qsvt.py            # Jacobi--Anger 位相合成、QSVT、LCU、robust OAA
-  multiproduct.py    # MPF 係数と coherent-LCU 回路
+  multiproduct.py    # MPF 係数、segment LCU、robust OAA
   simulation.py      # 小規模な厳密解との比較
   resources.py       # transpile 後の CX と T 見積り
   benchmark.py       # 固定誤差のパラメータ選択とスケーリング
@@ -103,7 +103,12 @@ print(check)
 
 `benchmark_scaling(..., transpile_circuits=False)`（既定）は大規模向けの明示的な分解コストモデルです。`True` は実回路を Qiskit で基底ゲートへ分解するので、小規模な校正に使ってください。
 
-MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
+MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な
+Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
+時間を `segments` 個に分け、各segment内で
+`sum_j a_j S_2(step_time / k_j)**k_j` をcoherent LCUとして作ります。
+係数1-normは正負の相殺identity branchで2へpaddingされ、既定では各segmentを
+1回の3-step robust OAAで増幅してから同じbranch register上で反復します。
 
 ```python
 from hamiltonian_resources import (
@@ -112,8 +117,11 @@ from hamiltonian_resources import (
 
 print(optimal_mpf_exponents(3))  # (1, 2, 6)
 H = transverse_field_ising(2)
-mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=1)
+mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=2)
 ```
+
+`amplitude_amplification=False`は単一segmentのLCU検証専用です。このとき
+zero-branch blockはMPF stepのちょうど1/2になります。
 
 ## 比較上の重要な前提
 
@@ -121,9 +129,10 @@ mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=1)
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。
 3. **固定誤差の次数選択**: `choose_parameters` は比較可能な保守的スケーリング proxy であり、ハミルトニアン固有の厳密誤差上界ではありません。小規模では `compare_with_exact` で校正してください。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
-5. **MPF**: 回路の zero-branch block は weighted sum を係数 1-norm で割ったものです。したがって postselection 成功率（または振幅増幅コスト）を無視して Trotter と比較してはいけません。回路 metadata に係数、1-norm、postselection 条件を保存します。
+5. **MPF**: 各segmentの増幅前zero-branch blockはweighted sumの1/2です。既定の回路はsegmentごとに3回のLCU呼び出しでrobust OAAを行います。metadataには係数、実際の1-norm、padding、正規化2、segment時間、Trotter-step query数を分けて保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
 7. **QSVT解析コストの現状**: `transpile_circuits=True`は新しいQSVT回路全体を数えますが、既定の大規模向け解析式にはquadrature抽出とOAAの定数がまだ反映されていません。QSVTの解析リソース値を最終比較に使うのは、次のリソースモデル整理後とします。
+8. **MPF解析コストの現状**: `transpile_circuits=True`はsegmentごとのLCUとOAAを含む具体回路を数えます。既定の解析式と`choose_parameters`はlegacy estimateであり、新しいsegment構成、normalization 2、OAA factor 3をまだ反映していません。
 
 ## テスト
 

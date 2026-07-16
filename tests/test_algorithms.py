@@ -51,6 +51,18 @@ def _zero_ancilla_block(circuit, system_qubits):
     return unitary[np.ix_(selected, selected)]
 
 
+def _classical_mpf_step(hamiltonian, step_time, m):
+    return sum(
+        coefficient
+        * Operator(
+            build_trotter_circuit(hamiltonian, step_time, exponent, order=2)
+        ).data
+        for coefficient, exponent in zip(
+            multiproduct_coefficients(m), optimal_mpf_exponents(m), strict=True
+        )
+    )
+
+
 def test_pauli_lcu_zero_block_matches_normalized_hamiltonian():
     from hamiltonian_resources import PauliHamiltonian
 
@@ -124,13 +136,7 @@ def test_multiproduct_step_lcu_has_normalization_two(m):
     step = _build_multiproduct_step_lcu(hamiltonian, step_time, m)
     coefficients = multiproduct_coefficients(m)
     exponents = optimal_mpf_exponents(m)
-    target = sum(
-        coefficient
-        * Operator(
-            build_trotter_circuit(hamiltonian, step_time, exponent, order=2)
-        ).data
-        for coefficient, exponent in zip(coefficients, exponents, strict=True)
-    )
+    target = _classical_mpf_step(hamiltonian, step_time, m)
 
     assert np.allclose(_zero_ancilla_block(step, 1), target / 2, atol=1e-12)
     assert step.metadata["coefficient_l1_norm"] == pytest.approx(
@@ -251,22 +257,121 @@ def test_qsvt_rejects_nonfinite_time(time):
         build_hamiltonian_qsvt_circuit(transverse_field_ising(1), time, 1e-2)
 
 
-def test_multiproduct_circuit_uses_registered_schedule_and_segments():
+def test_multiproduct_circuit_amplifies_each_registered_segment():
     circuit = build_multiproduct_circuit(
         transverse_field_ising(2), 0.1, m=3, segments=2
     )
     assert circuit.metadata["m"] == 3
     assert circuit.metadata["exponents"] == (1, 2, 6)
     assert circuit.metadata["segments"] == 2
+    assert circuit.metadata["step_time"] == pytest.approx(0.05)
     assert circuit.metadata["formal_order"] == 6
-    branch_labels = [
-        instruction.operation.base_gate.label
-        for instruction in circuit.data
-        if getattr(instruction.operation, "base_gate", None) is not None
-        and instruction.operation.base_gate.label is not None
-        and instruction.operation.base_gate.label.startswith("S2^")
-    ]
-    assert branch_labels == ["S2^2", "S2^4", "S2^12"]
+    assert circuit.metadata["lcu_normalization"] == 2.0
+    assert circuit.metadata["amplitude_amplification"] is True
+    assert circuit.metadata["base_lcu_uses_per_segment"] == 3
+    assert circuit.metadata["trotter_step_queries"] == 3 * 2 * (1 + 2 + 6)
+    assert len(circuit.data) == 2
+
+
+def test_multiproduct_unamplified_public_block_is_one_half_step():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("X", 0.6), ("Z", -0.4)])
+    circuit = build_multiproduct_circuit(
+        hamiltonian, 0.2, m=3, amplitude_amplification=False
+    )
+    target = _classical_mpf_step(hamiltonian, 0.2, 3)
+
+    assert np.allclose(_zero_ancilla_block(circuit, 1), target / 2, atol=1e-12)
+    assert circuit.metadata["amplitude_amplification"] is False
+
+
+@pytest.mark.parametrize(("m", "segments"), [(2, 1), (2, 3), (3, 2)])
+def test_multiproduct_amplified_segments_match_classical_composition(m, segments):
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("X", 0.6), ("Z", -0.4)])
+    time = 0.06
+    circuit = build_multiproduct_circuit(
+        hamiltonian, time, m=m, segments=segments
+    )
+    step = _classical_mpf_step(hamiltonian, time / segments, m)
+    target = np.linalg.matrix_power(step, segments)
+
+    assert np.allclose(_zero_ancilla_block(circuit, 1), target, atol=2e-7)
+
+
+def test_multiproduct_random_state_has_amplified_success():
+    rng = np.random.default_rng(2468)
+    initial_state = rng.normal(size=4) + 1j * rng.normal(size=4)
+    initial_state /= np.linalg.norm(initial_state)
+    result = compare_with_exact(
+        transverse_field_ising(2),
+        0.08,
+        method="multiproduct",
+        initial_state=initial_state,
+        reps=2,
+        mpf_m=3,
+    )
+
+    assert result["state_error"] < 1e-5
+    assert result["fidelity"] > 0.999999
+    assert result["success_probability"] > 0.999999
+
+
+def test_multiproduct_supports_negative_and_zero_time():
+    hamiltonian = transverse_field_ising(1)
+    forward = build_multiproduct_circuit(hamiltonian, 0.1, segments=2)
+    backward = build_multiproduct_circuit(hamiltonian, -0.1, segments=2)
+    identity = build_multiproduct_circuit(hamiltonian, 0.0, segments=2)
+
+    assert np.allclose(
+        _zero_ancilla_block(backward, 1),
+        _zero_ancilla_block(forward, 1).conj().T,
+        atol=1e-12,
+    )
+    assert identity.num_qubits == 1
+    assert np.allclose(Operator(identity).data, np.eye(2))
+    assert identity.metadata["trotter_step_queries"] == 0
+
+
+@pytest.mark.parametrize("segments", [0, -1])
+def test_multiproduct_rejects_nonpositive_segments(segments):
+    with pytest.raises(ValueError, match="segments"):
+        build_multiproduct_circuit(transverse_field_ising(1), 0.1, segments=segments)
+
+
+@pytest.mark.parametrize("segments", [1.5, True])
+def test_multiproduct_rejects_noninteger_segments(segments):
+    with pytest.raises(TypeError, match="segments"):
+        build_multiproduct_circuit(transverse_field_ising(1), 0.1, segments=segments)
+
+
+@pytest.mark.parametrize("time", [np.inf, -np.inf, np.nan])
+def test_multiproduct_rejects_nonfinite_time(time):
+    with pytest.raises(ValueError, match="time"):
+        build_multiproduct_circuit(transverse_field_ising(1), time)
+
+
+def test_multiproduct_rejects_unamplified_multiple_segments():
+    with pytest.raises(ValueError, match="segments=1"):
+        build_multiproduct_circuit(
+            transverse_field_ising(1),
+            0.1,
+            segments=2,
+            amplitude_amplification=False,
+        )
+
+
+def test_multiproduct_builder_never_forms_dense_hamiltonian(monkeypatch):
+    from hamiltonian_resources import PauliHamiltonian
+
+    def fail_if_called(self):
+        raise AssertionError("dense matrix construction is forbidden in circuit builders")
+
+    monkeypatch.setattr(PauliHamiltonian, "matrix", fail_if_called)
+    circuit = build_multiproduct_circuit(transverse_field_ising(2), 0.05, m=3)
+    assert circuit.metadata["registers"]["system"] == 2
 
 
 def test_commuting_trotter_is_exact_on_state():

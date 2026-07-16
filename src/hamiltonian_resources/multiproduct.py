@@ -2,8 +2,8 @@
 
 Implements the coherent LCU construction based on Childs & Wiebe-style
 multiproduct formulas and the well-conditioned schedules of Low, Kliuchnikov,
-and Wiebe, arXiv:1907.11679.  Postselecting the branch register on zero yields
-the desired weighted sum divided by its coefficient 1-norm.
+and Wiebe, arXiv:1907.11679. Each normalized LCU step is robustly amplified
+before the same branch register is reused for the next simulation segment.
 """
 
 from __future__ import annotations
@@ -13,7 +13,11 @@ from numbers import Integral
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
 
-from .circuit_utils import append_phase_on_index, state_preparation
+from .circuit_utils import (
+    append_phase_on_index,
+    build_three_step_oaa,
+    state_preparation,
+)
 from .hamiltonians import PauliHamiltonian
 from .trotter import build_trotter_circuit
 
@@ -137,44 +141,89 @@ def build_multiproduct_circuit(
     time: float,
     m: int = 2,
     segments: int = 1,
+    *,
+    amplitude_amplification: bool = True,
 ) -> QuantumCircuit:
-    """Build a coherent MPF LCU circuit from second-order Suzuki branches.
+    """Build ``M(time / segments) ** segments`` as coherent MPF steps.
 
-    The returned circuit acts on branch ancillas followed by system qubits.
-    Its zero-ancilla block is M/s where M=sum_j a_j S_2(t/k_j)^k_j and
-    s=sum_j |a_j|. With ``segments>1`` each branch uses k_j*segments steps.
+    Each ``M`` is a normalized LCU of ``S_2(step_time/k_j)**k_j``. By
+    default, one three-step robust-OAA round is applied to every segment before
+    the branch register is reused. The unamplified form is exposed only for
+    validating a single LCU step.
     """
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
     if segments < 1:
         raise ValueError("segments must be positive")
-    ks = optimal_mpf_exponents(m)
-    coefficients = multiproduct_coefficients(m)
-    scale = float(np.sum(np.abs(coefficients)))
-    prepare = state_preparation(np.sqrt(np.abs(coefficients) / scale), name="PREPARE_MPF")
+    if not np.isfinite(time):
+        raise ValueError("time must be finite")
+    if not amplitude_amplification and segments != 1:
+        raise ValueError("unamplified MPF is only supported for segments=1")
 
-    branch = QuantumRegister(prepare.num_qubits, "branch")
+    exponents = optimal_mpf_exponents(m)
+    coefficients = multiproduct_coefficients(m)
+    coefficient_l1 = float(np.sum(np.abs(coefficients)))
+    if coefficient_l1 >= _OAA_NORMALIZATION:
+        raise ValueError("the MPF coefficient 1-norm must be less than 2")
+    padding_weight = _OAA_NORMALIZATION - coefficient_l1
+    step_time = float(time) / int(segments)
+    oaa_factor = 3 if amplitude_amplification else 1
+    per_segment_queries = oaa_factor * sum(exponents)
+
+    metadata = {
+        "algorithm": "multiproduct",
+        "construction": "robust-oaa-segments"
+        if amplitude_amplification
+        else "single-unamplified-step",
+        "m": int(m),
+        "exponents": exponents,
+        "segments": int(segments),
+        "step_time": step_time,
+        "coefficients": coefficients.tolist(),
+        "coefficient_l1_norm": coefficient_l1,
+        "padding_weight": padding_weight,
+        "lcu_normalization": _OAA_NORMALIZATION,
+        "formal_order": 2 * int(m),
+        "amplitude_amplification": bool(amplitude_amplification),
+        "good_subspace": "branch register all-zero",
+        "postselection": "measure branch register as all-zero",
+        "trotter_step_queries_per_segment": int(per_segment_queries),
+        "trotter_step_queries": int(segments * per_segment_queries),
+        "base_lcu_uses_per_segment": oaa_factor,
+        "registers": {"branch": 0, "system": hamiltonian.num_qubits},
+    }
+
+    if time == 0:
+        system = QuantumRegister(hamiltonian.num_qubits, "system")
+        circuit = QuantumCircuit(system, name="MPF_identity")
+        metadata.update(
+            construction="zero-time-identity",
+            good_subspace="no ancillas",
+            postselection="none",
+            trotter_step_queries_per_segment=0,
+            trotter_step_queries=0,
+        )
+        circuit.metadata = metadata
+        return circuit
+
+    base_step = _build_multiproduct_step_lcu(hamiltonian, step_time, m)
+    if amplitude_amplification:
+        step = build_three_step_oaa(
+            base_step,
+            hamiltonian.num_qubits,
+            name=f"MPF_step_{2 * m}_oaa",
+            gate_label="MPF_step/2",
+        )
+    else:
+        step = base_step
+
+    branch_count = step.num_qubits - hamiltonian.num_qubits
+    branch = QuantumRegister(branch_count, "branch")
     system = QuantumRegister(hamiltonian.num_qubits, "system")
     circuit = QuantumCircuit(branch, system, name=f"MPF-{2 * m}")
-    circuit.append(prepare, branch)
-    for j, (k, coefficient) in enumerate(zip(ks, coefficients, strict=True)):
-        approximation = build_trotter_circuit(
-            hamiltonian, time, reps=k * segments, order=2
-        ).to_gate(label=f"S2^{k * segments}")
-        circuit.append(
-            approximation.control(len(branch), ctrl_state=j), [*branch, *system]
-        )
-        if coefficient < 0:
-            append_phase_on_index(circuit, branch, j, np.pi)
-    circuit.append(prepare.inverse(), branch)
-    circuit.metadata = {
-        "algorithm": "multiproduct",
-        "m": int(m),
-        "exponents": ks,
-        "segments": int(segments),
-        "coefficients": coefficients.tolist(),
-        "lcu_scale": scale,
-        "formal_order": 2 * int(m),
-        "postselection": "measure branch register as all-zero",
-    }
+    step_gate = step.to_gate(label=f"MPF step x{oaa_factor}")
+    for _ in range(segments):
+        circuit.append(step_gate, [*branch, *system])
+    metadata["registers"]["branch"] = branch_count
+    circuit.metadata = metadata
     return circuit
