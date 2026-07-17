@@ -72,7 +72,11 @@ def _bessel_parity_tail_bound(abs_time: float, first_omitted_degree: int) -> flo
         + first_omitted_degree * math.log(abs_time / 2)
         - float(gammaln(first_omitted_degree + 1))
     )
-    return 0.0 if log_bound < math.log(np.finfo(float).tiny) else math.exp(log_bound)
+    if log_bound < math.log(np.finfo(float).tiny):
+        return 0.0
+    if log_bound >= math.log(np.finfo(float).max):
+        return math.inf
+    return math.exp(log_bound)
 
 
 def _jacobi_anger_polynomials(

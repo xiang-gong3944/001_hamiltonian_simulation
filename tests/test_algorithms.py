@@ -619,15 +619,14 @@ def test_multiproduct_consumers_use_m_parameter():
     result = compare_with_exact(
         hamiltonian, 0.1, method="multiproduct", reps=1, mpf_m=3
     )
-    branch_bits = 2
-    base_rotations = (
-        (2 * hamiltonian.term_count - 1)
-        * parameters["mpf_segments"]
-        * sum(NEW_MPF_EXPONENTS[3])
-    )
-    assert estimate.rotation_count == base_rotations * 2**branch_bits + 2 * (
-        2**branch_bits - 1
-    )
+    # Mirrors the analytical model: per segment one robust-OAA round applies
+    # SELECT three times (doubled rotations through the branch flag) and
+    # PREPARE six times over ceil(log2(m + 2)) branch qubits.
+    branch_bits = 3  # m + 2 = 5 branches, including identity padding
+    select_rotations = (2 * hamiltonian.term_count - 1) * sum(NEW_MPF_EXPONENTS[3])
+    expected_per_segment = 3 * 2 * select_rotations + 6 * (2**branch_bits - 1)
+    assert estimate.rotation_count == parameters["mpf_segments"] * expected_per_segment
+    assert estimate.toffoli_count > 0
     assert result["fidelity"] > 0.99
 
 
@@ -660,3 +659,97 @@ def test_multiproduct_schedule_propagates_through_consumers():
 def test_benchmark_config_rejects_unsupported_m():
     with pytest.raises(ValueError, match="between 2 and 15"):
         BenchmarkConfig(mpf_m=16)
+
+
+def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
+    from hamiltonian_resources import PauliHamiltonian, suzuki_commutator_bounds
+
+    hamiltonian = PauliHamiltonian.from_terms(
+        2, [("ZI", 0.7), ("IZ", -0.2), ("ZZ", 0.4)]
+    )
+    w1, w2 = suzuki_commutator_bounds(hamiltonian)
+    parameters = choose_parameters(
+        hamiltonian, BenchmarkConfig(time=5.0, target_error=1e-6)
+    )
+
+    assert w1 == 0.0 and w2 == 0.0
+    assert parameters["trotter_reps"] == 1
+    assert parameters["mpf_segments"] == 1
+
+
+def test_suzuki_commutator_bounds_scale_linearly_for_tfim():
+    from hamiltonian_resources import suzuki_commutator_bounds
+
+    _, w2_small = suzuki_commutator_bounds(transverse_field_ising(8, field=0.7))
+    _, w2_large = suzuki_commutator_bounds(transverse_field_ising(16, field=0.7))
+
+    # Nearest-neighbour chains have extensive (O(n)) commutator prefactors,
+    # unlike the O(n^3) growth of the loose (alpha*t)^3 proxy.
+    assert 1.5 < w2_large / w2_small < 2.5
+
+
+def test_chosen_trotter_reps_meet_the_error_budget():
+    hamiltonian = transverse_field_ising(3, field=0.7)
+    config = BenchmarkConfig(time=0.5, target_error=1e-3)
+    reps = choose_parameters(hamiltonian, config)["trotter_reps"]
+    result = compare_with_exact(
+        hamiltonian, 0.5, method="trotter", reps=reps, trotter_order=2
+    )
+
+    algorithm_budget = config.target_error * (1 - config.synthesis_error_fraction)
+    assert result["state_error"] <= algorithm_budget
+
+
+def test_chosen_mpf_segments_meet_the_error_budget():
+    hamiltonian = transverse_field_ising(3, field=0.7)
+    config = BenchmarkConfig(time=0.5, target_error=1e-3, mpf_m=2)
+    segments = choose_parameters(hamiltonian, config)["mpf_segments"]
+    result = compare_with_exact(
+        hamiltonian, 0.5, method="multiproduct", reps=segments, mpf_m=2
+    )
+
+    algorithm_budget = config.target_error * (1 - config.synthesis_error_fraction)
+    assert result["state_error"] <= algorithm_budget
+
+
+def test_analytical_qsvt_model_includes_amplification_and_toffolis():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    config = BenchmarkConfig(time=0.5, target_error=1e-3)
+    degree = choose_parameters(hamiltonian, config)["qsvt_degree"]
+    estimate = estimate_resources_analytically(hamiltonian, config, "qsvt")
+
+    index_bits = 2
+    queries = 3 * ((degree - 1) + degree)
+    phase_slots = 3 * (degree + degree + 1)
+    expected_rotations = 2 * queries * (2**index_bits - 1) + 2 * phase_slots
+    assert estimate.rotation_count == expected_rotations
+    assert estimate.toffoli_count > queries  # SELECT control ladders dominate
+    assert estimate.t_count > estimate.rotation_count
+
+
+def test_new_and_legacy_schedules_have_comparable_accuracy():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    errors = {
+        schedule: compare_with_exact(
+            hamiltonian,
+            0.3,
+            method="multiproduct",
+            reps=1,
+            mpf_m=3,
+            mpf_schedule=schedule,
+        )["state_error"]
+        for schedule in ("new", "legacy")
+    }
+
+    # The cheaper 'new' exponent table may lose a small constant factor in
+    # accuracy but must stay within one order of magnitude of 'legacy'.
+    assert errors["new"] < 10 * errors["legacy"]
+    assert errors["new"] < 1e-5
+
+
+def test_qsvt_degree_handles_large_alpha_time_without_overflow():
+    from hamiltonian_resources import estimate_qsvt_degree
+
+    degree = estimate_qsvt_degree(3.0e4, 1e-3)
+    assert degree % 2 == 1
+    assert degree > 3.0e4  # Jacobi--Anger needs q > alpha*t before decay

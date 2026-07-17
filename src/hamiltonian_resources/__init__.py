@@ -21,7 +21,7 @@ from .qsvt import (
 )
 from .resources import ResourceEstimate, count_circuit_resources
 from .simulation import compare_with_exact
-from .trotter import build_trotter_circuit
+from .trotter import build_trotter_circuit, suzuki_commutator_bounds
 
 __all__ = [
     "BenchmarkConfig",
@@ -41,6 +41,7 @@ __all__ = [
     "heisenberg_chain",
     "multiproduct_coefficients",
     "optimal_mpf_exponents",
+    "suzuki_commutator_bounds",
     "synthesize_hamsim_phases",
     "transverse_field_ising",
 ]

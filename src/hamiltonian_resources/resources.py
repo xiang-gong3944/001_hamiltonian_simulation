@@ -11,6 +11,15 @@ from qiskit import QuantumCircuit, transpile
 
 @dataclass(frozen=True)
 class ResourceEstimate:
+    """Gate counts with explicit synthesis assumptions.
+
+    ``toffoli_count`` is the number of temporary-AND (Toffoli-equivalent)
+    compute/uncompute pairs used by multi-controlled gates in the analytical
+    model; their T cost (``T_PER_AND`` each) is already included in
+    ``t_count``.  Transpiled counts leave it at zero because the Clifford+T
+    cost is then taken from the compiled rotations directly.
+    """
+
     algorithm: str
     num_qubits: int
     cnot_count: int
@@ -19,9 +28,19 @@ class ResourceEstimate:
     depth: int
     counting_mode: str = "transpiled"
     rotation_synthesis_error: float = 1e-10
+    toffoli_count: int = 0
 
     def as_dict(self) -> dict[str, int | float | str]:
         return asdict(self)
+
+
+#: T cost of one temporary-AND compute/uncompute pair (Gidney, arXiv:1709.06648).
+T_PER_AND = 4
+
+
+def multicontrol_and_pairs(controls: int) -> int:
+    """Temporary-AND pairs needed to reduce a multi-controlled gate to one control."""
+    return max(0, int(controls) - 1)
 
 
 def _is_multiple(angle: float, unit: float, atol: float = 1e-10) -> bool:
