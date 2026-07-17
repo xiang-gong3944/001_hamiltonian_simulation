@@ -131,13 +131,12 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 ## 比較上の重要な前提
 
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
-2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。
-3. **固定誤差の次数選択**: `choose_parameters` は比較可能な保守的スケーリング proxy であり、ハミルトニアン固有の厳密誤差上界ではありません。小規模では `compare_with_exact` で校正してください。
+2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。解析モデルでは多重制御ゲートの Toffoli 相当コストも temporary-AND（1 対あたり 4 T）で `t_count` に計上し、`toffoli_count` 列に対数を保存します。
+3. **固定誤差の次数選択**: `choose_parameters` は次数 1・2 の積公式に対して、対象ハミルトニアンの入れ子交換子から計算した厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`（Childs–Su–Tran–Wiebe–Zhu, PRX 11, 011020 (2021)）を使います。局所ハミルトニアンでは `W2 = O(n)` であり、緩い 1-norm proxy `(alpha t)^3`（TFIM では `O(n^3)`）と違って QSVT の厳密な Jacobi–Anger 次数と同じ「タイトさ」で比較できます。MPF の segment 数は `alpha_eff = min(alpha, W2^(1/3))` による交換子校正 proxy で、これは証明付き上界ではありません。小規模では `compare_with_exact` で校正してください（テスト `test_chosen_*_meet_the_error_budget` が予算充足を検証します）。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
 5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。metadataにはschedule、係数1-norm、padding、論理Gate数、controlled-`U2` query数を保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
-7. **QSVT解析コストの現状**: `transpile_circuits=True`は新しいQSVT回路全体を数えますが、既定の大規模向け解析式にはquadrature抽出とOAAの定数がまだ反映されていません。QSVTの解析リソース値を最終比較に使うのは、次のリソースモデル整理後とします。
-8. **MPF解析コストの現状**: `transpile_circuits=True`はsegmentごとのLCUとOAAを含む具体回路を数えます。既定の解析式と`choose_parameters`はlegacy estimateであり、新しいsegment構成、normalization 2、OAA factor 3をまだ反映していません。
+7. **解析コストと具体回路の対応**: 既定の解析式は具体回路の構造（QSVT の quadrature 抽出、cos/sin LCU、3-step OAA、MPF の identity padding・branch 幅・segment ごとの OAA factor 3）を反映します。したがって 3 手法とも「決定的動作あたり」の比較です。ただし controlled 応答回路については、`V` と `V^dagger` が block-encoding query を共有し projector 位相だけを選択する効率的コンパイルを仮定します。`transpile_circuits=True` は Qiskit の汎用 `.control()` 分解を使うため、これよりかなり大きな数値になります（校正時はこの差に注意）。
 
 ## テスト
 
