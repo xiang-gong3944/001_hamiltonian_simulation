@@ -1,144 +1,390 @@
-"""QSVT/QSP circuits built around a Pauli-LCU block encoding."""
+"""QSVT Hamiltonian simulation using a Pauli-LCU block encoding.
+
+The phase solver and the circuit use different conventions.  ``pyqsp``'s
+``sym_qsp`` solver places the requested real polynomial in the imaginary part
+of the Wx response.  We first convert the phases to the QSVT reflection
+convention and then extract that imaginary part coherently with ``V`` and
+``V.inverse()``.  Keeping those steps explicit prevents a phase list from
+silently being interpreted in the wrong convention.
+"""
 
 from __future__ import annotations
 
+import contextlib
+import io
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
+from scipy.special import gammaln, jv
 
-from .circuit_utils import append_zero_projector_phase, pauli_lcu_oracles
+from .circuit_utils import (
+    build_block_encoding,
+    build_three_step_oaa,
+    zero_projector_phase_gate,
+)
 from .hamiltonians import PauliHamiltonian
 
 
-def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
-    """Practical Jacobi-Anger truncation degree for Hamiltonian simulation.
+@dataclass(frozen=True)
+class HamiltonianSimulationPhases:
+    """Auditable cosine/sine phases for one Hamiltonian-simulation time.
 
-    The returned odd integer follows the asymptotic optimal query scaling
-    O(alpha*t + log(1/epsilon)). It is a sizing heuristic; phase synthesis and
-    a posteriori polynomial validation determine the actual approximation.
+    ``cosine`` and ``sine`` are already converted from pyQSP's Wx convention
+    to projector-phase QSVT angles.  Both polynomial approximations use the
+    same ``scale`` so their relative normalization is preserved by the final
+    linear combination.
     """
-    if alpha_time < 0 or not 0 < epsilon < 1:
-        raise ValueError("require alpha_time >= 0 and 0 < epsilon < 1")
-    degree = math.ceil(alpha_time + 1.5 * math.log(2 / epsilon))
-    return degree if degree % 2 else degree + 1
+
+    cosine: tuple[float, ...]
+    sine: tuple[float, ...]
+    alpha_time: float
+    epsilon: float
+    scale: float
+    cosine_tail_bound: float
+    sine_tail_bound: float
+    cosine_phase_residual: float
+    sine_phase_residual: float
+
+    @property
+    def cosine_degree(self) -> int:
+        return len(self.cosine) - 1
+
+    @property
+    def sine_degree(self) -> int:
+        return len(self.sine) - 1
+
+
+def _bessel_parity_tail_bound(abs_time: float, first_omitted_degree: int) -> float:
+    """Bound one parity tail of the Jacobi--Anger expansion.
+
+    For q >= |t|-1, the factorial Bessel bound gives
+    2 sum_l |J_{q+2l}(t)| <= (8/3) (|t|/2)^q / q!.
+    """
+    if abs_time == 0:
+        return 0.0
+    if first_omitted_degree < abs_time - 1:
+        return math.inf
+    log_bound = (
+        math.log(8 / 3)
+        + first_omitted_degree * math.log(abs_time / 2)
+        - float(gammaln(first_omitted_degree + 1))
+    )
+    if log_bound < math.log(np.finfo(float).tiny):
+        return 0.0
+    if log_bound >= math.log(np.finfo(float).max):
+        return math.inf
+    return math.exp(log_bound)
+
+
+def _jacobi_anger_polynomials(
+    alpha_time: float, tail_budget: float, scale: float
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Return equally scaled Chebyshev coefficients for cosine and sine."""
+    abs_time = abs(alpha_time)
+    truncation_order = 1
+    while True:
+        cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
+        sine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
+        if cosine_bound <= tail_budget and sine_bound <= tail_budget:
+            break
+        truncation_order += 1
+        if truncation_order > 100_000:
+            raise RuntimeError("failed to find a Jacobi-Anger truncation order")
+
+    cosine = np.zeros(2 * truncation_order + 1)
+    cosine[0] = jv(0, alpha_time)
+    for k in range(1, truncation_order + 1):
+        cosine[2 * k] = 2 * ((-1) ** k) * jv(2 * k, alpha_time)
+
+    sine = np.zeros(2 * truncation_order + 2)
+    for k in range(truncation_order + 1):
+        sine[2 * k + 1] = 2 * ((-1) ** k) * jv(2 * k + 1, alpha_time)
+
+    return scale * cosine, scale * sine, scale * cosine_bound, scale * sine_bound
+
+
+def _qsp_to_qsvt_angles(phases: Sequence[float]) -> np.ndarray:
+    """Convert Wx-QSP phases to the QSVT reflection convention.
+
+    This is the phase map in Appendix A.2 of Martyn et al., arXiv:2105.02859.
+    """
+    converted = np.asarray(phases, dtype=float).copy()
+    degree = len(converted) - 1
+    if degree < 1:
+        raise ValueError("at least two QSP phases are required")
+    converted[0] += (2 * degree - 1) * np.pi / 4
+    converted[1:degree] -= np.pi / 2
+    converted[degree] -= np.pi / 4
+    return converted
+
+
+def _solve_symmetric_phases(coefficients: np.ndarray, tolerance: float) -> tuple[np.ndarray, float]:
+    """Solve phases and verify the imaginary Wx response on a scalar grid."""
+    try:
+        from pyqsp import angle_sequence, response
+    except ImportError as exc:
+        raise ImportError("install the optional dependency with: pip install -e .[qsp]") from exc
+
+    polynomial = np.polynomial.chebyshev.Chebyshev(coefficients)
+    # pyQSP currently writes iteration diagnostics to stdout.
+    with contextlib.redirect_stdout(io.StringIO()):
+        qsp_phases, _, _ = angle_sequence.QuantumSignalProcessingPhases(
+            polynomial,
+            method="sym_qsp",
+            chebyshev_basis=True,
+        )
+    grid = np.cos(np.pi * np.arange(2049) / 2048)
+    values = response.ComputeQSPResponse(
+        grid, qsp_phases, signal_operator="Wx", sym_qsp=True
+    )["pdat"]
+    residual = float(np.max(np.abs(values.imag - polynomial(grid))))
+    if residual > tolerance:
+        raise RuntimeError(
+            f"pyQSP phase reconstruction residual {residual:.3e} exceeds {tolerance:.3e}"
+        )
+    return _qsp_to_qsvt_angles(qsp_phases), residual
+
+
+def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
+    """Return the larger Jacobi--Anger component degree for a safe baseline."""
+    if not np.isfinite(alpha_time) or alpha_time < 0 or not 0 < epsilon < 0.5:
+        raise ValueError("require finite alpha_time >= 0 and 0 < epsilon < 1/2")
+    if alpha_time == 0:
+        return 0
+    source_budget = epsilon / 18
+    _, sine, _, _ = _jacobi_anger_polynomials(alpha_time, source_budget, 1 - source_budget)
+    return len(sine) - 1
 
 
 def synthesize_hamsim_phases(
     alpha_time: float,
     epsilon: float,
-    component: str,
-) -> tuple[np.ndarray, float]:
-    """Synthesize symmetric-QSP phases for cosine or sine using ``pyqsp``.
+) -> HamiltonianSimulationPhases:
+    """Synthesize a common-scale cosine/sine phase pair.
 
-    Hamiltonian evolution is cos(alpha*t*x)-i sin(alpha*t*x); definite parity
-    requires synthesizing its even and odd components separately. The returned
-    scale (<1) prevents boundary saturation. Combine both components with one
-    additional LCU qubit when a fully coherent propagator is required.
+    The total target error is split between Jacobi--Anger truncation, the
+    boundary safety scale, and numerical phase reconstruction.  The resulting
+    scalar response is checked a posteriori before the phase set is returned.
     """
-    if component not in {"cos", "sin"}:
-        raise ValueError("component must be 'cos' or 'sin'")
-    try:
-        from pyqsp import angle_sequence
-        from pyqsp.poly import PolyTaylorSeries
-    except ImportError as exc:
-        raise ImportError("install the optional dependency with: pip install -e .[qsp]") from exc
+    if not np.isfinite(alpha_time) or alpha_time == 0:
+        raise ValueError("alpha_time must be finite and nonzero")
+    if not 0 < epsilon < 0.5:
+        raise ValueError("epsilon must lie in (0, 1/2)")
 
-    degree = estimate_qsvt_degree(alpha_time, epsilon)
-    if component == "cos" and degree % 2:
-        degree += 1
-    if component == "sin" and degree % 2 == 0:
-        degree += 1
-    scale = 1.0 - min(0.1, epsilon / 4)
-    function = np.cos if component == "cos" else np.sin
-    polynomial = PolyTaylorSeries().taylor_series(
-        func=lambda x: function(alpha_time * x),
-        degree=degree,
-        max_scale=scale,
-        chebyshev_basis=True,
-        cheb_samples=max(2 * degree, 20),
+    source_budget = epsilon / 18
+    scale = 1.0 - source_budget
+    cosine_poly, sine_poly, cosine_tail, sine_tail = _jacobi_anger_polynomials(
+        alpha_time, source_budget, scale
     )
-    phases, _, _ = angle_sequence.QuantumSignalProcessingPhases(
-        polynomial, method="sym_qsp", chebyshev_basis=True
+    cosine, cosine_residual = _solve_symmetric_phases(cosine_poly, source_budget)
+    sine, sine_residual = _solve_symmetric_phases(sine_poly, source_budget)
+    return HamiltonianSimulationPhases(
+        cosine=tuple(float(value) for value in cosine),
+        sine=tuple(float(value) for value in sine),
+        alpha_time=float(alpha_time),
+        epsilon=float(epsilon),
+        scale=scale,
+        cosine_tail_bound=cosine_tail,
+        sine_tail_bound=sine_tail,
+        cosine_phase_residual=cosine_residual,
+        sine_phase_residual=sine_residual,
     )
-    return np.asarray(phases, dtype=float), scale
 
 
-def build_qsvt_circuit(
+def _append_exact_projector_phase(
+    circuit: QuantumCircuit, ancillas: QuantumRegister, phi: float
+) -> None:
+    """Append exp(i phi (2 Pi-I)), retaining its global phase."""
+    circuit.global_phase -= float(phi)
+    phase = zero_projector_phase_gate(
+        len(ancillas),
+        2 * float(phi),
+        name="QSVT_PROJECTOR_PHASE",
+    )
+    circuit.append(phase, ancillas)
+
+
+def _build_qsvt_response_circuit(
     hamiltonian: PauliHamiltonian,
     phases: Sequence[float],
 ) -> QuantumCircuit:
-    """Build the QSVT alternating walk/projector-phase circuit.
-
-    ``phases`` must match the Wx/symmetric-QSP convention. The circuit contains
-    PREPARE, SELECT, reflections, and phase rotations explicitly; it does not
-    construct or exponentiate the Hamiltonian matrix.
-    """
+    """Build the complex QSVT response before quadrature extraction."""
     phase_values = np.asarray(phases, dtype=float)
-    if phase_values.ndim != 1 or len(phase_values) < 2:
-        raise ValueError("at least two one-dimensional QSP phases are required")
-    prepare, select = pauli_lcu_oracles(hamiltonian)
-    select_gate = select.to_gate(label="SELECT")
-    index = QuantumRegister(prepare.num_qubits, "index")
+    if phase_values.ndim != 1 or len(phase_values) < 2 or not np.isfinite(phase_values).all():
+        raise ValueError("phases must be a finite one-dimensional sequence of length at least two")
+
+    block_encoding = build_block_encoding(hamiltonian)
+    index_count = block_encoding.num_qubits - hamiltonian.num_qubits
+    index = QuantumRegister(index_count, "index")
     system = QuantumRegister(hamiltonian.num_qubits, "system")
-    circuit = QuantumCircuit(index, system, name=f"QSVT-d{len(phase_values)-1}")
+    circuit = QuantumCircuit(index, system, name=f"QSVT-response-d{len(phase_values)-1}")
 
-    # Projector phases are A exp(i*2phi |0><0|) A^dagger, up to global phase.
-    def projector_phase(phi: float) -> None:
-        circuit.append(prepare.inverse(), index)
-        append_zero_projector_phase(circuit, index, 2 * float(phi))
-        circuit.append(prepare, index)
-
-    circuit.append(prepare, index)
-    projector_phase(phase_values[0])
+    _append_exact_projector_phase(circuit, index, phase_values[0])
     for phi in phase_values[1:]:
-        circuit.append(select_gate, [*index, *system])
-        # Reflection 2|G><G|-I (the ignored global sign is QSP-convention safe).
-        circuit.append(prepare.inverse(), index)
-        append_zero_projector_phase(circuit, index, np.pi)
-        circuit.append(prepare, index)
-        projector_phase(phi)
-    circuit.append(prepare.inverse(), index)
+        circuit.compose(block_encoding, [*index, *system], inplace=True)
+        _append_exact_projector_phase(circuit, index, phi)
+    return circuit
+
+
+def _build_qsvt_component_circuit(
+    hamiltonian: PauliHamiltonian,
+    phases: Sequence[float],
+    *,
+    component: str,
+) -> QuantumCircuit:
+    """Extract the real target polynomial from a symmetric-QSP response."""
+    if component not in {"cos", "sin"}:
+        raise ValueError("component must be 'cos' or 'sin'")
+    response = _build_qsvt_response_circuit(hamiltonian, phases).to_gate(
+        label=f"V_{component}"
+    )
+    index_count = response.num_qubits - hamiltonian.num_qubits
+    quadrature = QuantumRegister(1, "quadrature")
+    index = QuantumRegister(index_count, "index")
+    system = QuantumRegister(hamiltonian.num_qubits, "system")
+    circuit = QuantumCircuit(quadrature, index, system, name=f"QSVT_{component}")
+
+    circuit.h(quadrature)
+    targets = [*index, *system]
+    circuit.append(response.control(1, ctrl_state=0), [*quadrature, *targets])
+    circuit.append(response.inverse().control(1, ctrl_state=1), [*quadrature, *targets])
+    # (-i V + i V^dagger)/2 extracts Im(V)'s selected block.
+    circuit.z(quadrature)
+    circuit.global_phase -= np.pi / 2
+    circuit.h(quadrature)
     circuit.metadata = {
-        "algorithm": "qsvt",
-        "degree": len(phase_values) - 1,
-        "alpha": hamiltonian.alpha,
-        "phase_convention": "Wx symmetric QSP; projector global phases omitted",
-        "postselection": "index register all-zero selects the transformed block",
+        "algorithm": "qsvt-component",
+        "component": component,
+        "degree": len(phases) - 1,
+        "phase_convention": "QSVT reflection angles converted from pyQSP Wx/sym_qsp",
+        "target_quadrature": "imaginary",
+        "postselection": "quadrature and index registers all-zero",
     }
     return circuit
+
+
+def _build_hamiltonian_lcu_circuit(
+    hamiltonian: PauliHamiltonian,
+    phases: HamiltonianSimulationPhases,
+) -> QuantumCircuit:
+    """Build the pre-amplification block encoding of s exp(-iHt)/2."""
+    cosine = _build_qsvt_component_circuit(
+        hamiltonian, phases.cosine, component="cos"
+    ).to_gate(label="QSVT_cos")
+    sine = _build_qsvt_component_circuit(
+        hamiltonian, phases.sine, component="sin"
+    ).to_gate(label="QSVT_sin")
+    component = QuantumRegister(1, "component")
+    quadrature = QuantumRegister(1, "quadrature")
+    index_count = cosine.num_qubits - hamiltonian.num_qubits - 1
+    index = QuantumRegister(index_count, "index")
+    system = QuantumRegister(hamiltonian.num_qubits, "system")
+    circuit = QuantumCircuit(
+        component, quadrature, index, system, name="QSVT_hamsim_unamplified"
+    )
+
+    targets = [*quadrature, *index, *system]
+    circuit.h(component)
+    circuit.append(cosine.control(1, ctrl_state=0), [*component, *targets])
+    circuit.append(sine.control(1, ctrl_state=1), [*component, *targets])
+    circuit.sdg(component)
+    circuit.h(component)
+
+    base_queries = 2 * (phases.cosine_degree + phases.sine_degree)
+    circuit.metadata = {
+        "algorithm": "qsvt-hamiltonian-simulation",
+        "construction": "explicit-cos-sin-lcu",
+        "cosine_degree": phases.cosine_degree,
+        "sine_degree": phases.sine_degree,
+        "alpha": hamiltonian.alpha,
+        "alpha_time": phases.alpha_time,
+        "epsilon": phases.epsilon,
+        "polynomial_scale": phases.scale,
+        "block_scale": 2 / phases.scale,
+        "amplitude_amplification": False,
+        "good_subspace": "component, quadrature, and index registers all-zero",
+        "registers": {
+            "component": 1,
+            "quadrature": 1,
+            "index": index_count,
+            "system": hamiltonian.num_qubits,
+        },
+        "base_block_encoding_queries": base_queries,
+        "base_circuit_uses": 1,
+    }
+    return circuit
+
+
+def _apply_three_step_oaa(
+    base: QuantumCircuit,
+    system_qubits: int,
+) -> QuantumCircuit:
+    """Apply one robust OAA round to a block with amplitude close to 1/2."""
+    amplified = build_three_step_oaa(
+        base,
+        system_qubits,
+        name="QSVT_hamsim_oaa",
+        gate_label="U_hamsim/2",
+    )
+
+    metadata = dict(base.metadata or {})
+    metadata.update(
+        amplitude_amplification=True,
+        block_scale=1.0,
+        base_circuit_uses=3,
+        base_block_encoding_queries=3 * int(metadata["base_block_encoding_queries"]),
+        oaa_sequence="-U R U^dagger R U",
+    )
+    amplified.metadata = metadata
+    return amplified
 
 
 def build_hamiltonian_qsvt_circuit(
     hamiltonian: PauliHamiltonian,
-    cosine_phases: Sequence[float],
-    sine_phases: Sequence[float],
+    time: float,
+    epsilon: float,
+    *,
+    amplitude_amplification: bool = True,
 ) -> QuantumCircuit:
-    """Coherently combine even/odd QSVT components for exp(-iHt).
+    """Build a coherent QSVT approximation of ``exp(-i H time)``.
 
-    A branch Hadamard and postselection implement (U_cos - i U_sin)/2.
-    Component polynomial scaling factors must be accounted for when interpreting
-    the block; oblivious amplitude amplification can replace postselection.
+    Without amplitude amplification the all-zero ancilla block is approximately
+    ``scale * exp(-i H time) / 2``.  The default performs one robust OAA round,
+    producing a near-deterministic block encoding of the propagator.
     """
-    cosine = build_qsvt_circuit(hamiltonian, cosine_phases).to_gate(label="QSVT_cos")
-    sine = build_qsvt_circuit(hamiltonian, sine_phases).to_gate(label="QSVT_sin")
-    branch = QuantumRegister(1, "component")
-    index_count = cosine.num_qubits - hamiltonian.num_qubits
-    index = QuantumRegister(index_count, "index")
-    system = QuantumRegister(hamiltonian.num_qubits, "system")
-    circuit = QuantumCircuit(branch, index, system, name="QSVT_hamsim")
-    circuit.h(branch)
-    circuit.append(cosine.control(1, ctrl_state=0), [*branch, *index, *system])
-    circuit.append(sine.control(1, ctrl_state=1), [*branch, *index, *system])
-    circuit.sdg(branch)
-    circuit.h(branch)
-    circuit.metadata = {
-        "algorithm": "qsvt-hamiltonian-simulation",
-        "cosine_degree": len(cosine_phases) - 1,
-        "sine_degree": len(sine_phases) - 1,
-        "alpha": hamiltonian.alpha,
-        "postselection": "component and index registers all-zero",
-        "lcu_scale": 2.0,
-    }
-    return circuit
+    if not np.isfinite(time):
+        raise ValueError("time must be finite")
+    if not 0 < epsilon < 0.5:
+        raise ValueError("epsilon must lie in (0, 1/2)")
+    if time == 0:
+        system = QuantumRegister(hamiltonian.num_qubits, "system")
+        identity = QuantumCircuit(system, name="QSVT_hamsim_identity")
+        identity.metadata = {
+            "algorithm": "qsvt-hamiltonian-simulation",
+            "construction": "zero-time-identity",
+            "alpha": hamiltonian.alpha,
+            "alpha_time": 0.0,
+            "epsilon": float(epsilon),
+            "polynomial_scale": 1.0,
+            "block_scale": 1.0,
+            "amplitude_amplification": bool(amplitude_amplification),
+            "good_subspace": "no ancillas",
+            "registers": {
+                "component": 0,
+                "quadrature": 0,
+                "index": 0,
+                "system": hamiltonian.num_qubits,
+            },
+            "base_block_encoding_queries": 0,
+            "base_circuit_uses": 0,
+        }
+        return identity
+
+    phases = synthesize_hamsim_phases(hamiltonian.alpha * float(time), epsilon)
+    base = _build_hamiltonian_lcu_circuit(hamiltonian, phases)
+    if not amplitude_amplification:
+        return base
+    return _apply_three_step_oaa(base, hamiltonian.num_qubits)

@@ -10,22 +10,31 @@ import pandas as pd
 
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
+    MPFSchedule,
     build_multiproduct_circuit,
-    multiproduct_coefficients,
     optimal_mpf_exponents,
 )
 from .qsvt import build_hamiltonian_qsvt_circuit, estimate_qsvt_degree
-from .resources import ResourceEstimate, count_circuit_resources, t_cost_for_z_rotation
-from .trotter import build_trotter_circuit
+from .resources import (
+    T_PER_AND,
+    ResourceEstimate,
+    count_circuit_resources,
+    multicontrol_and_pairs,
+    t_cost_for_z_rotation,
+)
+from .trotter import build_trotter_circuit, suzuki_commutator_bounds
 
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
+    """Shared benchmark inputs, including the selected MPF exponent table."""
+
     time: float = 1.0
     target_error: float = 1e-3
     synthesis_error_fraction: float = 0.1
     trotter_order: int = 2
     mpf_m: int = 3
+    mpf_schedule: MPFSchedule = "new"
     optimization_level: int = 1
 
     def __post_init__(self) -> None:
@@ -33,28 +42,43 @@ class BenchmarkConfig:
             raise ValueError("time must be positive and target_error must lie in (0, 1)")
         if not 0 < self.synthesis_error_fraction < 1:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
-        optimal_mpf_exponents(self.mpf_m)
+        optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
 
 
 def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) -> dict[str, int]:
-    """Choose comparable parameters from explicit asymptotic error proxies.
+    """Choose parameters from error bounds of comparable tightness.
 
-    These are conservative sizing rules, not certified instance-specific error
-    bounds. Small instances should be calibrated with ``compare_with_exact``.
-    Product formulas use error proxy (alpha*t)^(p+1)/r^p; an order-2m MPF uses
-    (alpha*t)^(2m+1)/r^(2m). QSVT uses Jacobi-Anger query scaling.
+    Orders 1 and 2 use the rigorous commutator-prefactor bounds W1*t^2/r and
+    W2*t^3/r^2 from ``suzuki_commutator_bounds``; higher even orders fall back
+    to the loose 1-norm proxy (alpha*t)^(p+1)/r^p.  An order-2m MPF uses the
+    commutator-calibrated proxy (alpha_eff*t)^(2m+1)/r^(2m) with
+    alpha_eff = min(alpha, W2^(1/3)), which reproduces the certified order-2
+    rate but extrapolates the higher-order constants; it is a documented
+    heuristic, not a certified bound.  QSVT uses the rigorous Jacobi--Anger
+    truncation degree.  Mixing loose 1-norm bounds for product formulas with
+    the tight QSVT degree would systematically distort crossovers, which is
+    why the product-formula rules are commutator-based.  Calibrate small
+    instances with ``compare_with_exact``.
     """
     budget = config.target_error * (1 - config.synthesis_error_fraction)
-    alpha_time = hamiltonian.alpha * config.time
+    time = config.time
+    alpha_time = hamiltonian.alpha * time
     p = config.trotter_order
-    trotter_reps = max(1, math.ceil(((alpha_time ** (p + 1)) / budget) ** (1 / p)))
+    w1, w2 = suzuki_commutator_bounds(hamiltonian)
+    if p == 1:
+        trotter_reps = math.ceil(w1 * time**2 / budget)
+    elif p == 2:
+        trotter_reps = math.ceil(math.sqrt(w2 * time**3 / budget))
+    else:
+        trotter_reps = math.ceil(((alpha_time ** (p + 1)) / budget) ** (1 / p))
+    alpha_eff = min(hamiltonian.alpha, w2 ** (1 / 3))
     mpf_order = 2 * config.mpf_m
-    mpf_segments = max(
-        1, math.ceil(((alpha_time ** (mpf_order + 1)) / budget) ** (1 / mpf_order))
+    mpf_segments = math.ceil(
+        (((alpha_eff * time) ** (mpf_order + 1)) / budget) ** (1 / mpf_order)
     )
     return {
-        "trotter_reps": trotter_reps,
-        "mpf_segments": mpf_segments,
+        "trotter_reps": max(1, trotter_reps),
+        "mpf_segments": max(1, mpf_segments),
         "qsvt_degree": estimate_qsvt_degree(alpha_time, budget),
     }
 
@@ -65,6 +89,10 @@ def _suzuki_term_occurrences(term_count: int, reps: int, order: int) -> int:
     return (2 * term_count - 1) * (5 ** (order // 2 - 1)) * reps
 
 
+#: CX cost charged per temporary-AND compute/uncompute pair.
+_CX_PER_AND = 6
+
+
 def estimate_resources_analytically(
     hamiltonian: PauliHamiltonian,
     config: BenchmarkConfig,
@@ -72,57 +100,94 @@ def estimate_resources_analytically(
 ) -> ResourceEstimate:
     """Estimate resources without constructing the potentially huge circuit.
 
-    Pauli-rotation ladders are counted directly. Multi-controlled LCU gates use
-    explicit upper-bound-style decomposition models, making this suitable for
-    scaling comparisons rather than hardware-specific compilation claims.
+    The models mirror the structure of the concrete circuits, including the
+    per-segment robust-OAA factor of three for MPF and QSVT, the identity
+    padding branches of the MPF LCU, and the cosine/sine quadrature circuits
+    of QSVT.  Multi-controlled gates are compiled through temporary-AND
+    ladders (``T_PER_AND`` T and ``_CX_PER_AND`` CX per ancilla pair), so
+    Toffoli-type T costs are counted, unlike a rotation-only model.  Controlled
+    QSVT responses assume the efficient compilation in which V and V^dagger
+    share their block-encoding queries and only projector phases are selected
+    on the quadrature/component qubits; the Qiskit ``.control()`` construction
+    used by ``transpile_circuits=True`` is substantially more expensive.
     """
     params = choose_parameters(hamiltonian, config)
-    mpf_exponents = optimal_mpf_exponents(config.mpf_m)
+    mpf_exponents = optimal_mpf_exponents(
+        config.mpf_m,
+        schedule=config.mpf_schedule,
+    )
     weights = [sum(ch != "I" for ch in label) for label, _ in hamiltonian.terms]
     mean_ladder_cx = sum(2 * max(0, w - 1) for w in weights) / len(weights)
     synth_error = config.target_error * config.synthesis_error_fraction
+    term_count = hamiltonian.term_count
 
     if algorithm == "trotter":
         rotations = _suzuki_term_occurrences(
-            hamiltonian.term_count, params["trotter_reps"], config.trotter_order
+            term_count, params["trotter_reps"], config.trotter_order
         )
+        and_pairs = 0
         cnots = math.ceil(rotations * mean_ladder_cx)
         qubits = hamiltonian.num_qubits
     elif algorithm == "multiproduct":
-        branch_bits = max(1, math.ceil(math.log2(config.mpf_m)))
-        base_rotations = sum(
-            _suzuki_term_occurrences(
-                hamiltonian.term_count, k * params["mpf_segments"], 2
-            )
-            for k in mpf_exponents
+        segments = params["mpf_segments"]
+        branches = len(mpf_exponents) + 2  # two cancelling identity branches
+        branch_bits = max(1, math.ceil(math.log2(branches)))
+        flag_pairs = multicontrol_and_pairs(branch_bits)
+        # One robust-OAA round per segment: 3 SELECT, 6 PREPARE, 2 reflections.
+        select_rotations = sum(
+            _suzuki_term_occurrences(term_count, k, 2) for k in mpf_exponents
         )
-        rotations = base_rotations * (2**branch_bits) + 2 * (2**branch_bits - 1)
+        prepare_rotations = 2**branch_bits - 1
+        # Branch flags reduce every S2 rotation to one singly-controlled Rz
+        # (two rotations); signs are one multi-controlled phase per branch.
+        rotations = segments * (3 * 2 * select_rotations + 6 * prepare_rotations)
+        and_pairs = segments * (
+            3 * branches * flag_pairs  # branch flag per SELECT
+            + 3 * branches * flag_pairs  # coefficient/padding sign phases
+            + 2 * flag_pairs  # good-subspace reflections
+        )
         cnots = math.ceil(
-            base_rotations * mean_ladder_cx * (4 * branch_bits + 1)
-            + base_rotations * (2 ** (branch_bits + 1))
-            + 2 * max(0, 2**branch_bits - 2)
+            segments
+            * (
+                3 * select_rotations * (mean_ladder_cx + 2)
+                + 6 * max(0, 2**branch_bits - 2)
+            )
+            + and_pairs * _CX_PER_AND
         )
-        qubits = hamiltonian.num_qubits + branch_bits
+        qubits = hamiltonian.num_qubits + branch_bits + max(1, flag_pairs)
     elif algorithm == "qsvt":
-        index_bits = max(1, math.ceil(math.log2(hamiltonian.term_count)))
-        degree = params["qsvt_degree"]
-        # Two definite-parity sequences (cosine and sine), plus an LCU qubit.
-        prepare_calls = 2 * (4 * degree + 2)
+        index_bits = max(1, math.ceil(math.log2(term_count)))
+        sine_degree = params["qsvt_degree"]
+        cosine_degree = sine_degree - 1
+        # Robust OAA applies the cosine/sine LCU three times.  Within each
+        # component the controlled V/V^dagger pair shares its block-encoding
+        # queries, so queries = 3 * (d_cos + d_sin).
+        queries = 3 * (cosine_degree + sine_degree)
+        prepare_calls = 2 * queries
         prepare_rotations = max(1, 2**index_bits - 1)
-        select_cx = sum(max(1, 8 * index_bits - 6) * w for w in weights)
-        projector_cx = max(0, 2 ** (index_bits + 1) - 4)
-        rotations = prepare_calls * prepare_rotations + 4 * degree + 2
+        phase_slots = 3 * ((cosine_degree + 1) + (sine_degree + 1))
+        # Each slot selects between phi_i and -phi_(d-i) on the quadrature
+        # qubit: two controlled projector phases.
+        rotations = prepare_calls * prepare_rotations + 2 * phase_slots
+        select_pairs = multicontrol_and_pairs(index_bits + 1)  # + component ctrl
+        phase_pairs = multicontrol_and_pairs(index_bits + 2)
+        and_pairs = (
+            queries * term_count * select_pairs
+            + 2 * phase_slots * phase_pairs
+            + 2 * phase_pairs  # OAA reflections
+        )
         cnots = (
             prepare_calls * max(0, 2**index_bits - 2)
-            + 2 * degree * select_cx
-            + 4 * degree * projector_cx
+            + queries * sum(weights)  # flag-controlled Pauli applications
+            + and_pairs * _CX_PER_AND
         )
-        qubits = hamiltonian.num_qubits + index_bits + 1
+        qubits = hamiltonian.num_qubits + index_bits + 2 + select_pairs
     else:
         raise ValueError(f"unknown algorithm: {algorithm}")
 
     per_rotation = synth_error / max(1, rotations)
     t_count = rotations * t_cost_for_z_rotation(0.17320508075688773, per_rotation)
+    t_count += and_pairs * T_PER_AND
     return ResourceEstimate(
         algorithm=algorithm,
         num_qubits=qubits,
@@ -132,6 +197,7 @@ def estimate_resources_analytically(
         depth=-1,
         counting_mode="analytical-model",
         rotation_synthesis_error=synth_error,
+        toffoli_count=int(and_pairs),
     )
 
 
@@ -144,12 +210,13 @@ def benchmark_scaling(
 ) -> pd.DataFrame:
     """Count all algorithms at each system size under one error budget.
 
-    QSVT uses a phase list of the selected length for structural resource
-    counting. Phase values affect T synthesis only weakly through special-angle
-    coincidences; deterministic irrational-looking values avoid such artifacts.
-    Use ``synthesize_hamsim_phases`` when numerical QSP response matters. The
-    default analytical model does not allocate large circuits. Set
-    ``transpile_circuits=True`` to compile concrete circuits for small systems.
+    The default analytical model does not allocate large circuits; it mirrors
+    the amplified circuit structure (robust OAA for MPF and QSVT), so all
+    three algorithms are compared deterministic-to-deterministic.
+    Set ``transpile_circuits=True`` to synthesize real QSP phases and compile
+    the complete circuit for small systems; note that Qiskit's generic
+    ``.control()`` decompositions make that path considerably more expensive
+    than the efficient compilation assumed by the analytical model.
     """
     records: list[dict[str, int | float | str]] = []
     synthesis_error = config.target_error * config.synthesis_error_fraction
@@ -170,11 +237,12 @@ def benchmark_scaling(
                     config.time,
                     config.mpf_m,
                     parameters["mpf_segments"],
+                    schedule=config.mpf_schedule,
                 ),
                 "qsvt": build_hamiltonian_qsvt_circuit(
                     hamiltonian,
-                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
-                    [0.17320508075688773] * (parameters["qsvt_degree"] + 1),
+                    config.time,
+                    config.target_error * (1 - config.synthesis_error_fraction),
                 ),
             }
         for algorithm in ("trotter", "multiproduct", "qsvt"):
@@ -188,12 +256,11 @@ def benchmark_scaling(
                     optimization_level=config.optimization_level,
                 )
             estimate = resource.as_dict()
-            if algorithm == "multiproduct":
-                lcu_scale = float(sum(abs(multiproduct_coefficients(config.mpf_m))))
-                nominal_success_probability = 1 / lcu_scale**2
-            elif algorithm == "qsvt":
+            if algorithm in ("multiproduct", "qsvt"):
+                # Pre-amplification LCU normalization; both circuits apply one
+                # robust-OAA round, so the counted cost is near-deterministic.
                 lcu_scale = 2.0
-                nominal_success_probability = 0.25
+                nominal_success_probability = 1.0
             else:
                 lcu_scale = 1.0
                 nominal_success_probability = 1.0
