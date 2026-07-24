@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
+from itertools import permutations
+from typing import Literal, TypeAlias
 
 import numpy as np
 from qiskit import QuantumCircuit
@@ -13,12 +16,176 @@ from qiskit.synthesis import LieTrotter, SuzukiTrotter
 from .hamiltonians import PauliHamiltonian
 
 
+TrotterPartition: TypeAlias = Literal["auto", "individual", "commuting"]
+_ResolvedTrotterPartition: TypeAlias = Literal["individual", "commuting"]
+
+
+@dataclass(frozen=True)
+class _SuzukiSpecification:
+    """Resolved summands used consistently by synthesis and error analysis."""
+
+    partition: _ResolvedTrotterPartition
+    groups: tuple[SparsePauliOp, ...]
+
+    @property
+    def group_sizes(self) -> tuple[int, ...]:
+        return tuple(int(group.size) for group in self.groups)
+
+
+def _simplify(operator: SparsePauliOp) -> SparsePauliOp:
+    """Combine equal Paulis without discarding small nonzero coefficients."""
+    return operator.simplify(atol=0.0, rtol=0.0)
+
+
 def _pauli_l1(operator: SparsePauliOp) -> float:
-    return float(np.sum(np.abs(operator.simplify().coeffs)))
+    return float(np.sum(np.abs(_simplify(operator).coeffs)))
 
 
 def _commutator(a: SparsePauliOp, b: SparsePauliOp) -> SparsePauliOp:
-    return (a @ b - b @ a).simplify()
+    return _simplify(a @ b - b @ a)
+
+
+def _validate_order(order: int) -> None:
+    if order != 1 and (order < 2 or order % 2):
+        raise ValueError("order must be 1 or a positive even integer")
+
+
+def _validate_partition(partition: TrotterPartition) -> None:
+    if partition not in ("auto", "individual", "commuting"):
+        raise ValueError("partition must be 'auto', 'individual', or 'commuting'")
+
+
+def _individual_terms(operator: SparsePauliOp) -> tuple[SparsePauliOp, ...]:
+    return tuple(
+        SparsePauliOp(pauli, np.asarray([coefficient], dtype=complex))
+        for pauli, coefficient in zip(operator.paulis, operator.coeffs, strict=True)
+    )
+
+
+def _commuting_groups(operator: SparsePauliOp) -> tuple[SparsePauliOp, ...]:
+    """Greedily color the anticommutation graph while preserving term order."""
+    terms = _individual_terms(operator)
+    grouped_terms: list[list[SparsePauliOp]] = []
+    grouped_paulis: list[list] = []
+    for term in terms:
+        pauli = term.paulis[0]
+        for group, paulis in zip(grouped_terms, grouped_paulis, strict=True):
+            if all(pauli.commutes(other) for other in paulis):
+                group.append(term)
+                paulis.append(pauli)
+                break
+        else:
+            grouped_terms.append([term])
+            grouped_paulis.append([pauli])
+    return tuple(_simplify(sum(group[1:], start=group[0])) for group in grouped_terms)
+
+
+def _commutator_prefactors(groups: tuple[SparsePauliOp, ...]) -> tuple[float, float]:
+    """Evaluate the Childs et al. order-1/order-2 prefactors for given summands."""
+    if len(groups) == 1:
+        return 0.0, 0.0
+    w1 = 0.0
+    w2 = 0.0
+    suffix = groups[-1]
+    for gamma in range(len(groups) - 2, -1, -1):
+        head = groups[gamma]
+        inner = _commutator(suffix, head)
+        w1 += _pauli_l1(inner) / 2
+        w2 += _pauli_l1(_commutator(suffix, inner)) / 12
+        w2 += _pauli_l1(_commutator(head, inner)) / 24
+        suffix = _simplify(suffix + head)
+    return w1, w2
+
+
+def _order_commuting_groups(
+    groups: tuple[SparsePauliOp, ...],
+) -> tuple[SparsePauliOp, ...]:
+    """Use a cheap order-2 proxy to choose among small group permutations."""
+    if not 1 < len(groups) <= 3:
+        return groups
+
+    def key(ordering: tuple[int, ...]) -> tuple[float, int, tuple[int, ...]]:
+        ordered = tuple(groups[index] for index in ordering)
+        _, w2 = _commutator_prefactors(ordered)
+        return w2, -int(ordered[-1].size), ordering
+
+    best = min(permutations(range(len(groups))), key=key)
+    return tuple(groups[index] for index in best)
+
+
+@lru_cache(maxsize=None)
+def _resolve_suzuki_specification(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> _SuzukiSpecification:
+    _validate_order(order)
+    _validate_partition(partition)
+    resolved: _ResolvedTrotterPartition
+    resolved = "individual" if partition == "auto" and order <= 2 else partition  # type: ignore[assignment]
+    if partition == "auto" and order >= 4:
+        resolved = "commuting"
+
+    operator = hamiltonian.to_sparse_pauli_op()
+    if resolved == "individual":
+        groups = _individual_terms(operator)
+    else:
+        groups = _order_commuting_groups(_commuting_groups(operator))
+    return _SuzukiSpecification(resolved, groups)
+
+
+@lru_cache(maxsize=None)
+def _suzuki_group_factors(
+    group_count: int,
+    order: int,
+    *,
+    merge_adjacent: bool = False,
+) -> tuple[tuple[int, float], ...]:
+    """Return one Qiskit-compatible Suzuki step as (group, coefficient) factors."""
+    _validate_order(order)
+    if group_count < 1:
+        raise ValueError("group_count must be positive")
+    if order == 1:
+        factors = tuple((group, 1.0) for group in range(group_count))
+    elif order == 2:
+        halves = tuple((group, 0.5) for group in range(group_count - 1))
+        factors = halves + ((group_count - 1, 1.0),) + tuple(reversed(halves))
+    else:
+        reduction = 1 / (4 - 4 ** (1 / (order - 1)))
+        previous = _suzuki_group_factors(group_count, order - 2)
+        outer = tuple((group, coefficient * reduction) for group, coefficient in previous)
+        inner = tuple(
+            (group, coefficient * (1 - 4 * reduction))
+            for group, coefficient in previous
+        )
+        factors = outer + outer + inner + outer + outer
+
+    if not merge_adjacent:
+        return factors
+    merged: list[tuple[int, float]] = []
+    for group, coefficient in factors:
+        if merged and merged[-1][0] == group:
+            merged[-1] = (group, merged[-1][1] + coefficient)
+        else:
+            merged.append((group, coefficient))
+    return tuple(merged)
+
+
+def _suzuki_term_occurrences(
+    hamiltonian: PauliHamiltonian,
+    reps: int,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> int:
+    """Count Pauli rotations in the exact partitioned Qiskit expansion."""
+    if reps < 1:
+        raise ValueError("reps must be positive")
+    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
+    sizes = specification.group_sizes
+    per_step = sum(
+        sizes[group] for group, _ in _suzuki_group_factors(len(sizes), order)
+    )
+    return reps * per_step
 
 
 @lru_cache(maxsize=None)
@@ -38,22 +205,7 @@ def suzuki_commutator_bounds(hamiltonian: PauliHamiltonian) -> tuple[float, floa
     (O(n) for local chains) instead of the loose 1-norm power alpha^(p+1).
     """
     operator = hamiltonian.to_sparse_pauli_op()
-    terms = [
-        SparsePauliOp(pauli, np.array([coeff]))
-        for pauli, coeff in zip(operator.paulis, operator.coeffs)
-    ]
-    w1 = 0.0
-    w2 = 0.0
-    suffix = terms[-1]
-    for gamma in range(len(terms) - 2, -1, -1):
-        head = terms[gamma]
-        inner = _commutator(suffix, head)
-        if inner.size:
-            w1 += _pauli_l1(inner) / 2
-            w2 += _pauli_l1(_commutator(suffix, inner)) / 12
-            w2 += _pauli_l1(_commutator(head, inner)) / 24
-        suffix = (suffix + head).simplify()
-    return w1, w2
+    return _commutator_prefactors(_individual_terms(operator))
 
 
 def build_trotter_circuit(
@@ -63,6 +215,7 @@ def build_trotter_circuit(
     order: int = 2,
     *,
     insert_barriers: bool = False,
+    partition: TrotterPartition = "auto",
 ) -> QuantumCircuit:
     """Build exp(-i H time) as an actual product-formula circuit.
 
@@ -71,16 +224,40 @@ def build_trotter_circuit(
     """
     if reps < 1:
         raise ValueError("reps must be positive")
+    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
     if order == 1:
-        synthesis = LieTrotter(reps=reps, insert_barriers=insert_barriers)
-    elif order >= 2 and order % 2 == 0:
-        synthesis = SuzukiTrotter(order=order, reps=reps, insert_barriers=insert_barriers)
+        synthesis = LieTrotter(
+            reps=reps,
+            insert_barriers=insert_barriers,
+            preserve_order=True,
+        )
     else:
-        raise ValueError("order must be 1 or a positive even integer")
+        synthesis = SuzukiTrotter(
+            order=order,
+            reps=reps,
+            insert_barriers=insert_barriers,
+            preserve_order=True,
+        )
+    evolution_operator: SparsePauliOp | list[SparsePauliOp]
+    if specification.partition == "individual":
+        evolution_operator = hamiltonian.to_sparse_pauli_op()
+    else:
+        evolution_operator = list(specification.groups)
     gate = PauliEvolutionGate(
-        hamiltonian.to_sparse_pauli_op(), time=float(time), synthesis=synthesis
+        evolution_operator,
+        time=float(time),
+        synthesis=synthesis,
     )
     circuit = QuantumCircuit(hamiltonian.num_qubits, name=f"Suzuki-{order}")
     circuit.append(gate, circuit.qubits)
-    return circuit.decompose()
+    circuit = circuit.decompose()
+    circuit.metadata = {
+        **(circuit.metadata or {}),
+        "trotter_order": order,
+        "trotter_reps": reps,
+        "trotter_partition": specification.partition,
+        "trotter_group_count": len(specification.groups),
+        "trotter_group_sizes": specification.group_sizes,
+    }
+    return circuit
 
