@@ -68,6 +68,26 @@ $$
 `choose_parameters` inverts this expression against the algorithmic portion
 of the requested error budget.
 
+The scalar order-four estimate above is specifically the Schubert--Mendl
+Theorem 1 result with centered `s` and with each accumulated base operator
+`B_j` retained until the Pauli coefficient 1-norm is evaluated. It is not the
+general Childs commutator-scaling theorem and it is not Childs Appendix M under
+a different name.
+
+The separate comparison API exposes three diagnostic evaluators:
+
+- `childs_general_commutator_bound`, using a concrete, explicitly labeled
+  relaxation from the proof of the general Childs theorem;
+- `childs_fourth_order_small_prefactor_bound`, implementing Appendix M for its
+  two- and three-summand cases;
+- `schubert_mendl_small_prefactor_bound`, with selectable center `s`, merged or
+  unmerged representation, expanded or combined `B_j`, and Pauli-1 or spectral
+  norm evaluation.
+
+Their exact conventions, equations, coefficient-equality results, and
+standalone benchmark schema are documented in
+[`fourth_order_bound_comparison.md`](fourth_order_bound_comparison.md).
+
 ## Qiskit formula correspondence
 
 Qiskit's `SuzukiTrotter` uses

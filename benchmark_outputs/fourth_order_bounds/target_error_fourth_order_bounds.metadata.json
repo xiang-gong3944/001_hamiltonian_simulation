@@ -1,0 +1,45 @@
+{
+  "config": {
+    "evolution_time": 1.0,
+    "fixed_system_qubits_for_error_sweep": 4,
+    "fixed_target_error_for_size_sweep": 0.001,
+    "heisenberg_parameters": {
+      "coupling": 1.0,
+      "field_z": 0.3
+    },
+    "include_combined_base_diagnostic": true,
+    "merge_adjacent": true,
+    "norm_method": "pauli-l1",
+    "output_directory": "/Users/xisn/Documents/001_hamiltonian_simulation/benchmark_outputs/fourth_order_bounds",
+    "output_formats": [
+      "png",
+      "pdf"
+    ],
+    "segment_count": 1,
+    "system_qubit_values": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "target_error_values": [
+      0.1,
+      0.03,
+      0.01,
+      0.003,
+      0.001
+    ],
+    "transverse_field_ising_parameters": {
+      "coupling": 1.0,
+      "field": 0.7,
+      "periodic": false
+    }
+  },
+  "ratio_denominator_policy": "Childs Appendix M when supported; otherwise the explicit Childs general proof relaxation",
+  "row_count": 190,
+  "schema_version": "1.0",
+  "status_counts": {
+    "ok": 190
+  },
+  "sweep": "target-error"
+}

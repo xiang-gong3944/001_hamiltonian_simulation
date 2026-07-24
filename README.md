@@ -129,6 +129,25 @@ print(estimate.error, estimate.rigorous, estimate.method)
 使います。回路、誤差評価、解析リソース式は同じgroup順序を共有します。詳細は
 [`docs/suzuki_error_bounds.md`](docs/suzuki_error_bounds.md)を参照してください。
 
+## 4次交換子上界の専用比較
+
+同一の4次Suzuki公式に対するChilds一般上界、Childs Appendix M小prefactor上界、
+Schubert--Mendl Theorem 1を比較する独立benchmarkも用意しています。
+
+```powershell
+hamiltonian-bound-comparison run --config fourth_order_comparison_config.json
+```
+
+2項分解ではSchubert--Mendl (`s=6`) がChilds Eq. (M13)の各係数を再現し、比は1に
+なります。3項分解ではChilds Table IIが`s=10`に対応し、通常の中央`s=11`や
+数値的に最小の`s`との差を別々に保存します。Childsの一般定理はbig-O定数を
+指定しないため、数値曲線には論文の証明から得る明示的な緩和を用い、その旨を
+labelとmetadataに記録します。結果は既存のT数・CNOT数plotとは混ぜません。
+この一般緩和と小prefactor上界は交換子ごとの係数vector自体が異なるため、
+Hamiltonianを変えたとき常に同じ1個の定数比になるわけではありません。
+式、規約、CSV schema、計算量、検証結果は
+[`docs/fourth_order_bound_comparison.md`](docs/fourth_order_bound_comparison.md)を参照してください。
+
 QSVT回路は時刻と回路近似誤差を直接指定します。既定では、cos/sinの
 coherent LCUに続けて1回のrobust oblivious amplitude amplificationを行います。
 

@@ -210,3 +210,20 @@ schema `1.0` files.
    model rather than a hardware-specific compilation.
 7. The scaling generator does not form dense Hamiltonian matrices. Use
    `compare_with_exact` only as a separate small-system calibration.
+
+## Separate fourth-order error-bound comparison
+
+The Childs-versus-Schubert--Mendl prefactor experiment is not part of the eight
+algorithm resource sweep and its curves are never mixed with T or CNOT counts.
+Run it independently with:
+
+```bash
+hamiltonian-bound-comparison run --config fourth_order_comparison_config.json
+```
+
+It writes its own CSV schema, metadata, coefficient plots, segment-count plots,
+and ratio plots under `benchmark_outputs/fourth_order_bounds`. The comparison
+retains every Schubert--Mendl center, the conventional centered result, the
+minimizing result, and the Appendix-M validation rows. See
+[`fourth_order_bound_comparison.md`](fourth_order_bound_comparison.md) for the
+precise equations and interpretation.
