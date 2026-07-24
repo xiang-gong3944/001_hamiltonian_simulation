@@ -250,10 +250,15 @@ def _extend_word_polynomial(
 def _theorem_word_weights(
     factors: tuple[tuple[int, float], ...],
     order: int,
+    *,
+    center: int | None = None,
 ) -> list[tuple[tuple[float, ...], dict[tuple[int, ...], float]]]:
     """Collapse Schubert--Mendl weak compositions into repeated group words."""
     factor_count = len(factors)
-    center = math.ceil(factor_count / 2)
+    if center is None:
+        center = math.ceil(factor_count / 2)
+    if not 1 <= center <= factor_count:
+        raise ValueError("center must be an integer in [1, len(factors)]")
     group_count = 1 + max(group for group, _ in factors)
 
     prefixes: list[tuple[float, ...]] = []
