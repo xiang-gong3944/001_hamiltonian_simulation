@@ -11,7 +11,7 @@ from scipy.linalg import expm
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import MPFSchedule, build_multiproduct_circuit
 from .qsvt import build_hamiltonian_qsvt_circuit
-from .trotter import build_trotter_circuit
+from .trotter import TrotterPartition, build_trotter_circuit
 
 
 def zero_state(num_qubits: int) -> np.ndarray:
@@ -33,6 +33,7 @@ def compare_with_exact(
     method: Literal["trotter", "multiproduct", "qsvt"] = "trotter",
     initial_state: np.ndarray | None = None,
     trotter_order: int = 2,
+    trotter_partition: TrotterPartition = "auto",
     reps: int = 1,
     mpf_m: int = 2,
     mpf_schedule: MPFSchedule = "new",
@@ -52,7 +53,13 @@ def compare_with_exact(
     exact = expm(-1j * float(time) * hamiltonian.matrix()) @ psi
 
     if method == "trotter":
-        circuit = build_trotter_circuit(hamiltonian, time, reps, trotter_order)
+        circuit = build_trotter_circuit(
+            hamiltonian,
+            time,
+            reps,
+            trotter_order,
+            partition=trotter_partition,
+        )
         actual = np.asarray(Statevector(psi).evolve(circuit).data)
         success_probability = 1.0
     elif method == "multiproduct":

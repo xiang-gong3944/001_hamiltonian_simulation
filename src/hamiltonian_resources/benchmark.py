@@ -22,7 +22,13 @@ from .resources import (
     multicontrol_and_pairs,
     t_cost_for_z_rotation,
 )
-from .trotter import build_trotter_circuit, suzuki_commutator_bounds
+from .trotter import (
+    TrotterPartition,
+    _suzuki_term_occurrences,
+    build_trotter_circuit,
+    estimate_suzuki_error,
+    suzuki_commutator_bounds,
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class BenchmarkConfig:
     target_error: float = 1e-3
     synthesis_error_fraction: float = 0.1
     trotter_order: int = 2
+    trotter_partition: TrotterPartition = "auto"
     mpf_m: int = 3
     mpf_schedule: MPFSchedule = "new"
     optimization_level: int = 1
@@ -42,16 +49,25 @@ class BenchmarkConfig:
             raise ValueError("time must be positive and target_error must lie in (0, 1)")
         if not 0 < self.synthesis_error_fraction < 1:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
+        if self.trotter_order != 1 and (
+            self.trotter_order < 2 or self.trotter_order % 2
+        ):
+            raise ValueError("trotter_order must be 1 or a positive even integer")
+        if self.trotter_partition not in ("auto", "individual", "commuting"):
+            raise ValueError(
+                "trotter_partition must be 'auto', 'individual', or 'commuting'"
+            )
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
 
 
 def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) -> dict[str, int]:
     """Choose parameters from error bounds of comparable tightness.
 
-    Orders 1 and 2 use the rigorous commutator-prefactor bounds W1*t^2/r and
-    W2*t^3/r^2 from ``suzuki_commutator_bounds``; higher even orders fall back
-    to the loose 1-norm proxy (alpha*t)^(p+1)/r^p.  An order-2m MPF uses the
-    commutator-calibrated proxy (alpha_eff*t)^(2m+1)/r^(2m) with
+    Orders 1 and 2 use the rigorous Childs et al. commutator bounds.  Orders 4
+    and 6 use the rigorous Schubert--Mendl bound when the resolved partition is
+    within the practical work cap; other even orders retain the documented
+    1-norm proxy.  An order-2m MPF uses the commutator-calibrated proxy
+    (alpha_eff*t)^(2m+1)/r^(2m) with
     alpha_eff = min(alpha, W2^(1/3)), which reproduces the certified order-2
     rate but extrapolates the higher-order constants; it is a documented
     heuristic, not a certified bound.  QSVT uses the rigorous Jacobi--Anger
@@ -65,12 +81,14 @@ def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) ->
     alpha_time = hamiltonian.alpha * time
     p = config.trotter_order
     w1, w2 = suzuki_commutator_bounds(hamiltonian)
-    if p == 1:
-        trotter_reps = math.ceil(w1 * time**2 / budget)
-    elif p == 2:
-        trotter_reps = math.ceil(math.sqrt(w2 * time**3 / budget))
-    else:
-        trotter_reps = math.ceil(((alpha_time ** (p + 1)) / budget) ** (1 / p))
+    one_step_error = estimate_suzuki_error(
+        hamiltonian,
+        time,
+        reps=1,
+        order=p,
+        partition=config.trotter_partition,
+    ).error
+    trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
     alpha_eff = min(hamiltonian.alpha, w2 ** (1 / 3))
     mpf_order = 2 * config.mpf_m
     mpf_segments = math.ceil(
@@ -81,12 +99,6 @@ def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) ->
         "mpf_segments": max(1, mpf_segments),
         "qsvt_degree": estimate_qsvt_degree(alpha_time, budget),
     }
-
-
-def _suzuki_term_occurrences(term_count: int, reps: int, order: int) -> int:
-    if order == 1:
-        return term_count * reps
-    return (2 * term_count - 1) * (5 ** (order // 2 - 1)) * reps
 
 
 #: CX cost charged per temporary-AND compute/uncompute pair.
@@ -123,7 +135,10 @@ def estimate_resources_analytically(
 
     if algorithm == "trotter":
         rotations = _suzuki_term_occurrences(
-            term_count, params["trotter_reps"], config.trotter_order
+            hamiltonian,
+            params["trotter_reps"],
+            config.trotter_order,
+            config.trotter_partition,
         )
         and_pairs = 0
         cnots = math.ceil(rotations * mean_ladder_cx)
@@ -135,7 +150,8 @@ def estimate_resources_analytically(
         flag_pairs = multicontrol_and_pairs(branch_bits)
         # One robust-OAA round per segment: 3 SELECT, 6 PREPARE, 2 reflections.
         select_rotations = sum(
-            _suzuki_term_occurrences(term_count, k, 2) for k in mpf_exponents
+            _suzuki_term_occurrences(hamiltonian, k, 2, "individual")
+            for k in mpf_exponents
         )
         prepare_rotations = 2**branch_bits - 1
         # Branch flags reduce every S2 rotation to one singly-controlled Rz
@@ -231,6 +247,7 @@ def benchmark_scaling(
                     config.time,
                     parameters["trotter_reps"],
                     config.trotter_order,
+                    partition=config.trotter_partition,
                 ),
                 "multiproduct": build_multiproduct_circuit(
                     hamiltonian,
@@ -256,6 +273,13 @@ def benchmark_scaling(
                     optimization_level=config.optimization_level,
                 )
             estimate = resource.as_dict()
+            trotter_error = estimate_suzuki_error(
+                hamiltonian,
+                config.time,
+                parameters["trotter_reps"],
+                config.trotter_order,
+                partition=config.trotter_partition,
+            )
             if algorithm in ("multiproduct", "qsvt"):
                 # Pre-amplification LCU normalization; both circuits apply one
                 # robust-OAA round, so the counted cost is near-deterministic.
@@ -275,7 +299,19 @@ def benchmark_scaling(
                     if algorithm == "trotter"
                     else parameters["mpf_segments"]
                     if algorithm == "multiproduct"
-                    else parameters["qsvt_degree"]
+                        else parameters["qsvt_degree"]
+                ),
+                trotter_partition=(
+                    trotter_error.partition if algorithm == "trotter" else None
+                ),
+                trotter_group_count=(
+                    trotter_error.group_count if algorithm == "trotter" else None
+                ),
+                trotter_error_method=(
+                    trotter_error.method if algorithm == "trotter" else None
+                ),
+                trotter_error_rigorous=(
+                    trotter_error.rigorous if algorithm == "trotter" else None
                 ),
             )
             records.append(estimate)
