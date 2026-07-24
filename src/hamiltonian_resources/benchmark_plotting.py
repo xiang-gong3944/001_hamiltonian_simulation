@@ -7,8 +7,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Mapping
 
-import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from .benchmark_suite import METHOD_LABELS, load_benchmark_data
@@ -164,7 +164,9 @@ def create_benchmark_figure(
     if metric not in _METRIC_LABELS:
         raise ValueError("metric must be 't_count' or 'cnot_count'")
     sweep, x_column, context = _plot_context(frame)
-    figure, axis = plt.subplots(figsize=(9.2, 5.8))
+    figure = Figure(figsize=(9.2, 5.8))
+    FigureCanvasAgg(figure)
+    axis = figure.subplots()
     missing_labels: list[str] = []
 
     if summary:
@@ -293,5 +295,5 @@ def plot_saved_benchmark(
                     bbox_inches="tight",
                 )
                 outputs.append(output)
-            plt.close(figure)
+            figure.clear()
     return tuple(outputs)

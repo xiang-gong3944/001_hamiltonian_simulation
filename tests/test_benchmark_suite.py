@@ -9,6 +9,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from hamiltonian_resources import (
     BENCHMARK_COLUMNS,
@@ -173,6 +174,7 @@ def test_full_figures_have_required_labels_scales_and_titles(size_frame, error_f
     size_axis = size_figure.axes[0]
     error_axis = error_figure.axes[0]
 
+    assert isinstance(size_figure.canvas, FigureCanvasAgg)
     assert size_axis.get_yscale() == "log"
     assert [line.get_label() for line in size_axis.lines] == list(METHOD_LABELS)
     assert "target error" in size_axis.get_title()
