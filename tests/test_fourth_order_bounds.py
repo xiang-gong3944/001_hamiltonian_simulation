@@ -133,6 +133,23 @@ def test_local_and_accumulated_bounds_have_required_time_and_segment_scaling():
         assert result.accumulated_error_bound(0.4, segments - 1) > target
 
 
+def test_exact_local_product_formula_error_is_fifth_order():
+    hamiltonian = _two_term_hamiltonian()
+    errors = []
+    for time in (0.2, 0.1):
+        circuit = build_trotter_circuit(
+            hamiltonian,
+            time,
+            1,
+            4,
+            partition="individual",
+        )
+        exact = expm(-1j * time * hamiltonian.matrix())
+        errors.append(float(np.linalg.norm(Operator(circuit).data - exact, 2)))
+
+    assert errors[0] / errors[1] == pytest.approx(2**5, rel=1e-3)
+
+
 def test_three_term_appendix_m_is_s10_while_centered_and_minimum_are_retained():
     problem = build_fourth_order_bound_problem(heisenberg_chain(3, field_z=0.3))
     childs = childs_fourth_order_small_prefactor_bound(problem)
@@ -178,6 +195,45 @@ def test_expanding_bj_triangle_is_explicit_and_can_only_loosen_the_bound():
     assert combined.one_step_coefficient <= expanded.one_step_coefficient
     assert "B_j retained" in combined.diagnostic_message
     assert "B_j expanded" in expanded.diagnostic_message
+
+
+def test_merging_is_recorded_and_representation_dependence_is_measured():
+    hamiltonian = heisenberg_chain(3, field_z=0.3)
+    merged_problem = build_fourth_order_bound_problem(
+        hamiltonian,
+        merge_adjacent=True,
+    )
+    unmerged_problem = build_fourth_order_bound_problem(
+        hamiltonian,
+        merge_adjacent=False,
+    )
+    merged = schubert_mendl_small_prefactor_bound(merged_problem)
+    unmerged = schubert_mendl_small_prefactor_bound(unmerged_problem)
+
+    assert merged_problem.merged_consecutive
+    assert not unmerged_problem.merged_consecutive
+    assert merged_problem.exponential_count == 21
+    assert unmerged_problem.exponential_count == 25
+    assert merged.one_step_coefficient != pytest.approx(unmerged.one_step_coefficient)
+
+
+def test_norm_evaluation_method_isolated_from_symbolic_prefactors():
+    problem = build_fourth_order_bound_problem(heisenberg_chain(3, field_z=0.3))
+    pauli_l1 = schubert_mendl_small_prefactor_bound(
+        problem,
+        center=10,
+        norm_method="pauli-l1",
+    )
+    spectral = schubert_mendl_small_prefactor_bound(
+        problem,
+        center=10,
+        norm_method="spectral",
+    )
+
+    assert _coefficient_map(pauli_l1) == _coefficient_map(spectral)
+    assert spectral.one_step_coefficient <= pauli_l1.one_step_coefficient
+    assert pauli_l1.additional_relaxations
+    assert not spectral.additional_relaxations
 
 
 def test_common_hamiltonian_rescaling_is_fifth_degree_and_preserves_ratios():

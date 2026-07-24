@@ -65,6 +65,7 @@ FOURTH_ORDER_COMPARISON_COLUMNS = (
     "triangle_inequalities_json",
     "additional_relaxations_json",
     "commutator_contributions_json",
+    "symbolic_prefactor_sum",
     "one_step_coefficient_c5",
     "time_step_power",
     "evolution_time",
@@ -73,6 +74,7 @@ FOURTH_ORDER_COMPARISON_COLUMNS = (
     "target_error",
     "required_segment_count",
     "reference_bound_family",
+    "symbolic_prefactor_ratio_to_reference",
     "ratio_to_reference",
     "status",
     "diagnostic_message",
@@ -402,6 +404,9 @@ def _base_record(
         "triangle_inequalities_json": json.dumps(result.triangle_inequalities),
         "additional_relaxations_json": json.dumps(result.additional_relaxations),
         "commutator_contributions_json": _contributions_json(result),
+        "symbolic_prefactor_sum": sum(
+            contribution.prefactor for contribution in result.contributions
+        ),
         "one_step_coefficient_c5": coefficient,
         "time_step_power": result.time_power,
         "evolution_time": config.evolution_time,
@@ -410,6 +415,7 @@ def _base_record(
         "target_error": target_error,
         "required_segment_count": required,
         "reference_bound_family": None,
+        "symbolic_prefactor_ratio_to_reference": None,
         "ratio_to_reference": None,
         "status": result.status,
         "diagnostic_message": result.diagnostic_message,
@@ -437,8 +443,18 @@ def _add_reference_ratios(records: list[dict[str, Any]]) -> None:
             if record["bound_variant"] == "general-proof-relaxation"
         )
         reference_value = reference["one_step_coefficient_c5"]
+        reference_prefactor_sum = reference["symbolic_prefactor_sum"]
         for record in case_records:
             record["reference_bound_family"] = reference["bound_family"]
+            prefactor_sum = record["symbolic_prefactor_sum"]
+            if reference_prefactor_sum == 0:
+                record["symbolic_prefactor_ratio_to_reference"] = (
+                    1.0 if prefactor_sum == 0 else np.inf
+                )
+            else:
+                record["symbolic_prefactor_ratio_to_reference"] = (
+                    prefactor_sum / reference_prefactor_sum
+                )
             value = record["one_step_coefficient_c5"]
             if value is not None and reference_value is not None:
                 if reference_value == 0:
@@ -539,6 +555,7 @@ def validate_fourth_order_comparison_frame(
         "one_step_coefficient_c5",
         "accumulated_error_bound",
         "required_segment_count",
+        "symbolic_prefactor_ratio_to_reference",
         "ratio_to_reference",
     ]
     if successful[required].isna().any().any():
@@ -650,7 +667,7 @@ def create_fourth_order_comparison_figure(
     if sweep == "target-error":
         axis.set_xscale("log")
         axis.invert_xaxis()
-    model = str(subset["hamiltonian_model"].iloc[0])
+    model = str(subset["hamiltonian_model"].iloc[0]).replace("_", " ")
     axis.set_title(f"Fourth-order bound comparison: {model} ({decomposition_case})")
     axis.grid(True, which="both", alpha=0.25)
     axis.legend()

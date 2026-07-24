@@ -67,6 +67,7 @@ def test_expected_appendix_m_ratios_and_center_effects_are_visible(size_frame):
     ].iloc[0]
     assert two_appendix["ratio_to_reference"] == pytest.approx(1.0)
     assert two_s6["ratio_to_reference"] == pytest.approx(1.0)
+    assert two_s6["symbolic_prefactor_ratio_to_reference"] == pytest.approx(1.0)
     assert two_s6["one_step_coefficient_c5"] == pytest.approx(
         two_appendix["one_step_coefficient_c5"]
     )
@@ -86,6 +87,7 @@ def test_expected_appendix_m_ratios_and_center_effects_are_visible(size_frame):
         & (multi["is_minimizing_s"])
     ].iloc[0]
     assert s10["ratio_to_reference"] == pytest.approx(1.0)
+    assert s10["symbolic_prefactor_ratio_to_reference"] == pytest.approx(1.0)
     assert s10["one_step_coefficient_c5"] == pytest.approx(
         appendix["one_step_coefficient_c5"]
     )
