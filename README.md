@@ -60,14 +60,40 @@ src/hamiltonian_resources/
   simulation.py      # 小規模な厳密解との比較
   resources.py       # transpile 後の CX と T 見積り
   benchmark.py       # 固定誤差のパラメータ選択とスケーリング
+  benchmark_suite.py # 8構成の解析スイープ、CSV、再現性metadata
+  benchmark_plotting.py # 保存済みCSVから一貫した図を生成
 notebooks/
   resource_comparison.ipynb
   qsvt_validation.ipynb
   mpf_validation.ipynb
 tests/
 docs/
+  resource_scaling_benchmarks.md # スイープ設定、schema、実行方法
   suzuki_error_bounds.md  # 積公式の分割、厳密誤差上界、fallback
 ```
+
+## 8構成の解析スケーリングbenchmark
+
+Trotter `p=1,2,4,6`、MPF `m=3,5,7`、QSVTを独立に評価する
+benchmark suiteを用意しています。既定の`benchmark_config.json`は開放境界TFIM
+`J=1, h=3, t=1`を使います。
+
+```powershell
+hamiltonian-benchmark generate --config benchmark_config.json --sweep all
+hamiltonian-benchmark plot --data-dir benchmark_outputs --sweep all
+```
+
+生成とplotを続けて行う場合:
+
+```powershell
+hamiltonian-benchmark run --config benchmark_config.json
+```
+
+plotは保存済みCSVだけを読み、resource estimateを再実行しません。
+`generate_summary_plots`または`--summary`を使うと、指定した4つのTrotter次数と
+3つのMPF term数の範囲内でのbest-of-family図も作れます。設定、全CSV列、failure
+row、解析上の仮定は
+[`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)に記載しています。
 
 ## 最小例
 
