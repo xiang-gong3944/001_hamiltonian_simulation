@@ -20,6 +20,13 @@ from .benchmark_suite import (
     save_benchmark_data,
     validate_benchmark_frame,
 )
+from .benchmark_plotting import (
+    FAMILY_COLORS,
+    METHOD_STYLES,
+    SUMMARY_STYLES,
+    create_benchmark_figure,
+    plot_saved_benchmark,
+)
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
     MPFSchedule,
@@ -46,13 +53,16 @@ from .trotter import (
 __all__ = [
     "BenchmarkConfig",
     "BENCHMARK_COLUMNS",
+    "FAMILY_COLORS",
     "HamiltonianSimulationPhases",
     "METHOD_LABELS",
+    "METHOD_STYLES",
     "MPF_TERM_COUNTS",
     "MPFSchedule",
     "PauliHamiltonian",
     "ResourceEstimate",
     "SCHEMA_VERSION",
+    "SUMMARY_STYLES",
     "ScalingBenchmarkConfig",
     "SuzukiErrorEstimate",
     "TrotterPartition",
@@ -63,6 +73,7 @@ __all__ = [
     "build_trotter_circuit",
     "choose_parameters",
     "compare_with_exact",
+    "create_benchmark_figure",
     "count_circuit_resources",
     "estimate_qsvt_degree",
     "estimate_suzuki_error",
@@ -74,6 +85,7 @@ __all__ = [
     "load_benchmark_data",
     "multiproduct_coefficients",
     "optimal_mpf_exponents",
+    "plot_saved_benchmark",
     "suzuki_commutator_bounds",
     "save_benchmark_data",
     "synthesize_hamsim_phases",
