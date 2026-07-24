@@ -65,6 +65,8 @@ notebooks/
   qsvt_validation.ipynb
   mpf_validation.ipynb
 tests/
+docs/
+  suzuki_error_bounds.md  # 積公式の分割、厳密誤差上界、fallback
 ```
 
 ## 最小例
@@ -82,6 +84,24 @@ table = benchmark_scaling(
 )
 print(table[["system_size", "algorithm", "t_count", "cnot_count"]])
 ```
+
+4次・6次 Suzuki 公式では、可換な Pauli 項を同じgroupにまとめた回路と、
+その回路に対応する交換子上界を同時に使用できます。
+
+```python
+from hamiltonian_resources import (
+    BenchmarkConfig, estimate_suzuki_error, transverse_field_ising
+)
+
+H = transverse_field_ising(6, field=0.7)
+config = BenchmarkConfig(trotter_order=4, trotter_partition="auto")
+estimate = estimate_suzuki_error(H, time=0.5, reps=4, order=4)
+print(estimate.error, estimate.rigorous, estimate.method)
+```
+
+`auto` は1次・2次では従来どおり個別Pauli項を使い、4次以上では完全可換groupを
+使います。回路、誤差評価、解析リソース式は同じgroup順序を共有します。詳細は
+[`docs/suzuki_error_bounds.md`](docs/suzuki_error_bounds.md)を参照してください。
 
 QSVT回路は時刻と回路近似誤差を直接指定します。既定では、cos/sinの
 coherent LCUに続けて1回のrobust oblivious amplitude amplificationを行います。
@@ -132,7 +152,7 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。解析モデルでは多重制御ゲートの Toffoli 相当コストも temporary-AND（1 対あたり 4 T）で `t_count` に計上し、`toffoli_count` 列に対数を保存します。
-3. **固定誤差の次数選択**: `choose_parameters` は次数 1・2 の積公式に対して、対象ハミルトニアンの入れ子交換子から計算した厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`（Childs–Su–Tran–Wiebe–Zhu, PRX 11, 011020 (2021)）を使います。局所ハミルトニアンでは `W2 = O(n)` であり、緩い 1-norm proxy `(alpha t)^3`（TFIM では `O(n^3)`）と違って QSVT の厳密な Jacobi–Anger 次数と同じ「タイトさ」で比較できます。MPF の segment 数は `alpha_eff = min(alpha, W2^(1/3))` による交換子校正 proxy で、これは証明付き上界ではありません。小規模では `compare_with_exact` で校正してください（テスト `test_chosen_*_meet_the_error_budget` が予算充足を検証します）。
+3. **固定誤差の次数選択**: `choose_parameters` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。`estimate_suzuki_error(...).rigorous`とbenchmarkの`trotter_error_rigorous`列で両者を区別できます。MPFのsegment数は引き続き`alpha_eff = min(alpha, W2^(1/3))`による交換子校正proxyで、証明付き上界ではありません。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
 5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。metadataにはschedule、係数1-norm、padding、論理Gate数、controlled-`U2` query数を保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
@@ -148,6 +168,8 @@ ruff check src tests
 ## 参考文献
 
 - G. H. Low, V. Kliuchnikov, N. Wiebe, [Well-conditioned multiproduct Hamiltonian simulation](https://arxiv.org/abs/1907.11679)
+- A. M. Childs et al., [Theory of Trotter Error with Commutator Scaling](https://arxiv.org/abs/1912.08854)
+- A. Schubert, C. B. Mendl, [Trotter error with commutator scaling for the Fermi-Hubbard model](https://arxiv.org/abs/2306.10603)
 - A. Gilyén et al., [Quantum singular value transformation and beyond](https://arxiv.org/abs/1806.01838)
 - [Qiskit `PauliEvolutionGate`](https://docs.quantum.ibm.com/api/qiskit/qiskit.circuit.library.PauliEvolutionGate)
 - [pyqsp](https://pypi.org/project/pyqsp/)（QSP 位相合成）

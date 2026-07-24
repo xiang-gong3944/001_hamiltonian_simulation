@@ -21,7 +21,13 @@ from .qsvt import (
 )
 from .resources import ResourceEstimate, count_circuit_resources
 from .simulation import compare_with_exact
-from .trotter import build_trotter_circuit, suzuki_commutator_bounds
+from .trotter import (
+    SuzukiErrorEstimate,
+    TrotterPartition,
+    build_trotter_circuit,
+    estimate_suzuki_error,
+    suzuki_commutator_bounds,
+)
 
 __all__ = [
     "BenchmarkConfig",
@@ -29,6 +35,8 @@ __all__ = [
     "MPFSchedule",
     "PauliHamiltonian",
     "ResourceEstimate",
+    "SuzukiErrorEstimate",
+    "TrotterPartition",
     "benchmark_scaling",
     "build_multiproduct_circuit",
     "build_hamiltonian_qsvt_circuit",
@@ -37,6 +45,7 @@ __all__ = [
     "compare_with_exact",
     "count_circuit_resources",
     "estimate_qsvt_degree",
+    "estimate_suzuki_error",
     "estimate_resources_analytically",
     "heisenberg_chain",
     "multiproduct_coefficients",
