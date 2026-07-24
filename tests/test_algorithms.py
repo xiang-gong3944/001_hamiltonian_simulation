@@ -750,6 +750,6 @@ def test_new_and_legacy_schedules_have_comparable_accuracy():
 def test_qsvt_degree_handles_large_alpha_time_without_overflow():
     from hamiltonian_resources import estimate_qsvt_degree
 
-    degree = estimate_qsvt_degree(3.0e4, 1e-3)
+    degree = estimate_qsvt_degree(1.0e6, 1e-3)
     assert degree % 2 == 1
-    assert degree > 3.0e4  # Jacobi--Anger needs q > alpha*t before decay
+    assert degree > 1.0e6  # Jacobi--Anger needs q > alpha*t before decay

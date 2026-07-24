@@ -78,8 +78,12 @@ def _generate(config_path: str | Path, sweep_value: str) -> tuple[list[Path], in
         frame, csv_path, metadata_path = generate_and_save_benchmark(config, sweep)
         data_paths.append(csv_path)
         failures = int((frame["status"] == "error").sum())
+        skipped = int((frame["status"] == "skipped").sum())
         failure_count += failures
-        print(f"wrote {csv_path} ({len(frame)} rows, {failures} failures)")
+        print(
+            f"wrote {csv_path} "
+            f"({len(frame)} rows, {failures} failures, {skipped} skipped)"
+        )
         print(f"wrote {metadata_path}")
     return data_paths, failure_count
 

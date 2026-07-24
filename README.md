@@ -76,7 +76,7 @@ docs/
 
 Trotter `p=1,2,4,6`、MPF `m=3,5,7`、QSVTを独立に評価する
 benchmark suiteを用意しています。既定の`benchmark_config.json`は開放境界TFIM
-`J=1, h=3, t=1`を使います。
+`J=1, h=3`を使い、各点の発展時間をシステムサイズと同じ`t=n`にします。
 
 ```powershell
 hamiltonian-benchmark generate --config benchmark_config.json --sweep all

@@ -115,13 +115,22 @@ def _plot_context(frame: pd.DataFrame) -> tuple[str, str, str]:
         "heisenberg_chain": "Heisenberg chain",
     }.get(model, model)
     model_text = f"{display_model} ({parameter_text})" if parameter_text else display_model
-    time = _format_number(float(_unique_value(frame, "evolution_time")))
     if sweep == "system-size":
         epsilon = _format_number(float(_unique_value(frame, "target_error")))
-        fixed_text = f"t={time}, target error ε={epsilon}"
+        time_matches_size = (
+            frame["evolution_time"].astype(float)
+            == frame["system_qubits"].astype(float)
+        ).all()
+        time_text = (
+            "t=n"
+            if time_matches_size
+            else f"t={_format_number(float(_unique_value(frame, 'evolution_time')))}"
+        )
+        fixed_text = f"{time_text}, target error ε={epsilon}"
         x_column = "system_qubits"
     elif sweep == "target-error":
         size = int(_unique_value(frame, "system_qubits"))
+        time = _format_number(float(_unique_value(frame, "evolution_time")))
         fixed_text = f"n={size} system qubits, t={time}"
         x_column = "target_error"
     else:
@@ -176,20 +185,25 @@ def create_benchmark_figure(
         plot_series = tuple(
             (
                 label,
-                frame[
-                    (frame["method_label"] == label)
-                    & (frame["status"] == "ok")
-                    & frame[metric].notna()
-                    & (frame[metric] > 0)
-                ][[x_column, metric]].sort_values(x_column),
+                frame[frame["method_label"] == label][
+                    [x_column, metric, "status"]
+                ].sort_values(x_column),
             )
             for label in METHOD_LABELS
         )
         styles = METHOD_STYLES
 
     for label, values in plot_series:
+        values = values.copy()
+        if "status" in values:
+            plottable = (
+                (values["status"] == "ok")
+                & values[metric].notna()
+                & (values[metric] > 0)
+            )
+            values[metric] = values[metric].where(plottable)
         style = dict(styles[label])
-        if values.empty:
+        if values.empty or not values[metric].notna().any():
             missing_labels.append(label)
             axis.plot([], [], label=label, **style)
             continue
@@ -212,13 +226,16 @@ def create_benchmark_figure(
     axis.legend(ncol=2 if not summary else 1, fontsize="small")
 
     failed_count = int((frame["status"] == "error").sum())
+    skipped_count = int((frame["status"] == "skipped").sum())
     nonpositive_count = int(
         ((frame["status"] == "ok") & frame[metric].notna() & (frame[metric] <= 0)).sum()
     )
-    if failed_count or nonpositive_count or missing_labels:
+    if failed_count or skipped_count or nonpositive_count or missing_labels:
         details = []
         if failed_count:
             details.append(f"{failed_count} failed rows")
+        if skipped_count:
+            details.append(f"{skipped_count} skipped rows")
         if nonpositive_count:
             details.append(f"{nonpositive_count} nonpositive values")
         if missing_labels:

@@ -19,12 +19,19 @@ import pandas as pd
 from .benchmark import BenchmarkConfig, choose_parameters, estimate_resources_analytically
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import multiproduct_coefficients, optimal_mpf_exponents
-from .trotter import estimate_suzuki_error, suzuki_commutator_bounds
+from .trotter import (
+    _higher_order_commutator_work,
+    estimate_suzuki_error,
+    suzuki_commutator_bounds,
+)
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
+EvolutionTimeMode: TypeAlias = Literal["fixed", "system-size"]
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+_SUPPORTED_SCHEMA_VERSIONS = {"1.0", SCHEMA_VERSION}
+_HIGHER_ORDER_COMMUTATOR_WORK_LIMIT = 32_768
 TROTTER_ORDERS = (1, 2, 4, 6)
 MPF_TERM_COUNTS = (3, 5, 7)
 METHOD_LABELS = (
@@ -119,9 +126,18 @@ class ScalingBenchmarkConfig:
             "periodic": False,
         }
     )
-    system_qubit_values: tuple[int, ...] = (2, 4, 6, 8, 10, 12)
-    target_error_values: tuple[float, ...] = (0.1, 0.03, 0.01, 0.003, 0.001)
+    system_qubit_values: tuple[int, ...] = (2, 4, 8, 16, 32, 64, 128, 256, 500)
+    target_error_values: tuple[float, ...] = (
+        0.1,
+        0.03,
+        0.01,
+        0.003,
+        0.001,
+        0.0003,
+        0.0001,
+    )
     evolution_time: float = 1.0
+    evolution_time_mode: str = "fixed"
     fixed_system_qubits_for_error_sweep: int = 8
     fixed_target_error_for_size_sweep: float = 1e-3
     synthesis_error_fraction: float = 0.1
@@ -130,6 +146,7 @@ class ScalingBenchmarkConfig:
     output_directory: Path = Path("benchmark_outputs")
     output_formats: tuple[str, ...] = ("png", "pdf")
     generate_summary_plots: bool = False
+    skip_expensive_higher_order_bounds: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_parameters", dict(self.model_parameters))
@@ -161,6 +178,10 @@ class ScalingBenchmarkConfig:
             raise ValueError("fixed_target_error_for_size_sweep must lie in (0, 1)")
         if not np.isfinite(self.evolution_time) or self.evolution_time <= 0:
             raise ValueError("evolution_time must be positive and finite")
+        if self.evolution_time_mode not in {"fixed", "system-size"}:
+            raise ValueError(
+                "evolution_time_mode must be 'fixed' or 'system-size'"
+            )
         if not _is_probability(self.synthesis_error_fraction):
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
         if self.trotter_partition not in {"auto", "individual", "commuting"}:
@@ -179,6 +200,8 @@ class ScalingBenchmarkConfig:
             raise ValueError("output_formats must not contain duplicates")
         if not isinstance(self.generate_summary_plots, bool):
             raise TypeError("generate_summary_plots must be a boolean")
+        if not isinstance(self.skip_expensive_higher_order_bounds, bool):
+            raise TypeError("skip_expensive_higher_order_bounds must be a boolean")
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable resolved configuration."""
@@ -188,6 +211,7 @@ class ScalingBenchmarkConfig:
             "system_qubit_values": list(self.system_qubit_values),
             "target_error_values": list(self.target_error_values),
             "evolution_time": self.evolution_time,
+            "evolution_time_mode": self.evolution_time_mode,
             "fixed_system_qubits_for_error_sweep": (
                 self.fixed_system_qubits_for_error_sweep
             ),
@@ -200,6 +224,9 @@ class ScalingBenchmarkConfig:
             "output_directory": str(self.output_directory),
             "output_formats": list(self.output_formats),
             "generate_summary_plots": self.generate_summary_plots,
+            "skip_expensive_higher_order_bounds": (
+                self.skip_expensive_higher_order_bounds
+            ),
         }
 
     @property
@@ -345,6 +372,7 @@ def _base_record(
     sweep: BenchmarkSweep,
     run_metadata: Mapping[str, Any],
     system_qubits: int,
+    evolution_time: float,
     target_error: float,
     method: _MethodCase,
 ) -> dict[str, Any]:
@@ -360,7 +388,7 @@ def _base_record(
             dict(config.model_parameters), sort_keys=True, separators=(",", ":")
         ),
         system_qubits=system_qubits,
-        evolution_time=config.evolution_time,
+        evolution_time=evolution_time,
         target_error=target_error,
         method_family=method.family,
         method_label=method.label,
@@ -377,11 +405,12 @@ def _base_record(
 
 def _evaluation_config(
     config: ScalingBenchmarkConfig,
+    evolution_time: float,
     target_error: float,
     method: _MethodCase,
 ) -> BenchmarkConfig:
     return BenchmarkConfig(
-        time=config.evolution_time,
+        time=evolution_time,
         target_error=target_error,
         synthesis_error_fraction=config.synthesis_error_fraction,
         trotter_order=method.trotter_order or 2,
@@ -478,10 +507,11 @@ def _method_metadata(
 def _evaluate_method(
     hamiltonian: PauliHamiltonian,
     config: ScalingBenchmarkConfig,
+    evolution_time: float,
     target_error: float,
     method: _MethodCase,
 ) -> dict[str, Any]:
-    evaluation = _evaluation_config(config, target_error, method)
+    evaluation = _evaluation_config(config, evolution_time, target_error, method)
     parameters = choose_parameters(hamiltonian, evaluation)
     resource = estimate_resources_analytically(
         hamiltonian, evaluation, method.family
@@ -501,17 +531,70 @@ def _evaluate_method(
     return result
 
 
+def _expensive_higher_order_skip(
+    hamiltonian: PauliHamiltonian,
+    config: ScalingBenchmarkConfig,
+    method: _MethodCase,
+) -> dict[str, Any] | None:
+    """Return row metadata when a rigorous higher-order bound should be skipped."""
+    if (
+        not config.skip_expensive_higher_order_bounds
+        or method.family != "trotter"
+        or method.trotter_order not in (4, 6)
+    ):
+        return None
+    estimate = _higher_order_commutator_work(
+        hamiltonian,
+        method.trotter_order,
+        config.trotter_partition,  # type: ignore[arg-type]
+    )
+    if estimate is None:
+        return None
+    work, specification = estimate
+    if work <= _HIGHER_ORDER_COMMUTATOR_WORK_LIMIT:
+        return None
+    return {
+        "trotter_partition": specification.partition,
+        "trotter_group_count": len(specification.groups),
+        "status": "skipped",
+        "error_type": "HigherOrderBoundWorkLimit",
+        "error_message": (
+            f"skipped rigorous order-{method.trotter_order} commutator bound: "
+            f"estimated work {work} exceeds limit "
+            f"{_HIGHER_ORDER_COMMUTATOR_WORK_LIMIT}"
+        ),
+    }
+
+
+def _resolved_evolution_time(
+    config: ScalingBenchmarkConfig, system_qubits: int
+) -> float:
+    if config.evolution_time_mode == "system-size":
+        return float(system_qubits)
+    return float(config.evolution_time)
+
+
 def _sweep_points(
     config: ScalingBenchmarkConfig, sweep: BenchmarkSweep
-) -> tuple[tuple[int, float], ...]:
+) -> tuple[tuple[int, float, float], ...]:
     if sweep == "system-size":
         return tuple(
-            (size, config.fixed_target_error_for_size_sweep)
+            (
+                size,
+                _resolved_evolution_time(config, size),
+                config.fixed_target_error_for_size_sweep,
+            )
             for size in config.system_qubit_values
         )
     if sweep == "target-error":
         return tuple(
-            (config.fixed_system_qubits_for_error_sweep, error)
+            (
+                config.fixed_system_qubits_for_error_sweep,
+                _resolved_evolution_time(
+                    config, config.fixed_system_qubits_for_error_sweep
+                ),
+                error,
+            )
             for error in config.target_error_values
         )
     raise ValueError("sweep must be 'system-size' or 'target-error'")
@@ -523,8 +606,9 @@ def generate_benchmark_sweep(
 ) -> pd.DataFrame:
     """Evaluate all eight fixed method configurations for one sweep.
 
-    Each failed method remains present as an error row while other evaluations
-    continue. The function never builds exact dense matrices or concrete circuits.
+    Each failed or intentionally skipped method remains present while other
+    evaluations continue. The function never builds exact dense matrices or
+    concrete circuits.
     """
     points = _sweep_points(config, sweep)
     run_metadata = {
@@ -533,7 +617,7 @@ def generate_benchmark_sweep(
         "software": _software_metadata(),
     }
     records: list[dict[str, Any]] = []
-    for system_qubits, target_error in points:
+    for system_qubits, evolution_time, target_error in points:
         try:
             hamiltonian = _build_hamiltonian(config, system_qubits)
             hamiltonian_error: Exception | None = None
@@ -546,6 +630,7 @@ def generate_benchmark_sweep(
                 sweep,
                 run_metadata,
                 system_qubits,
+                evolution_time,
                 target_error,
                 method,
             )
@@ -558,9 +643,19 @@ def generate_benchmark_sweep(
                     hamiltonian_alpha=hamiltonian.alpha,
                     hamiltonian_term_count=hamiltonian.term_count,
                 )
-                record.update(
-                    _evaluate_method(hamiltonian, config, target_error, method)
-                )
+                skip = _expensive_higher_order_skip(hamiltonian, config, method)
+                if skip is None:
+                    record.update(
+                        _evaluate_method(
+                            hamiltonian,
+                            config,
+                            evolution_time,
+                            target_error,
+                            method,
+                        )
+                    )
+                else:
+                    record.update(skip)
             except Exception as exc:  # every requested method retains a row
                 record.update(
                     status="error",
@@ -583,20 +678,35 @@ def validate_benchmark_frame(
         raise ValueError("benchmark data columns do not match the supported schema")
     if frame.empty:
         raise ValueError("benchmark data must not be empty")
-    if set(frame["schema_version"].astype(str)) != {SCHEMA_VERSION}:
-        raise ValueError(f"unsupported benchmark schema; expected {SCHEMA_VERSION}")
+    versions = set(frame["schema_version"].astype(str))
+    if len(versions) != 1 or not versions.issubset(_SUPPORTED_SCHEMA_VERSIONS):
+        supported = ", ".join(sorted(_SUPPORTED_SCHEMA_VERSIONS))
+        raise ValueError(f"unsupported benchmark schema; expected one of: {supported}")
     if expected_sweep is not None and set(frame["sweep"]) != {expected_sweep}:
         raise ValueError(f"benchmark data is not a {expected_sweep!r} sweep")
-    if not set(frame["status"]).issubset({"ok", "error"}):
-        raise ValueError("benchmark status must be 'ok' or 'error'")
+    schema_version = next(iter(versions))
+    allowed_statuses = {"ok", "error"}
+    if schema_version == SCHEMA_VERSION:
+        allowed_statuses.add("skipped")
+    if not set(frame["status"]).issubset(allowed_statuses):
+        choices = ", ".join(sorted(allowed_statuses))
+        raise ValueError(f"benchmark status must be one of: {choices}")
     successful = frame[frame["status"] == "ok"]
     if successful[["t_count", "cnot_count"]].isna().any().any():
         raise ValueError("successful benchmark rows must contain T and CNOT counts")
     if (successful[["t_count", "cnot_count"]] < 0).any().any():
         raise ValueError("resource counts must be nonnegative")
-    failed = frame[frame["status"] == "error"]
-    if failed["error_message"].isna().any() or (failed["error_message"] == "").any():
-        raise ValueError("failed benchmark rows must contain an error message")
+    diagnostic = frame[frame["status"].isin({"error", "skipped"})]
+    if (
+        diagnostic[["error_type", "error_message"]].isna().any().any()
+        or (diagnostic[["error_type", "error_message"]] == "").any().any()
+    ):
+        raise ValueError(
+            "failed or skipped benchmark rows must contain diagnostic details"
+        )
+    skipped = frame[frame["status"] == "skipped"]
+    if skipped[["t_count", "cnot_count"]].notna().any().any():
+        raise ValueError("skipped benchmark rows must not contain resource counts")
 
 
 def load_benchmark_data(path: str | Path) -> pd.DataFrame:
@@ -628,7 +738,7 @@ def save_benchmark_data(
     metadata_path = csv_path.with_suffix(".metadata.json")
     first = frame.iloc[0]
     metadata = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": str(first["schema_version"]),
         "data_file": csv_path.name,
         "row_count": len(frame),
         "status_counts": {

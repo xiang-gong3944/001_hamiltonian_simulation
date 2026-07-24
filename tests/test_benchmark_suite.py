@@ -17,6 +17,7 @@ from hamiltonian_resources import (
     METHOD_LABELS,
     METHOD_STYLES,
     MPF_TERM_COUNTS,
+    SCHEMA_VERSION,
     TROTTER_ORDERS,
     ScalingBenchmarkConfig,
     create_benchmark_figure,
@@ -65,6 +66,20 @@ def test_default_config_loads_and_resolves_output_directory():
     }
     assert config.output_directory == path.parent / "benchmark_outputs"
     assert config.output_formats == ("png", "pdf")
+    assert config.system_qubit_values == (2, 4, 8, 16, 32, 64, 128, 256, 500)
+    assert config.target_error_values == (
+        0.1,
+        0.03,
+        0.01,
+        0.003,
+        0.001,
+        0.0003,
+        0.0001,
+    )
+    assert config.evolution_time_mode == "system-size"
+    assert config.fixed_system_qubits_for_error_sweep == 100
+    assert config.skip_expensive_higher_order_bounds
+    assert SCHEMA_VERSION == "1.1"
 
 
 def test_every_sweep_point_contains_the_eight_fixed_configurations(size_frame):
@@ -105,6 +120,18 @@ def test_csv_schema_and_metadata_sidecar_round_trip(size_frame, small_config):
     assert metadata["status_counts"] == {"ok": len(size_frame)}
     assert metadata["columns"] == list(BENCHMARK_COLUMNS)
     assert metadata["configuration"]["output_formats"] == ["png", "svg"]
+    assert metadata["configuration"]["evolution_time_mode"] == "fixed"
+
+
+def test_schema_1_0_data_remains_loadable(size_frame, tmp_path):
+    legacy = size_frame.copy()
+    legacy["schema_version"] = "1.0"
+    path = tmp_path / "legacy.csv"
+    legacy.to_csv(path, index=False)
+
+    loaded = load_benchmark_data(path)
+
+    assert set(loaded["schema_version"].astype(str)) == {"1.0"}
 
 
 def test_default_tfim_resources_are_nondecreasing(size_frame, error_frame):
@@ -116,6 +143,18 @@ def test_default_tfim_resources_are_nondecreasing(size_frame, error_frame):
         rows = rows.sort_values("target_error", ascending=False)
         assert rows["t_count"].is_monotonic_increasing
         assert rows["cnot_count"].is_monotonic_increasing
+
+
+def test_system_size_time_mode_sets_time_from_each_sweep_point(small_config):
+    config = replace(small_config, evolution_time_mode="system-size")
+
+    size = generate_benchmark_sweep(config, "system-size")
+    error = generate_benchmark_sweep(config, "target-error")
+
+    size_points = size[["system_qubits", "evolution_time"]].drop_duplicates()
+    assert size_points.to_records(index=False).tolist() == [(2, 2.0), (3, 3.0)]
+    assert set(error["system_qubits"]) == {3}
+    assert set(error["evolution_time"]) == {3.0}
 
 
 def test_one_estimator_failure_does_not_omit_other_methods(monkeypatch, small_config):
@@ -142,6 +181,33 @@ def test_one_estimator_failure_does_not_omit_other_methods(monkeypatch, small_co
     assert pd.isna(failure["cnot_count"])
 
 
+def test_expensive_higher_order_bound_is_skipped_without_omission(
+    monkeypatch, small_config
+):
+    import hamiltonian_resources.benchmark_suite as suite
+
+    monkeypatch.setattr(suite, "_HIGHER_ORDER_COMMUTATOR_WORK_LIMIT", 100)
+    config = replace(small_config, system_qubit_values=(2,))
+    frame = generate_benchmark_sweep(config, "system-size")
+
+    assert len(frame) == len(METHOD_LABELS)
+    assert (frame["status"] == "ok").sum() == 7
+    skipped = frame[frame["status"] == "skipped"].iloc[0]
+    assert skipped["method_label"] == "Trotter p=6"
+    assert skipped["error_type"] == "HigherOrderBoundWorkLimit"
+    assert "estimated work 384 exceeds limit 100" in skipped["error_message"]
+    assert skipped["trotter_partition"] == "commuting"
+    assert skipped["trotter_group_count"] == 2
+    assert pd.isna(skipped["t_count"])
+    assert pd.isna(skipped["cnot_count"])
+
+    forced = generate_benchmark_sweep(
+        replace(config, skip_expensive_higher_order_bounds=False),
+        "system-size",
+    )
+    assert set(forced["status"]) == {"ok"}
+
+
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
@@ -150,6 +216,8 @@ def test_one_estimator_failure_does_not_omit_other_methods(monkeypatch, small_co
         ({"target_error_values": (0.0,)}, "target_error_values"),
         ({"output_formats": ("eps",)}, "output formats"),
         ({"model_parameters": {"bad": 1}}, "unsupported parameters"),
+        ({"evolution_time_mode": "bad"}, "evolution_time_mode"),
+        ({"skip_expensive_higher_order_bounds": "yes"}, "must be a boolean"),
     ],
 )
 def test_scaling_config_rejects_invalid_values(changes, message):
@@ -184,6 +252,41 @@ def test_full_figures_have_required_labels_scales_and_titles(size_frame, error_f
     assert "n=3 system qubits" in error_axis.get_title()
     plt.close(size_figure)
     plt.close(error_figure)
+
+
+def test_system_size_time_mode_is_named_in_plot_title(small_config):
+    frame = generate_benchmark_sweep(
+        replace(small_config, evolution_time_mode="system-size"),
+        "system-size",
+    )
+
+    figure = create_benchmark_figure(frame, "t_count")
+
+    assert "t=n" in figure.axes[0].get_title()
+    plt.close(figure)
+
+
+def test_full_figure_preserves_a_gap_and_annotates_skipped_rows(size_frame):
+    gapped = size_frame.copy()
+    skipped_index = gapped[
+        (gapped["method_label"] == "Trotter p=6")
+        & (gapped["system_qubits"] == 3)
+    ].index
+    gapped.loc[skipped_index, "status"] = "skipped"
+    gapped.loc[skipped_index, "error_type"] = "HigherOrderBoundWorkLimit"
+    gapped.loc[skipped_index, "error_message"] = "test skip"
+    gapped.loc[skipped_index, ["t_count", "cnot_count"]] = None
+
+    with pytest.warns(RuntimeWarning, match="1 skipped rows"):
+        figure = create_benchmark_figure(gapped, "t_count")
+
+    lines = {line.get_label(): line for line in figure.axes[0].lines}
+    values = lines["Trotter p=6"].get_ydata()
+    assert len(values) == 2
+    assert not pd.isna(values[0])
+    assert pd.isna(values[1])
+    assert "1 skipped rows" in figure.axes[0].texts[0].get_text()
+    plt.close(figure)
 
 
 def test_summary_is_pointwise_minimum_of_saved_configurations(size_frame):
@@ -257,6 +360,31 @@ def test_cli_reports_generation_failures_with_nonzero_exit(monkeypatch, tmp_path
     assert status == 1
     frame = load_benchmark_data(config.output_directory / "system_size_scaling.csv")
     assert (frame["status"] == "error").sum() == 1
+
+
+def test_cli_reports_skips_without_a_failure_exit(monkeypatch, tmp_path, capsys):
+    import hamiltonian_resources.benchmark_suite as suite
+
+    monkeypatch.setattr(suite, "_HIGHER_ORDER_COMMUTATOR_WORK_LIMIT", 100)
+    config = ScalingBenchmarkConfig(
+        system_qubit_values=(2,),
+        output_directory=tmp_path / "output",
+        output_formats=("png",),
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config.as_dict()), encoding="utf-8")
+
+    status = benchmark_main(
+        ["generate", "--config", str(config_path), "--sweep", "system-size"]
+    )
+
+    assert status == 0
+    assert "0 failures, 1 skipped" in capsys.readouterr().out
+    frame = load_benchmark_data(config.output_directory / "system_size_scaling.csv")
+    assert frame["status"].value_counts().to_dict() == {"ok": 7, "skipped": 1}
+    metadata_path = config.output_directory / "system_size_scaling.metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["status_counts"] == {"ok": 7, "skipped": 1}
 
 
 def test_heisenberg_model_registry_is_supported(tmp_path):

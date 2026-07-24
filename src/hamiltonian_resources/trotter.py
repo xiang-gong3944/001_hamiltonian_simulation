@@ -385,6 +385,30 @@ def _higher_order_commutator_prefactor(
     return float(np.nextafter(value, np.inf)) if value else 0.0
 
 
+def _higher_order_commutator_work(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> tuple[int, _SuzukiSpecification] | None:
+    """Estimate Pauli-term work for an eligible rigorous higher-order bound.
+
+    ``None`` means that the Schubert--Mendl evaluator would not run: the order
+    is unsupported, the Hamiltonian is commuting, or the existing group-word
+    cap already selects the inexpensive alpha proxy.
+    """
+    if order not in (4, 6):
+        return None
+    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
+    group_count = len(specification.groups)
+    if group_count == 1:
+        return None
+    group_word_count = group_count ** (order + 1)
+    if group_word_count > _MAX_HIGHER_ORDER_COMMUTATORS:
+        return None
+    pauli_term_count = sum(specification.group_sizes)
+    return pauli_term_count * group_word_count, specification
+
+
 @lru_cache(maxsize=None)
 def _suzuki_error_prefactor(
     hamiltonian: PauliHamiltonian,
@@ -536,4 +560,3 @@ def build_trotter_circuit(
         "trotter_group_sizes": specification.group_sizes,
     }
     return circuit
-

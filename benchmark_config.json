@@ -5,15 +5,17 @@
     "field": 3.0,
     "periodic": false
   },
-  "system_qubit_values": [2, 4, 6, 8, 10, 12],
-  "target_error_values": [0.1, 0.03, 0.01, 0.003, 0.001],
+  "system_qubit_values": [2, 4, 8, 16, 32, 64, 128, 256, 500],
+  "target_error_values": [0.1, 0.03, 0.01, 0.003, 0.001, 0.0003, 0.0001],
   "evolution_time": 1.0,
-  "fixed_system_qubits_for_error_sweep": 8,
+  "evolution_time_mode": "system-size",
+  "fixed_system_qubits_for_error_sweep": 100,
   "fixed_target_error_for_size_sweep": 0.001,
   "synthesis_error_fraction": 0.1,
   "trotter_partition": "auto",
   "mpf_schedule": "new",
   "output_directory": "benchmark_outputs",
   "output_formats": ["png", "pdf"],
-  "generate_summary_plots": false
+  "generate_summary_plots": false,
+  "skip_expensive_higher_order_bounds": true
 }

@@ -79,20 +79,39 @@ def _bessel_parity_tail_bound(abs_time: float, first_omitted_degree: int) -> flo
     return math.exp(log_bound)
 
 
+def _jacobi_anger_truncation_order(abs_time: float, tail_budget: float) -> int:
+    """Find the smallest shared cosine/sine truncation order."""
+
+    def sufficient(order: int) -> bool:
+        cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * order + 2)
+        sine_bound = _bessel_parity_tail_bound(abs_time, 2 * order + 3)
+        return cosine_bound <= tail_budget and sine_bound <= tail_budget
+
+    lower = 1
+    upper = max(2, math.ceil(abs_time))
+    while not sufficient(upper):
+        lower = upper + 1
+        upper *= 2
+    while lower < upper:
+        middle = (lower + upper) // 2
+        if sufficient(middle):
+            upper = middle
+        else:
+            lower = middle + 1
+    return lower
+
+
 def _jacobi_anger_polynomials(
     alpha_time: float, tail_budget: float, scale: float
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     """Return equally scaled Chebyshev coefficients for cosine and sine."""
     abs_time = abs(alpha_time)
-    truncation_order = 1
-    while True:
-        cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
-        sine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
-        if cosine_bound <= tail_budget and sine_bound <= tail_budget:
-            break
-        truncation_order += 1
-        if truncation_order > 100_000:
-            raise RuntimeError("failed to find a Jacobi-Anger truncation order")
+    truncation_order = _jacobi_anger_truncation_order(abs_time, tail_budget)
+    if truncation_order > 100_000:
+        raise RuntimeError("Jacobi-Anger polynomial exceeds the practical size limit")
+
+    cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
+    sine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
 
     cosine = np.zeros(2 * truncation_order + 1)
     cosine[0] = jv(0, alpha_time)
@@ -155,8 +174,8 @@ def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
     if alpha_time == 0:
         return 0
     source_budget = epsilon / 18
-    _, sine, _, _ = _jacobi_anger_polynomials(alpha_time, source_budget, 1 - source_budget)
-    return len(sine) - 1
+    truncation_order = _jacobi_anger_truncation_order(abs(alpha_time), source_budget)
+    return 2 * truncation_order + 1
 
 
 def synthesize_hamsim_phases(
