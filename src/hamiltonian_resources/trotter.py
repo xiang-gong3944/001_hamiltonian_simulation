@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import permutations
+import math
+from collections import defaultdict
 from typing import Literal, TypeAlias
 
 import numpy as np
@@ -18,6 +20,43 @@ from .hamiltonians import PauliHamiltonian
 
 TrotterPartition: TypeAlias = Literal["auto", "individual", "commuting"]
 _ResolvedTrotterPartition: TypeAlias = Literal["individual", "commuting"]
+SuzukiErrorMethod: TypeAlias = Literal[
+    "childs-commutator",
+    "schubert-mendl-commutator",
+    "commuting-exact",
+    "alpha-proxy",
+]
+
+_MAX_HIGHER_ORDER_COMMUTATORS = 4096
+
+
+@dataclass(frozen=True)
+class SuzukiErrorEstimate:
+    """A product-formula error estimate and its certification metadata.
+
+    ``error`` is a rigorous operator-norm upper bound exactly when ``rigorous``
+    is true.  Otherwise it is the documented coefficient-1-norm proxy retained
+    for formulas outside the practical commutator-evaluation regime.
+    """
+
+    error: float
+    prefactor: float
+    time: float
+    reps: int
+    order: int
+    partition: _ResolvedTrotterPartition
+    group_count: int
+    method: SuzukiErrorMethod
+    rigorous: bool
+
+
+@dataclass(frozen=True)
+class _SuzukiPrefactor:
+    value: float
+    partition: _ResolvedTrotterPartition
+    group_count: int
+    method: SuzukiErrorMethod
+    rigorous: bool
 
 
 @dataclass(frozen=True)
@@ -186,6 +225,243 @@ def _suzuki_term_occurrences(
         sizes[group] for group, _ in _suzuki_group_factors(len(sizes), order)
     )
     return reps * per_step
+
+
+def _extend_word_polynomial(
+    outer: dict[tuple[int, ...], float],
+    group: int,
+    coefficient: float,
+    order: int,
+    *,
+    minimum_power: int,
+) -> dict[tuple[int, ...], float]:
+    """Prepend one factor's exponential generating series to outer words."""
+    extended: defaultdict[tuple[int, ...], float] = defaultdict(float)
+    magnitude = abs(coefficient)
+    for outer_word, outer_weight in outer.items():
+        for power in range(minimum_power, order - len(outer_word) + 1):
+            word = (group,) * power + outer_word
+            extended[word] += (
+                outer_weight * magnitude**power / math.factorial(power)
+            )
+    return dict(extended)
+
+
+def _theorem_word_weights(
+    factors: tuple[tuple[int, float], ...],
+    order: int,
+) -> list[tuple[tuple[float, ...], dict[tuple[int, ...], float]]]:
+    """Collapse Schubert--Mendl weak compositions into repeated group words."""
+    factor_count = len(factors)
+    center = math.ceil(factor_count / 2)
+    group_count = 1 + max(group for group, _ in factors)
+
+    prefixes: list[tuple[float, ...]] = []
+    prefix = np.zeros(group_count, dtype=float)
+    for group, coefficient in factors:
+        prefixes.append(tuple(float(value) for value in prefix))
+        prefix = prefix.copy()
+        prefix[group] += coefficient
+
+    entries: list[tuple[tuple[float, ...], dict[tuple[int, ...], float]]] = []
+    factorial = math.factorial(order)
+
+    # Theorem 1's first sum: j=2,...,s.  Work from the center out so the
+    # q_{j+1},...,q_s polynomial is reused by the next value of j.
+    outer: dict[tuple[int, ...], float] = {(): 1.0}
+    for j in range(center - 1, 0, -1):
+        group, coefficient = factors[j]
+        positive = _extend_word_polynomial(
+            outer,
+            group,
+            coefficient,
+            order,
+            minimum_power=1,
+        )
+        entries.append(
+            (
+                prefixes[j],
+                {word: factorial * weight for word, weight in positive.items() if len(word) == order},
+            )
+        )
+        outer = _extend_word_polynomial(
+            outer,
+            group,
+            coefficient,
+            order,
+            minimum_power=0,
+        )
+
+    # The second sum: j=s+1,...,K.  A_j is innermost, hence each new factor
+    # is prepended to the accumulated word for A_{j-1},...,A_{s+1}.
+    outer = {(): 1.0}
+    for j in range(center, factor_count):
+        group, coefficient = factors[j]
+        positive = _extend_word_polynomial(
+            outer,
+            group,
+            coefficient,
+            order,
+            minimum_power=1,
+        )
+        entries.append(
+            (
+                prefixes[j],
+                {word: factorial * weight for word, weight in positive.items() if len(word) == order},
+            )
+        )
+        outer = _extend_word_polynomial(
+            outer,
+            group,
+            coefficient,
+            order,
+            minimum_power=0,
+        )
+    return entries
+
+
+def _nested_commutator_basis(
+    groups: tuple[SparsePauliOp, ...],
+    order: int,
+) -> dict[tuple[tuple[int, ...], int], SparsePauliOp]:
+    """Precompute ad-word(H_base) for all group words through ``order``."""
+    basis = {((), base): group for base, group in enumerate(groups)}
+    for depth in range(1, order + 1):
+        previous = [
+            (word, base, operator)
+            for (word, base), operator in basis.items()
+            if len(word) == depth - 1
+        ]
+        for word, base, operator in previous:
+            for outer, group in enumerate(groups):
+                basis[(word + (outer,), base)] = _commutator(group, operator)
+    return basis
+
+
+def _higher_order_commutator_prefactor(
+    groups: tuple[SparsePauliOp, ...],
+    order: Literal[4, 6],
+) -> float:
+    """Evaluate Schubert--Mendl Theorem 1 using Pauli 1-norms."""
+    factors = _suzuki_group_factors(len(groups), order, merge_adjacent=True)
+    if len(factors) == 1:
+        return 0.0
+    entries = _theorem_word_weights(factors, order)
+    basis = _nested_commutator_basis(groups, order)
+
+    contributions: defaultdict[
+        tuple[int, ...], list[tuple[tuple[float, ...], float]]
+    ] = defaultdict(list)
+    for prefix, weights in entries:
+        for word, weight in weights.items():
+            contributions[word].append((prefix, weight))
+
+    total = 0.0
+    group_count = len(groups)
+    for word, weighted_prefixes in contributions.items():
+        coefficient_rows: dict[str, np.ndarray] = {}
+        for base in range(group_count):
+            for label, coefficient in basis[(word, base)].to_list():
+                if coefficient == 0:
+                    continue
+                row = coefficient_rows.setdefault(
+                    label,
+                    np.zeros(group_count, dtype=complex),
+                )
+                row[base] += coefficient
+        if not coefficient_rows:
+            continue
+
+        coefficients = np.stack(tuple(coefficient_rows.values()))
+        prefixes = np.asarray(
+            [prefix for prefix, _ in weighted_prefixes],
+            dtype=float,
+        ).T
+        norms = np.sum(np.abs(coefficients @ prefixes), axis=0)
+        weights = np.asarray([weight for _, weight in weighted_prefixes], dtype=float)
+        total += float(norms @ weights)
+
+    value = total / math.factorial(order + 1)
+    return float(np.nextafter(value, np.inf)) if value else 0.0
+
+
+@lru_cache(maxsize=None)
+def _suzuki_error_prefactor(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> _SuzukiPrefactor:
+    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
+    group_count = len(specification.groups)
+    if group_count == 1:
+        return _SuzukiPrefactor(
+            0.0,
+            specification.partition,
+            group_count,
+            "commuting-exact",
+            True,
+        )
+    if order in (1, 2):
+        w1, w2 = _commutator_prefactors(specification.groups)
+        return _SuzukiPrefactor(
+            w1 if order == 1 else w2,
+            specification.partition,
+            group_count,
+            "childs-commutator",
+            True,
+        )
+    if order in (4, 6) and group_count ** (order + 1) <= _MAX_HIGHER_ORDER_COMMUTATORS:
+        value = _higher_order_commutator_prefactor(specification.groups, order)
+        return _SuzukiPrefactor(
+            value,
+            specification.partition,
+            group_count,
+            "schubert-mendl-commutator",
+            True,
+        )
+    return _SuzukiPrefactor(
+        hamiltonian.alpha ** (order + 1),
+        specification.partition,
+        group_count,
+        "alpha-proxy",
+        False,
+    )
+
+
+def estimate_suzuki_error(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    reps: int = 1,
+    order: int = 2,
+    *,
+    partition: TrotterPartition = "auto",
+) -> SuzukiErrorEstimate:
+    """Estimate the operator-norm error of a partitioned Suzuki formula.
+
+    Orders 1 and 2 use the tight Childs et al. commutator bounds.  Orders 4
+    and 6 use Schubert--Mendl Theorem 1 when the number of commuting groups is
+    within the practical work cap.  Other cases retain the historical
+    coefficient-1-norm proxy and report ``rigorous=False``.
+    """
+    if reps < 1:
+        raise ValueError("reps must be positive")
+    if not np.isfinite(time):
+        raise ValueError("time must be finite")
+    prefactor = _suzuki_error_prefactor(hamiltonian, order, partition)
+    value = prefactor.value * abs(float(time)) ** (order + 1) / reps**order
+    if value:
+        value = float(np.nextafter(value, np.inf))
+    return SuzukiErrorEstimate(
+        error=value,
+        prefactor=prefactor.value,
+        time=float(time),
+        reps=reps,
+        order=order,
+        partition=prefactor.partition,
+        group_count=prefactor.group_count,
+        method=prefactor.method,
+        rigorous=prefactor.rigorous,
+    )
 
 
 @lru_cache(maxsize=None)
