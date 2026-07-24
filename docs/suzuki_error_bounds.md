@@ -11,22 +11,22 @@ For a Hamiltonian written as (H=\sum_{\gamma=1}^{G}H_\gamma), the existing
 first- and second-order bounds are the small-prefactor results of Childs, Su,
 Tran, Wiebe, and Zhu:
 
-\[
+$$
 \lVert S_1(\delta)-e^{-i\delta H}\rVert\le W_1|\delta|^2,
 \qquad
 W_1=\frac12\sum_g\lVert[T_g,H_g]\rVert,
-\]
+$$
 
-\[
+$$
 \lVert S_2(\delta)-e^{-i\delta H}\rVert\le W_2|\delta|^3,
-\]
+$$
 
-\[
+$$
 W_2=\sum_g\left(
 \frac1{12}\lVert[T_g,[T_g,H_g]]\rVert+
 \frac1{24}\lVert[H_g,[H_g,T_g]]\rVert
 \right),
-\]
+$$
 
 where (T_g=\sum_{j>g}H_j). The implementation forms each commutator as a
 `SparsePauliOp` and upper-bounds its spectral norm by the sum of the absolute
@@ -35,14 +35,14 @@ Pauli coefficients. The coefficient 1-norm is conservative but rigorous.
 For orders (p=4) and (p=6), the implementation evaluates Schubert and
 Mendl, Theorem 1. Write one merged Suzuki step as
 
-\[
+$$
 S_p(t)=e^{-itA_K}\cdots e^{-itA_1},\qquad
 B_j=\sum_{\ell<j}A_\ell,
-\]
+$$
 
 and choose (s=\lceil K/2\rceil). The bound is
 
-\[
+$$
 \begin{aligned}
 \lVert S_p(t)-e^{-itH}\rVert\le\frac{|t|^{p+1}}{(p+1)!}
 \Bigg(&\sum_{j=2}^{s}
@@ -56,14 +56,14 @@ and choose (s=\lceil K/2\rceil). The bound is
 \left\lVert\operatorname{ad}_{A_{s+1}}^{q_{s+1}}\cdots
 \operatorname{ad}_{A_j}^{q_j}B_j\right\rVert\Bigg).
 \end{aligned}
-\]
+$$
 
 The resulting coefficient is stored as `SuzukiErrorEstimate.prefactor`. For
 `reps=r`, unitary telescoping gives the implemented global bound
 
-\[
+$$
 \lVert S_p(t/r)^r-e^{-itH}\rVert\le W_p|t|^{p+1}/r^p.
-\]
+$$
 
 `choose_parameters` inverts this expression against the algorithmic portion
 of the requested error budget.
@@ -72,10 +72,10 @@ of the requested error budget.
 
 Qiskit's `SuzukiTrotter` uses
 
-\[
+$$
 S_p(t)=S_{p-2}(z_pt)^2S_{p-2}((1-4z_p)t)S_{p-2}(z_pt)^2,
 \qquad z_p=(4-4^{1/(p-1)})^{-1}.
-\]
+$$
 
 The internal factor generator mirrors this recursion. Adjacent occurrences of
 the same group are merged only while evaluating the theorem; the synthesized
@@ -114,9 +114,9 @@ default atomic evolution would not exponentiate that block exactly.
 
 For (G) groups, merging adjacent factors gives
 
-\[
+$$
 K_2=2G-1,\qquad K_p=5K_{p-2}-4,
-\]
+$$
 
 so (K_4=10G-9) and (K_6=50G-49). Direct enumeration of the theorem's weak
 compositions is avoided. Dynamic programming combines compositions that give
@@ -130,9 +130,9 @@ order 4 supports up to five groups and order 6 supports up to three. This
 covers the repository's TFIM and Heisenberg constructors. The following cases
 return the historical
 
-\[
+$$
 (\alpha |t|)^{p+1}/r^p,\qquad \alpha=\sum_j|h_j|,
-\]
+$$
 
 proxy instead:
 
