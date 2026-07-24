@@ -6,6 +6,20 @@ from .benchmark import (
     choose_parameters,
     estimate_resources_analytically,
 )
+from .benchmark_suite import (
+    BENCHMARK_COLUMNS,
+    METHOD_LABELS,
+    MPF_TERM_COUNTS,
+    SCHEMA_VERSION,
+    TROTTER_ORDERS,
+    ScalingBenchmarkConfig,
+    generate_and_save_benchmark,
+    generate_benchmark_sweep,
+    load_benchmark_config,
+    load_benchmark_data,
+    save_benchmark_data,
+    validate_benchmark_frame,
+)
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
     MPFSchedule,
@@ -31,12 +45,18 @@ from .trotter import (
 
 __all__ = [
     "BenchmarkConfig",
+    "BENCHMARK_COLUMNS",
     "HamiltonianSimulationPhases",
+    "METHOD_LABELS",
+    "MPF_TERM_COUNTS",
     "MPFSchedule",
     "PauliHamiltonian",
     "ResourceEstimate",
+    "SCHEMA_VERSION",
+    "ScalingBenchmarkConfig",
     "SuzukiErrorEstimate",
     "TrotterPartition",
+    "TROTTER_ORDERS",
     "benchmark_scaling",
     "build_multiproduct_circuit",
     "build_hamiltonian_qsvt_circuit",
@@ -47,10 +67,16 @@ __all__ = [
     "estimate_qsvt_degree",
     "estimate_suzuki_error",
     "estimate_resources_analytically",
+    "generate_and_save_benchmark",
+    "generate_benchmark_sweep",
     "heisenberg_chain",
+    "load_benchmark_config",
+    "load_benchmark_data",
     "multiproduct_coefficients",
     "optimal_mpf_exponents",
     "suzuki_commutator_bounds",
+    "save_benchmark_data",
     "synthesize_hamsim_phases",
     "transverse_field_ising",
+    "validate_benchmark_frame",
 ]
