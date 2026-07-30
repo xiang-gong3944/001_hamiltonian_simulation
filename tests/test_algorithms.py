@@ -7,16 +7,22 @@ from scipy.linalg import cosm, sinm
 
 from hamiltonian_resources import (
     BenchmarkConfig,
-    benchmark_scaling,
+    HamiltonianSpec,
+    MultiproductMethod,
+    TimeScaling,
     build_hamiltonian_qsvt_circuit,
     build_multiproduct_circuit,
     build_trotter_circuit,
-    choose_parameters,
     compare_with_exact,
-    estimate_resources_analytically,
     multiproduct_coefficients,
     optimal_mpf_exponents,
+    run_benchmark,
     transverse_field_ising,
+)
+from hamiltonian_resources.benchmark import (
+    _EvaluationConfig,
+    choose_parameters,
+    estimate_resources_analytically,
 )
 from hamiltonian_resources.resources import count_circuit_resources
 from hamiltonian_resources.circuit_utils import (
@@ -602,10 +608,20 @@ def test_resource_counter_counts_cx():
 
 
 def test_analytical_benchmark_does_not_build_large_unitaries():
-    frame = benchmark_scaling(
-        [2, 4], transverse_field_ising, BenchmarkConfig(time=0.1, target_error=1e-2)
+    frame = run_benchmark(
+        BenchmarkConfig(
+            hamiltonian=HamiltonianSpec(
+                model="tfim-test", parameters={}, factory=transverse_field_ising
+            ),
+            system_sizes=[2, 4],
+            target_errors=[1e-2],
+            time=TimeScaling("fixed", 0.1),
+            fixed_target_error=1e-2,
+            methods=[MultiproductMethod(3)],
+        ),
+        sweeps="system-size",
     )
-    assert len(frame) == 6
+    assert len(frame) == 2
     assert set(frame["counting_mode"]) == {"analytical-model"}
     assert (frame["t_count"] > 0).all()
     assert (frame["nominal_success_probability"] <= 1).all()
@@ -613,7 +629,7 @@ def test_analytical_benchmark_does_not_build_large_unitaries():
 
 def test_multiproduct_consumers_use_m_parameter():
     hamiltonian = transverse_field_ising(2)
-    config = BenchmarkConfig(time=0.1, target_error=1e-2, mpf_m=3)
+    config = _EvaluationConfig(time=0.1, target_error=1e-2, mpf_m=3)
     parameters = choose_parameters(hamiltonian, config)
     estimate = estimate_resources_analytically(hamiltonian, config, "multiproduct")
     result = compare_with_exact(
@@ -632,8 +648,8 @@ def test_multiproduct_consumers_use_m_parameter():
 
 def test_multiproduct_schedule_propagates_through_consumers():
     hamiltonian = transverse_field_ising(1)
-    new_config = BenchmarkConfig(mpf_m=3)
-    legacy_config = BenchmarkConfig(mpf_m=3, mpf_schedule="legacy")
+    new_config = _EvaluationConfig(mpf_m=3)
+    legacy_config = _EvaluationConfig(mpf_m=3, mpf_schedule="legacy")
     new_estimate = estimate_resources_analytically(
         hamiltonian,
         new_config,
@@ -658,7 +674,7 @@ def test_multiproduct_schedule_propagates_through_consumers():
 
 def test_benchmark_config_rejects_unsupported_m():
     with pytest.raises(ValueError, match="between 2 and 15"):
-        BenchmarkConfig(mpf_m=16)
+        _EvaluationConfig(mpf_m=16)
 
 
 def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
@@ -669,7 +685,7 @@ def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
     )
     w1, w2 = suzuki_commutator_bounds(hamiltonian)
     parameters = choose_parameters(
-        hamiltonian, BenchmarkConfig(time=5.0, target_error=1e-6)
+        hamiltonian, _EvaluationConfig(time=5.0, target_error=1e-6)
     )
 
     assert w1 == 0.0 and w2 == 0.0
@@ -690,7 +706,7 @@ def test_suzuki_commutator_bounds_scale_linearly_for_tfim():
 
 def test_chosen_trotter_reps_meet_the_error_budget():
     hamiltonian = transverse_field_ising(3, field=0.7)
-    config = BenchmarkConfig(time=0.5, target_error=1e-3)
+    config = _EvaluationConfig(time=0.5, target_error=1e-3)
     reps = choose_parameters(hamiltonian, config)["trotter_reps"]
     result = compare_with_exact(
         hamiltonian, 0.5, method="trotter", reps=reps, trotter_order=2
@@ -702,7 +718,7 @@ def test_chosen_trotter_reps_meet_the_error_budget():
 
 def test_chosen_mpf_segments_meet_the_error_budget():
     hamiltonian = transverse_field_ising(3, field=0.7)
-    config = BenchmarkConfig(time=0.5, target_error=1e-3, mpf_m=2)
+    config = _EvaluationConfig(time=0.5, target_error=1e-3, mpf_m=2)
     segments = choose_parameters(hamiltonian, config)["mpf_segments"]
     result = compare_with_exact(
         hamiltonian, 0.5, method="multiproduct", reps=segments, mpf_m=2
@@ -714,7 +730,7 @@ def test_chosen_mpf_segments_meet_the_error_budget():
 
 def test_analytical_qsvt_model_includes_amplification_and_toffolis():
     hamiltonian = transverse_field_ising(2, field=0.7)
-    config = BenchmarkConfig(time=0.5, target_error=1e-3)
+    config = _EvaluationConfig(time=0.5, target_error=1e-3)
     degree = choose_parameters(hamiltonian, config)["qsvt_degree"]
     estimate = estimate_resources_analytically(hamiltonian, config, "qsvt")
 

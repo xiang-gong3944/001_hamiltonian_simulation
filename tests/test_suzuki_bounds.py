@@ -7,14 +7,17 @@ from scipy.linalg import expm
 
 from hamiltonian_resources import (
     BenchmarkConfig,
+    HamiltonianSpec,
     PauliHamiltonian,
-    benchmark_scaling,
+    TimeScaling,
+    TrotterMethod,
     build_trotter_circuit,
-    choose_parameters,
     estimate_suzuki_error,
     heisenberg_chain,
+    run_benchmark,
     transverse_field_ising,
 )
+from hamiltonian_resources.benchmark import _EvaluationConfig, choose_parameters
 from hamiltonian_resources.trotter import (
     _resolve_suzuki_specification,
     _suzuki_group_factors,
@@ -139,7 +142,7 @@ def test_commuting_higher_order_formula_has_zero_bound(order):
 @pytest.mark.parametrize("order", [4, 6])
 def test_chosen_higher_order_reps_meet_operator_error_budget(order):
     hamiltonian = transverse_field_ising(3, field=0.7)
-    config = BenchmarkConfig(time=0.2, target_error=1e-3, trotter_order=order)
+    config = _EvaluationConfig(time=0.2, target_error=1e-3, trotter_order=order)
     reps = choose_parameters(hamiltonian, config)["trotter_reps"]
     budget = config.target_error * (1 - config.synthesis_error_fraction)
 
@@ -189,17 +192,25 @@ def test_analytical_occurrences_match_qiskit_grouped_expansion(hamiltonian, orde
 
 
 def test_benchmark_reports_higher_order_bound_provenance():
-    frame = benchmark_scaling(
-        [3],
-        transverse_field_ising,
-        BenchmarkConfig(time=0.1, target_error=1e-2, trotter_order=4),
+    frame = run_benchmark(
+        BenchmarkConfig(
+            hamiltonian=HamiltonianSpec(
+                model="tfim-test", parameters={}, factory=transverse_field_ising
+            ),
+            system_sizes=[3],
+            target_errors=[1e-2],
+            time=TimeScaling("fixed", 0.1),
+            fixed_target_error=1e-2,
+            methods=[TrotterMethod(4)],
+        ),
+        sweeps="system-size",
     )
-    trotter = frame[frame["algorithm"] == "trotter"].iloc[0]
+    trotter = frame.iloc[0]
 
     assert trotter["trotter_partition"] == "commuting"
     assert trotter["trotter_group_count"] == 2
-    assert trotter["trotter_error_method"] == "schubert-mendl-commutator"
-    assert bool(trotter["trotter_error_rigorous"])
+    assert trotter["bound_method"] == "schubert-mendl-commutator"
+    assert bool(trotter["bound_rigorous"])
 
 
 @pytest.mark.parametrize(
@@ -209,9 +220,9 @@ def test_benchmark_reports_higher_order_bound_provenance():
         ("trotter_partition", "bad", "trotter_partition"),
     ],
 )
-def test_benchmark_config_rejects_invalid_trotter_settings(field, value, message):
+def test_evaluation_config_rejects_invalid_trotter_settings(field, value, message):
     with pytest.raises(ValueError, match=message):
-        BenchmarkConfig(**{field: value})
+        _EvaluationConfig(**{field: value})
 
 
 def test_suzuki_error_estimate_rejects_invalid_inputs():

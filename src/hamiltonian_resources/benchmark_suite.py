@@ -1,4 +1,4 @@
-"""Configurable analytical resource-scaling benchmark data generation."""
+"""Notebook-first analytical resource benchmark API."""
 
 from __future__ import annotations
 
@@ -10,38 +10,26 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
+from numbers import Integral, Real
 from pathlib import Path
-from typing import Any, Literal, Mapping, TypeAlias
+from typing import Any, Callable, Literal, Mapping, Sequence, TypeAlias
 
 import numpy as np
 import pandas as pd
 
-from .benchmark import BenchmarkConfig, choose_parameters, estimate_resources_analytically
+from .benchmark import (
+    _EvaluationConfig,
+    choose_parameters,
+    estimate_resources_analytically,
+)
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import multiproduct_coefficients, optimal_mpf_exponents
 from .trotter import estimate_suzuki_error, suzuki_commutator_bounds
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
-
-SCHEMA_VERSION = "1.0"
-TROTTER_ORDERS = (1, 2, 4, 6)
-MPF_TERM_COUNTS = (3, 5, 7)
-METHOD_LABELS = (
-    "Trotter p=1",
-    "Trotter p=2",
-    "Trotter p=4",
-    "Trotter p=6",
-    "MPF m=3",
-    "MPF m=5",
-    "MPF m=7",
-    "QSVT",
-)
-
-SWEEP_FILENAMES: dict[BenchmarkSweep, str] = {
-    "system-size": "system_size_scaling.csv",
-    "target-error": "target_error_scaling.csv",
-}
+ProgressCallback: TypeAlias = Callable[["BenchmarkProgress"], None]
+SCHEMA_VERSION = "2.0"
 
 BENCHMARK_COLUMNS = (
     "schema_version",
@@ -54,9 +42,12 @@ BENCHMARK_COLUMNS = (
     "model_parameters_json",
     "system_qubits",
     "evolution_time",
+    "time_scaling_mode",
+    "time_scaling_coefficient",
     "target_error",
     "hamiltonian_alpha",
     "hamiltonian_term_count",
+    "method_id",
     "method_family",
     "method_label",
     "trotter_order",
@@ -104,102 +95,242 @@ _MODEL_PARAMETERS = {
     "transverse_field_ising": {"coupling", "field", "periodic"},
     "heisenberg_chain": {"coupling", "field_z"},
 }
-_OUTPUT_FORMATS = {"png", "pdf", "svg"}
+_MODEL_FACTORIES: dict[str, Callable[..., PauliHamiltonian]] = {
+    "transverse_field_ising": transverse_field_ising,
+    "heisenberg_chain": heisenberg_chain,
+}
+
+
+@dataclass
+class HamiltonianSpec:
+    """A stable model name, constructor parameters, and optional Python factory."""
+
+    model: str = "transverse_field_ising"
+    parameters: Mapping[str, Any] = field(default_factory=dict)
+    factory: Callable[..., PauliHamiltonian] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def validate(self) -> None:
+        self.parameters = dict(self.parameters)
+        if not self.model or not isinstance(self.model, str):
+            raise ValueError("hamiltonian model must be a nonempty string")
+        if self.factory is None:
+            if self.model not in _MODEL_FACTORIES:
+                supported = ", ".join(sorted(_MODEL_FACTORIES))
+                raise ValueError(
+                    f"unknown Hamiltonian model {self.model!r}; registered models: {supported}"
+                )
+            unknown = set(self.parameters) - _MODEL_PARAMETERS[self.model]
+            if unknown:
+                names = ", ".join(sorted(unknown))
+                raise ValueError(f"unsupported parameters for {self.model}: {names}")
+        elif not callable(self.factory):
+            raise TypeError("Hamiltonian factory must be callable")
+
+    def build(self, system_qubits: int) -> PauliHamiltonian:
+        self.validate()
+        constructor = self.factory or _MODEL_FACTORIES[self.model]
+        result = constructor(system_qubits, **dict(self.parameters))
+        if not isinstance(result, PauliHamiltonian):
+            raise TypeError("Hamiltonian factory must return PauliHamiltonian")
+        return result
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"model": self.model, "parameters": dict(self.parameters)}
+
+
+@dataclass
+class TimeScaling:
+    """Map a system size to physical evolution time."""
+
+    mode: Literal["proportional", "fixed"] = "proportional"
+    coefficient: float = 1.0
+
+    def validate(self) -> None:
+        if self.mode not in {"proportional", "fixed"}:
+            raise ValueError("time mode must be 'proportional' or 'fixed'")
+        if (
+            isinstance(self.coefficient, bool)
+            or not isinstance(self.coefficient, Real)
+            or not np.isfinite(self.coefficient)
+            or float(self.coefficient) <= 0
+        ):
+            raise ValueError("time coefficient must be positive and finite")
+        self.coefficient = float(self.coefficient)
+
+    def at(self, system_qubits: int) -> float:
+        self.validate()
+        if self.mode == "proportional":
+            return self.coefficient * system_qubits
+        return self.coefficient
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"mode": self.mode, "coefficient": self.coefficient}
 
 
 @dataclass(frozen=True)
-class ScalingBenchmarkConfig:
-    """Resolved inputs for both analytical scaling sweeps."""
+class TrotterMethod:
+    order: int
 
-    hamiltonian_model: str = "transverse_field_ising"
-    model_parameters: Mapping[str, Any] = field(
-        default_factory=lambda: {
-            "coupling": 1.0,
-            "field": 3.0,
-            "periodic": False,
+    @property
+    def family(self) -> str:
+        return "trotter"
+
+    @property
+    def method_id(self) -> str:
+        return f"trotter-p{self.order}"
+
+    @property
+    def label(self) -> str:
+        return f"Trotter p={self.order}"
+
+    def validate(self) -> None:
+        if isinstance(self.order, bool) or not isinstance(self.order, Integral):
+            raise ValueError("Trotter order must be 1 or a positive even integer")
+        if self.order != 1 and (self.order < 2 or self.order % 2):
+            raise ValueError("Trotter order must be 1 or a positive even integer")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"family": self.family, "order": int(self.order)}
+
+
+@dataclass(frozen=True)
+class MultiproductMethod:
+    term_count: int
+    schedule: Literal["new", "legacy"] = "new"
+
+    @property
+    def family(self) -> str:
+        return "multiproduct"
+
+    @property
+    def method_id(self) -> str:
+        suffix = "" if self.schedule == "new" else f"-{self.schedule}"
+        return f"mpf-m{self.term_count}{suffix}"
+
+    @property
+    def label(self) -> str:
+        suffix = "" if self.schedule == "new" else f" ({self.schedule})"
+        return f"MPF m={self.term_count}{suffix}"
+
+    def validate(self) -> None:
+        if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
+            raise ValueError("MPF term count must be an integer")
+        optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "family": self.family,
+            "term_count": int(self.term_count),
+            "schedule": self.schedule,
         }
+
+
+@dataclass(frozen=True)
+class QSVTMethod:
+    @property
+    def family(self) -> str:
+        return "qsvt"
+
+    @property
+    def method_id(self) -> str:
+        return "qsvt"
+
+    @property
+    def label(self) -> str:
+        return "QSVT"
+
+    def validate(self) -> None:
+        return None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"family": self.family}
+
+
+MethodSpec: TypeAlias = TrotterMethod | MultiproductMethod | QSVTMethod
+
+
+def default_methods() -> list[MethodSpec]:
+    return [
+        *(TrotterMethod(order) for order in (1, 2, 4, 6)),
+        *(MultiproductMethod(term_count) for term_count in (3, 5, 7)),
+        QSVTMethod(),
+    ]
+
+
+@dataclass
+class BenchmarkConfig:
+    """Mutable, notebook-friendly configuration for analytical sweeps."""
+
+    hamiltonian: HamiltonianSpec = field(
+        default_factory=lambda: HamiltonianSpec(
+            parameters={"coupling": 1.0, "field": 3.0, "periodic": False}
+        )
     )
-    system_qubit_values: tuple[int, ...] = (2, 4, 6, 8, 10, 12)
-    target_error_values: tuple[float, ...] = (0.1, 0.03, 0.01, 0.003, 0.001)
-    evolution_time: float = 1.0
-    fixed_system_qubits_for_error_sweep: int = 8
-    fixed_target_error_for_size_sweep: float = 1e-3
+    system_sizes: Sequence[int] = field(default_factory=lambda: [2, 4, 6, 8, 10, 12])
+    target_errors: Sequence[float] = field(
+        default_factory=lambda: [0.1, 0.03, 0.01, 0.003, 0.001]
+    )
+    time: TimeScaling = field(default_factory=TimeScaling)
+    fixed_system_size: int = 8
+    fixed_target_error: float = 1e-3
+    methods: Sequence[MethodSpec] = field(default_factory=default_methods)
     synthesis_error_fraction: float = 0.1
-    trotter_partition: str = "auto"
-    mpf_schedule: str = "new"
-    output_directory: Path = Path("benchmark_outputs")
-    output_formats: tuple[str, ...] = ("png", "pdf")
-    generate_summary_plots: bool = False
+    trotter_partition: Literal["auto", "individual", "commuting"] = "auto"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "model_parameters", dict(self.model_parameters))
-        object.__setattr__(self, "system_qubit_values", tuple(self.system_qubit_values))
-        object.__setattr__(self, "target_error_values", tuple(self.target_error_values))
-        object.__setattr__(self, "output_formats", tuple(self.output_formats))
-        object.__setattr__(self, "output_directory", Path(self.output_directory))
+        self.validate()
 
-        if self.hamiltonian_model not in _MODEL_PARAMETERS:
-            supported = ", ".join(sorted(_MODEL_PARAMETERS))
-            raise ValueError(f"hamiltonian_model must be one of: {supported}")
-        unknown_parameters = set(self.model_parameters) - _MODEL_PARAMETERS[
-            self.hamiltonian_model
-        ]
-        if unknown_parameters:
-            names = ", ".join(sorted(unknown_parameters))
-            raise ValueError(
-                f"unsupported parameters for {self.hamiltonian_model}: {names}"
-            )
-        _validate_sizes("system_qubit_values", self.system_qubit_values)
-        _validate_errors("target_error_values", self.target_error_values)
+    def validate(self) -> None:
+        if not isinstance(self.hamiltonian, HamiltonianSpec):
+            raise TypeError("hamiltonian must be a HamiltonianSpec")
+        if not isinstance(self.time, TimeScaling):
+            raise TypeError("time must be a TimeScaling")
+        self.hamiltonian.validate()
+        self.time.validate()
+        self.system_sizes = _normalize_sizes(self.system_sizes)
+        self.target_errors = _normalize_errors(self.target_errors)
         if (
-            isinstance(self.fixed_system_qubits_for_error_sweep, bool)
-            or not isinstance(self.fixed_system_qubits_for_error_sweep, int)
-            or self.fixed_system_qubits_for_error_sweep < 1
+            isinstance(self.fixed_system_size, bool)
+            or not isinstance(self.fixed_system_size, Integral)
+            or int(self.fixed_system_size) < 1
         ):
-            raise ValueError("fixed_system_qubits_for_error_sweep must be a positive integer")
-        if not _is_probability(self.fixed_target_error_for_size_sweep):
-            raise ValueError("fixed_target_error_for_size_sweep must lie in (0, 1)")
-        if not np.isfinite(self.evolution_time) or self.evolution_time <= 0:
-            raise ValueError("evolution_time must be positive and finite")
+            raise ValueError("fixed_system_size must be a positive integer")
+        self.fixed_system_size = int(self.fixed_system_size)
+        if not _is_probability(self.fixed_target_error):
+            raise ValueError("fixed_target_error must lie in (0, 1)")
+        self.fixed_target_error = float(self.fixed_target_error)
         if not _is_probability(self.synthesis_error_fraction):
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
+        self.synthesis_error_fraction = float(self.synthesis_error_fraction)
         if self.trotter_partition not in {"auto", "individual", "commuting"}:
             raise ValueError(
                 "trotter_partition must be 'auto', 'individual', or 'commuting'"
             )
-        if self.mpf_schedule not in {"new", "legacy"}:
-            raise ValueError("mpf_schedule must be 'new' or 'legacy'")
-        if not self.output_formats:
-            raise ValueError("output_formats must not be empty")
-        unknown_formats = set(self.output_formats) - _OUTPUT_FORMATS
-        if unknown_formats:
-            names = ", ".join(sorted(unknown_formats))
-            raise ValueError(f"unsupported output formats: {names}")
-        if len(set(self.output_formats)) != len(self.output_formats):
-            raise ValueError("output_formats must not contain duplicates")
-        if not isinstance(self.generate_summary_plots, bool):
-            raise TypeError("generate_summary_plots must be a boolean")
+        self.methods = list(self.methods)
+        if not self.methods:
+            raise ValueError("methods must not be empty")
+        for method in self.methods:
+            if not isinstance(method, (TrotterMethod, MultiproductMethod, QSVTMethod)):
+                raise TypeError("methods must contain benchmark method specifications")
+            method.validate()
+        method_ids = [method.method_id for method in self.methods]
+        if len(method_ids) != len(set(method_ids)):
+            raise ValueError("methods must have unique method IDs")
 
     def as_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable resolved configuration."""
+        self.validate()
         return {
-            "hamiltonian_model": self.hamiltonian_model,
-            "model_parameters": dict(self.model_parameters),
-            "system_qubit_values": list(self.system_qubit_values),
-            "target_error_values": list(self.target_error_values),
-            "evolution_time": self.evolution_time,
-            "fixed_system_qubits_for_error_sweep": (
-                self.fixed_system_qubits_for_error_sweep
-            ),
-            "fixed_target_error_for_size_sweep": (
-                self.fixed_target_error_for_size_sweep
-            ),
+            "hamiltonian": self.hamiltonian.as_dict(),
+            "system_sizes": list(self.system_sizes),
+            "target_errors": list(self.target_errors),
+            "time": self.time.as_dict(),
+            "fixed_system_size": self.fixed_system_size,
+            "fixed_target_error": self.fixed_target_error,
+            "methods": [method.as_dict() for method in self.methods],
             "synthesis_error_fraction": self.synthesis_error_fraction,
             "trotter_partition": self.trotter_partition,
-            "mpf_schedule": self.mpf_schedule,
-            "output_directory": str(self.output_directory),
-            "output_formats": list(self.output_formats),
-            "generate_summary_plots": self.generate_summary_plots,
         }
 
     @property
@@ -211,76 +342,50 @@ class ScalingBenchmarkConfig:
 
 
 @dataclass(frozen=True)
-class _MethodCase:
-    family: str
-    label: str
-    trotter_order: int | None = None
-    mpf_term_count: int | None = None
+class BenchmarkProgress:
+    completed: int
+    total: int
+    sweep: BenchmarkSweep
+    system_qubits: int
+    target_error: float
+    method_id: str
+    status: Literal["ok", "error"]
 
 
-_METHOD_CASES = tuple(
-    _MethodCase("trotter", f"Trotter p={order}", trotter_order=order)
-    for order in TROTTER_ORDERS
-) + tuple(
-    _MethodCase("multiproduct", f"MPF m={term_count}", mpf_term_count=term_count)
-    for term_count in MPF_TERM_COUNTS
-) + (_MethodCase("qsvt", "QSVT"),)
+def _normalize_sizes(values: Sequence[int]) -> list[int]:
+    normalized = list(values)
+    if not normalized:
+        raise ValueError("system_sizes must not be empty")
+    if any(
+        isinstance(value, bool) or not isinstance(value, Integral) or int(value) < 1
+        for value in normalized
+    ):
+        raise ValueError("system_sizes must contain positive integers")
+    result = [int(value) for value in normalized]
+    if len(result) != len(set(result)):
+        raise ValueError("system_sizes must not contain duplicates")
+    return result
 
 
 def _is_probability(value: object) -> bool:
     return (
-        isinstance(value, (int, float))
+        isinstance(value, Real)
         and not isinstance(value, bool)
         and np.isfinite(value)
         and 0 < float(value) < 1
     )
 
 
-def _validate_sizes(name: str, values: tuple[int, ...]) -> None:
-    if not values:
-        raise ValueError(f"{name} must not be empty")
-    if any(isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in values):
-        raise ValueError(f"{name} must contain positive integers")
-    if len(set(values)) != len(values):
-        raise ValueError(f"{name} must not contain duplicates")
-
-
-def _validate_errors(name: str, values: tuple[float, ...]) -> None:
-    if not values:
-        raise ValueError(f"{name} must not be empty")
-    if not all(_is_probability(value) for value in values):
-        raise ValueError(f"{name} must contain values in (0, 1)")
-    if len(set(values)) != len(values):
-        raise ValueError(f"{name} must not contain duplicates")
-
-
-def load_benchmark_config(path: str | Path) -> ScalingBenchmarkConfig:
-    """Load and validate a JSON configuration.
-
-    A relative output directory is resolved relative to the configuration file.
-    """
-    config_path = Path(path).resolve()
-    try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid JSON configuration {config_path}: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise ValueError("benchmark configuration must be a JSON object")
-
-    allowed = {
-        field_name
-        for field_name in ScalingBenchmarkConfig.__dataclass_fields__
-    }
-    unknown = set(raw) - allowed
-    if unknown:
-        names = ", ".join(sorted(unknown))
-        raise ValueError(f"unknown benchmark configuration fields: {names}")
-    if "output_directory" in raw:
-        output_directory = Path(raw["output_directory"])
-        if not output_directory.is_absolute():
-            output_directory = config_path.parent / output_directory
-        raw["output_directory"] = output_directory.resolve()
-    return ScalingBenchmarkConfig(**raw)
+def _normalize_errors(values: Sequence[float]) -> list[float]:
+    normalized = list(values)
+    if not normalized:
+        raise ValueError("target_errors must not be empty")
+    if not all(_is_probability(value) for value in normalized):
+        raise ValueError("target_errors must contain values in (0, 1)")
+    result = [float(value) for value in normalized]
+    if len(result) != len(set(result)):
+        raise ValueError("target_errors must not contain duplicates")
+    return result
 
 
 def _package_version(distribution: str) -> str:
@@ -327,78 +432,30 @@ def _software_metadata() -> dict[str, Any]:
     }
 
 
-def _build_hamiltonian(config: ScalingBenchmarkConfig, system_qubits: int) -> PauliHamiltonian:
-    parameters = dict(config.model_parameters)
-    if config.hamiltonian_model == "transverse_field_ising":
-        return transverse_field_ising(system_qubits, **parameters)
-    if config.hamiltonian_model == "heisenberg_chain":
-        return heisenberg_chain(system_qubits, **parameters)
-    raise AssertionError(f"unreachable model: {config.hamiltonian_model}")
-
-
-def _empty_record() -> dict[str, Any]:
-    return {column: None for column in BENCHMARK_COLUMNS}
-
-
-def _base_record(
-    config: ScalingBenchmarkConfig,
-    sweep: BenchmarkSweep,
-    run_metadata: Mapping[str, Any],
-    system_qubits: int,
-    target_error: float,
-    method: _MethodCase,
-) -> dict[str, Any]:
-    record = _empty_record()
-    record.update(
-        schema_version=SCHEMA_VERSION,
-        run_id=run_metadata["run_id"],
-        generated_at_utc=run_metadata["generated_at_utc"],
-        config_digest=config.digest,
-        sweep=sweep,
-        hamiltonian_model=config.hamiltonian_model,
-        model_parameters_json=json.dumps(
-            dict(config.model_parameters), sort_keys=True, separators=(",", ":")
-        ),
-        system_qubits=system_qubits,
-        evolution_time=config.evolution_time,
-        target_error=target_error,
-        method_family=method.family,
-        method_label=method.label,
-        trotter_order=method.trotter_order,
-        mpf_term_count=method.mpf_term_count,
-        mpf_formal_order=(
-            2 * method.mpf_term_count if method.mpf_term_count is not None else None
-        ),
-        algorithm_error_budget=target_error * (1 - config.synthesis_error_fraction),
-        **run_metadata["software"],
-    )
-    return record
-
-
 def _evaluation_config(
-    config: ScalingBenchmarkConfig,
+    config: BenchmarkConfig,
+    evolution_time: float,
     target_error: float,
-    method: _MethodCase,
-) -> BenchmarkConfig:
-    return BenchmarkConfig(
-        time=config.evolution_time,
+    method: MethodSpec,
+) -> _EvaluationConfig:
+    return _EvaluationConfig(
+        time=evolution_time,
         target_error=target_error,
         synthesis_error_fraction=config.synthesis_error_fraction,
-        trotter_order=method.trotter_order or 2,
-        trotter_partition=config.trotter_partition,  # type: ignore[arg-type]
-        mpf_m=method.mpf_term_count or MPF_TERM_COUNTS[0],
-        mpf_schedule=config.mpf_schedule,  # type: ignore[arg-type]
+        trotter_order=method.order if isinstance(method, TrotterMethod) else 2,
+        trotter_partition=config.trotter_partition,
+        mpf_m=method.term_count if isinstance(method, MultiproductMethod) else 3,
+        mpf_schedule=method.schedule if isinstance(method, MultiproductMethod) else "new",
     )
 
 
 def _method_metadata(
     hamiltonian: PauliHamiltonian,
-    config: ScalingBenchmarkConfig,
-    evaluation: BenchmarkConfig,
-    method: _MethodCase,
+    evaluation: _EvaluationConfig,
+    method: MethodSpec,
     parameters: Mapping[str, int],
 ) -> dict[str, Any]:
-    if method.family == "trotter":
+    if isinstance(method, TrotterMethod):
         reps = parameters["trotter_reps"]
         error = estimate_suzuki_error(
             hamiltonian,
@@ -421,19 +478,14 @@ def _method_metadata(
             "good_subspace": "system register",
             "nominal_success_probability": 1.0,
         }
-    if method.family == "multiproduct":
-        assert method.mpf_term_count is not None
+    if isinstance(method, MultiproductMethod):
         segments = parameters["mpf_segments"]
-        exponents = optimal_mpf_exponents(
-            method.mpf_term_count, schedule=evaluation.mpf_schedule
-        )
-        coefficients = multiproduct_coefficients(
-            method.mpf_term_count, schedule=evaluation.mpf_schedule
-        )
+        exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
+        coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
         coefficient_norm = float(np.sum(np.abs(coefficients)))
         _, w2 = suzuki_commutator_bounds(hamiltonian)
         alpha_effective = min(hamiltonian.alpha, w2 ** (1 / 3))
-        formal_order = 2 * method.mpf_term_count
+        formal_order = 2 * method.term_count
         proxy = (
             (alpha_effective * evaluation.time) ** (formal_order + 1)
             / segments**formal_order
@@ -445,7 +497,7 @@ def _method_metadata(
             "bound_prefactor": alpha_effective ** (formal_order + 1),
             "bound_method": "commutator-calibrated-mpf-proxy",
             "bound_rigorous": False,
-            "mpf_schedule": evaluation.mpf_schedule,
+            "mpf_schedule": method.schedule,
             "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),
             "mpf_coefficients_json": json.dumps(
                 coefficients.tolist(), separators=(",", ":")
@@ -477,16 +529,15 @@ def _method_metadata(
 
 def _evaluate_method(
     hamiltonian: PauliHamiltonian,
-    config: ScalingBenchmarkConfig,
+    config: BenchmarkConfig,
+    evolution_time: float,
     target_error: float,
-    method: _MethodCase,
+    method: MethodSpec,
 ) -> dict[str, Any]:
-    evaluation = _evaluation_config(config, target_error, method)
+    evaluation = _evaluation_config(config, evolution_time, target_error, method)
     parameters = choose_parameters(hamiltonian, evaluation)
-    resource = estimate_resources_analytically(
-        hamiltonian, evaluation, method.family
-    )
-    result = _method_metadata(hamiltonian, config, evaluation, method, parameters)
+    resource = estimate_resources_analytically(hamiltonian, evaluation, method.family)
+    result = _method_metadata(hamiltonian, evaluation, method, parameters)
     result.update(
         total_qubits=resource.num_qubits,
         rotation_count=resource.rotation_count,
@@ -502,144 +553,368 @@ def _evaluate_method(
 
 
 def _sweep_points(
-    config: ScalingBenchmarkConfig, sweep: BenchmarkSweep
-) -> tuple[tuple[int, float], ...]:
-    if sweep == "system-size":
-        return tuple(
-            (size, config.fixed_target_error_for_size_sweep)
-            for size in config.system_qubit_values
-        )
-    if sweep == "target-error":
-        return tuple(
-            (config.fixed_system_qubits_for_error_sweep, error)
-            for error in config.target_error_values
-        )
-    raise ValueError("sweep must be 'system-size' or 'target-error'")
+    config: BenchmarkConfig, sweeps: Sequence[BenchmarkSweep]
+) -> list[tuple[BenchmarkSweep, int, float, float]]:
+    points: list[tuple[BenchmarkSweep, int, float, float]] = []
+    for sweep in sweeps:
+        if sweep == "system-size":
+            points.extend(
+                (
+                    sweep,
+                    size,
+                    config.time.at(size),
+                    config.fixed_target_error,
+                )
+                for size in config.system_sizes
+            )
+        elif sweep == "target-error":
+            points.extend(
+                (
+                    sweep,
+                    config.fixed_system_size,
+                    config.time.at(config.fixed_system_size),
+                    error,
+                )
+                for error in config.target_errors
+            )
+        else:
+            raise ValueError(f"unsupported benchmark sweep: {sweep!r}")
+    return points
 
 
-def generate_benchmark_sweep(
-    config: ScalingBenchmarkConfig,
+def _base_record(
+    config: BenchmarkConfig,
+    run_metadata: Mapping[str, Any],
     sweep: BenchmarkSweep,
-) -> pd.DataFrame:
-    """Evaluate all eight fixed method configurations for one sweep.
+    system_qubits: int,
+    evolution_time: float,
+    target_error: float,
+    method: MethodSpec,
+) -> dict[str, Any]:
+    record = {column: None for column in BENCHMARK_COLUMNS}
+    record.update(
+        schema_version=SCHEMA_VERSION,
+        run_id=run_metadata["run_id"],
+        generated_at_utc=run_metadata["generated_at_utc"],
+        config_digest=config.digest,
+        sweep=sweep,
+        hamiltonian_model=config.hamiltonian.model,
+        model_parameters_json=json.dumps(
+            dict(config.hamiltonian.parameters), sort_keys=True, separators=(",", ":")
+        ),
+        system_qubits=system_qubits,
+        evolution_time=evolution_time,
+        time_scaling_mode=config.time.mode,
+        time_scaling_coefficient=config.time.coefficient,
+        target_error=target_error,
+        method_id=method.method_id,
+        method_family=method.family,
+        method_label=method.label,
+        trotter_order=method.order if isinstance(method, TrotterMethod) else None,
+        mpf_term_count=(
+            method.term_count if isinstance(method, MultiproductMethod) else None
+        ),
+        mpf_formal_order=(
+            2 * method.term_count if isinstance(method, MultiproductMethod) else None
+        ),
+        algorithm_error_budget=target_error * (1 - config.synthesis_error_fraction),
+        **run_metadata["software"],
+    )
+    return record
 
-    Each failed method remains present as an error row while other evaluations
-    continue. The function never builds exact dense matrices or concrete circuits.
-    """
-    points = _sweep_points(config, sweep)
+
+def run_benchmark(
+    config: BenchmarkConfig,
+    sweeps: Sequence[BenchmarkSweep] | BenchmarkSweep = (
+        "system-size",
+        "target-error",
+    ),
+    progress: ProgressCallback | None = None,
+) -> pd.DataFrame:
+    """Run analytical sweeps in memory without writing files."""
+    if not isinstance(config, BenchmarkConfig):
+        raise TypeError("config must be a BenchmarkConfig")
+    config.validate()
+    selected_sweeps = [sweeps] if isinstance(sweeps, str) else list(sweeps)
+    if not selected_sweeps or len(selected_sweeps) != len(set(selected_sweeps)):
+        raise ValueError("sweeps must be nonempty and contain no duplicates")
+    points = _sweep_points(config, selected_sweeps)
     run_metadata = {
         "run_id": str(uuid.uuid4()),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "software": _software_metadata(),
     }
+    total = len(points) * len(config.methods)
+    completed = 0
     records: list[dict[str, Any]] = []
-    for system_qubits, target_error in points:
-        try:
-            hamiltonian = _build_hamiltonian(config, system_qubits)
-            hamiltonian_error: Exception | None = None
-        except Exception as exc:  # configuration-specific failures become rows
-            hamiltonian = None
-            hamiltonian_error = exc
-        for method in _METHOD_CASES:
+    hamiltonians: dict[int, PauliHamiltonian | Exception] = {}
+    for sweep, system_qubits, evolution_time, target_error in points:
+        if system_qubits not in hamiltonians:
+            try:
+                hamiltonians[system_qubits] = config.hamiltonian.build(system_qubits)
+            except Exception as exc:
+                hamiltonians[system_qubits] = exc
+        hamiltonian_or_error = hamiltonians[system_qubits]
+        for method in config.methods:
             record = _base_record(
                 config,
-                sweep,
                 run_metadata,
+                sweep,
                 system_qubits,
+                evolution_time,
                 target_error,
                 method,
             )
             try:
-                if hamiltonian_error is not None:
-                    raise hamiltonian_error
-                assert hamiltonian is not None
+                if isinstance(hamiltonian_or_error, Exception):
+                    raise hamiltonian_or_error
+                hamiltonian = hamiltonian_or_error
                 record.update(
                     hamiltonian_name=hamiltonian.name,
                     hamiltonian_alpha=hamiltonian.alpha,
                     hamiltonian_term_count=hamiltonian.term_count,
                 )
                 record.update(
-                    _evaluate_method(hamiltonian, config, target_error, method)
+                    _evaluate_method(
+                        hamiltonian,
+                        config,
+                        evolution_time,
+                        target_error,
+                        method,
+                    )
                 )
-            except Exception as exc:  # every requested method retains a row
+            except Exception as exc:
                 record.update(
                     status="error",
                     error_type=type(exc).__name__,
                     error_message=str(exc) or repr(exc),
                 )
             records.append(record)
+            completed += 1
+            if progress is not None:
+                progress(
+                    BenchmarkProgress(
+                        completed=completed,
+                        total=total,
+                        sweep=sweep,
+                        system_qubits=system_qubits,
+                        target_error=target_error,
+                        method_id=method.method_id,
+                        status=record["status"],
+                    )
+                )
     frame = pd.DataFrame.from_records(records, columns=BENCHMARK_COLUMNS)
-    validate_benchmark_frame(frame, expected_sweep=sweep)
+    validate_benchmark_frame(frame)
     return frame
 
 
-def validate_benchmark_frame(
-    frame: pd.DataFrame,
-    *,
-    expected_sweep: BenchmarkSweep | None = None,
-) -> None:
-    """Validate the stable schema and required success/failure fields."""
-    if tuple(frame.columns) != BENCHMARK_COLUMNS:
-        raise ValueError("benchmark data columns do not match the supported schema")
+def validate_benchmark_frame(frame: pd.DataFrame) -> None:
+    """Validate required schema-2 columns while allowing derived columns and reordering."""
+    missing = set(BENCHMARK_COLUMNS) - set(frame.columns)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise ValueError(f"benchmark data is missing required columns: {names}")
     if frame.empty:
         raise ValueError("benchmark data must not be empty")
-    if set(frame["schema_version"].astype(str)) != {SCHEMA_VERSION}:
-        raise ValueError(f"unsupported benchmark schema; expected {SCHEMA_VERSION}")
-    if expected_sweep is not None and set(frame["sweep"]) != {expected_sweep}:
-        raise ValueError(f"benchmark data is not a {expected_sweep!r} sweep")
+    versions = set(frame["schema_version"].astype(str))
+    if versions != {SCHEMA_VERSION}:
+        found = ", ".join(sorted(versions))
+        raise ValueError(
+            f"unsupported benchmark schema {found}; schema 1.x is not compatible, "
+            f"expected {SCHEMA_VERSION}"
+        )
+    if not set(frame["sweep"]).issubset({"system-size", "target-error"}):
+        raise ValueError("benchmark sweep values are invalid")
     if not set(frame["status"]).issubset({"ok", "error"}):
         raise ValueError("benchmark status must be 'ok' or 'error'")
     successful = frame[frame["status"] == "ok"]
     if successful[["t_count", "cnot_count"]].isna().any().any():
-        raise ValueError("successful benchmark rows must contain T and CNOT counts")
+        raise ValueError("successful rows must contain T and CNOT counts")
     if (successful[["t_count", "cnot_count"]] < 0).any().any():
         raise ValueError("resource counts must be nonnegative")
     failed = frame[frame["status"] == "error"]
     if failed["error_message"].isna().any() or (failed["error_message"] == "").any():
-        raise ValueError("failed benchmark rows must contain an error message")
+        raise ValueError("failed rows must contain an error message")
 
 
-def load_benchmark_data(path: str | Path) -> pd.DataFrame:
-    """Load and validate one persisted benchmark CSV."""
+@dataclass
+class BenchmarkJob:
+    """JSON/CLI settings kept separate from the in-memory benchmark API."""
+
+    benchmark: BenchmarkConfig
+    output_root: Path = Path("benchmark_outputs")
+    output_formats: Sequence[str] = ("png", "pdf")
+    generate_summary_plots: bool = False
+
+    def validate(self) -> None:
+        self.benchmark.validate()
+        self.output_root = Path(self.output_root)
+        self.output_formats = list(self.output_formats)
+        supported = {"png", "pdf", "svg"}
+        if not self.output_formats:
+            raise ValueError("output_formats must not be empty")
+        unknown = set(self.output_formats) - supported
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            raise ValueError(f"unsupported output formats: {names}")
+        if len(self.output_formats) != len(set(self.output_formats)):
+            raise ValueError("output_formats must not contain duplicates")
+        if not isinstance(self.generate_summary_plots, bool):
+            raise TypeError("generate_summary_plots must be a boolean")
+
+
+def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
+    family = raw.get("family")
+    if family == "trotter":
+        unknown = set(raw) - {"family", "order"}
+        if unknown or "order" not in raw:
+            raise ValueError("Trotter method requires only family and order")
+        return TrotterMethod(raw["order"])
+    if family == "multiproduct":
+        unknown = set(raw) - {"family", "term_count", "schedule"}
+        if unknown or "term_count" not in raw:
+            raise ValueError(
+                "multiproduct method requires family, term_count, and optional schedule"
+            )
+        return MultiproductMethod(raw["term_count"], raw.get("schedule", "new"))
+    if family == "qsvt":
+        if set(raw) != {"family"}:
+            raise ValueError("QSVT method accepts only the family field")
+        return QSVTMethod()
+    raise ValueError(f"unknown benchmark method family: {family!r}")
+
+
+def benchmark_config_from_dict(raw: Mapping[str, Any]) -> BenchmarkConfig:
+    """Parse the schema-2 JSON representation of an in-memory configuration."""
+    allowed = {
+        "hamiltonian",
+        "system_sizes",
+        "target_errors",
+        "time",
+        "fixed_system_size",
+        "fixed_target_error",
+        "methods",
+        "synthesis_error_fraction",
+        "trotter_partition",
+    }
+    unknown = set(raw) - allowed
+    if unknown:
+        names = ", ".join(sorted(unknown))
+        raise ValueError(f"unknown benchmark configuration fields: {names}")
+    hamiltonian_raw = raw.get("hamiltonian", {})
+    time_raw = raw.get("time", {})
+    methods_raw = raw.get("methods")
+    if not isinstance(hamiltonian_raw, Mapping):
+        raise TypeError("hamiltonian configuration must be an object")
+    if not isinstance(time_raw, Mapping):
+        raise TypeError("time configuration must be an object")
+    if methods_raw is not None and (
+        isinstance(methods_raw, (str, bytes)) or not isinstance(methods_raw, Sequence)
+    ):
+        raise TypeError("methods configuration must be an array")
+    hamiltonian_unknown = set(hamiltonian_raw) - {"model", "parameters"}
+    time_unknown = set(time_raw) - {"mode", "coefficient"}
+    if hamiltonian_unknown:
+        raise ValueError("unknown Hamiltonian configuration fields")
+    if time_unknown:
+        raise ValueError("unknown time configuration fields")
+    kwargs = dict(raw)
+    kwargs["hamiltonian"] = HamiltonianSpec(
+        model=hamiltonian_raw.get("model", "transverse_field_ising"),
+        parameters=hamiltonian_raw.get(
+            "parameters", {"coupling": 1.0, "field": 3.0, "periodic": False}
+        ),
+    )
+    kwargs["time"] = TimeScaling(
+        mode=time_raw.get("mode", "proportional"),
+        coefficient=time_raw.get("coefficient", 1.0),
+    )
+    if methods_raw is not None:
+        if not all(isinstance(item, Mapping) for item in methods_raw):
+            raise TypeError("each method configuration must be an object")
+        kwargs["methods"] = [_method_from_dict(item) for item in methods_raw]
+    return BenchmarkConfig(**kwargs)
+
+
+def load_benchmark_job(path: str | Path) -> BenchmarkJob:
+    """Load a schema-2 benchmark job used by the CLI."""
+    config_path = Path(path).resolve()
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON configuration {config_path}: {exc}") from exc
+    if not isinstance(raw, Mapping):
+        raise ValueError("benchmark job must be a JSON object")
+    unknown = set(raw) - {"benchmark", "output"}
+    if unknown or "benchmark" not in raw:
+        raise ValueError("benchmark job requires benchmark and optional output objects")
+    output = raw.get("output", {})
+    if not isinstance(raw["benchmark"], Mapping) or not isinstance(output, Mapping):
+        raise TypeError("benchmark and output settings must be objects")
+    output_unknown = set(output) - {
+        "root",
+        "formats",
+        "generate_summary_plots",
+    }
+    if output_unknown:
+        raise ValueError("unknown benchmark output fields")
+    output_root = Path(output.get("root", "benchmark_outputs"))
+    if not output_root.is_absolute():
+        output_root = config_path.parent / output_root
+    job = BenchmarkJob(
+        benchmark=benchmark_config_from_dict(raw["benchmark"]),
+        output_root=output_root.resolve(),
+        output_formats=output.get("formats", ["png", "pdf"]),
+        generate_summary_plots=output.get("generate_summary_plots", False),
+    )
+    job.validate()
+    return job
+
+
+def load_benchmark(path: str | Path) -> pd.DataFrame:
+    """Load a benchmark CSV; a metadata sidecar is not required."""
     frame = pd.read_csv(path, keep_default_na=True)
     validate_benchmark_frame(frame)
     return frame
 
 
-def save_benchmark_data(
+def save_benchmark(
     frame: pd.DataFrame,
-    config: ScalingBenchmarkConfig,
+    config: BenchmarkConfig,
     *,
-    path: str | Path | None = None,
-) -> tuple[Path, Path]:
-    """Persist a benchmark CSV and a same-stem reproducibility sidecar."""
+    output_root: str | Path = "benchmark_outputs",
+) -> tuple[Path, Path, Path]:
+    """Persist one in-memory run in a new collision-resistant directory."""
     validate_benchmark_frame(frame)
-    sweeps = set(frame["sweep"])
-    if len(sweeps) != 1:
-        raise ValueError("save one sweep per benchmark CSV")
-    sweep = next(iter(sweeps))
-    if sweep not in SWEEP_FILENAMES:
-        raise ValueError(f"unknown sweep in benchmark data: {sweep}")
-
-    csv_path = Path(path) if path is not None else config.output_directory / SWEEP_FILENAMES[sweep]
-    csv_path = csv_path.resolve()
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    config.validate()
+    run_ids = frame["run_id"].dropna().astype(str).unique()
+    generated = frame["generated_at_utc"].dropna().astype(str).unique()
+    digests = frame["config_digest"].dropna().astype(str).unique()
+    if len(run_ids) != 1 or len(generated) != 1 or len(digests) != 1:
+        raise ValueError("save_benchmark requires exactly one generated run")
+    timestamp = datetime.fromisoformat(generated[0]).astimezone(timezone.utc)
+    directory_name = (
+        f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{digests[0][:8]}_"
+        f"{run_ids[0].replace('-', '')[:8]}"
+    )
+    run_directory = Path(output_root).resolve() / directory_name
+    run_directory.mkdir(parents=True, exist_ok=False)
+    csv_path = run_directory / "benchmark.csv"
+    metadata_path = run_directory / "metadata.json"
     frame.to_csv(csv_path, index=False, na_rep="")
-    metadata_path = csv_path.with_suffix(".metadata.json")
     first = frame.iloc[0]
     metadata = {
         "schema_version": SCHEMA_VERSION,
         "data_file": csv_path.name,
         "row_count": len(frame),
         "status_counts": {
-            str(key): int(value)
-            for key, value in frame["status"].value_counts().items()
+            str(key): int(value) for key, value in frame["status"].value_counts().items()
         },
-        "columns": list(BENCHMARK_COLUMNS),
+        "columns": list(frame.columns),
         "run": {
-            "run_id": first["run_id"],
-            "generated_at_utc": first["generated_at_utc"],
-            "config_digest": first["config_digest"],
+            "run_id": run_ids[0],
+            "generated_at_utc": generated[0],
+            "config_digest": digests[0],
         },
         "configuration": config.as_dict(),
         "software": {
@@ -654,14 +929,4 @@ def save_benchmark_data(
         json.dumps(metadata, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    return csv_path, metadata_path
-
-
-def generate_and_save_benchmark(
-    config: ScalingBenchmarkConfig,
-    sweep: BenchmarkSweep,
-) -> tuple[pd.DataFrame, Path, Path]:
-    """Generate one sweep and persist its CSV and metadata sidecar."""
-    frame = generate_benchmark_sweep(config, sweep)
-    csv_path, metadata_path = save_benchmark_data(frame, config)
-    return frame, csv_path, metadata_path
+    return run_directory, csv_path, metadata_path

@@ -4,36 +4,30 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable
-
-import pandas as pd
 
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
     MPFSchedule,
-    build_multiproduct_circuit,
     optimal_mpf_exponents,
 )
-from .qsvt import build_hamiltonian_qsvt_circuit, estimate_qsvt_degree
+from .qsvt import estimate_qsvt_degree
 from .resources import (
     T_PER_AND,
     ResourceEstimate,
-    count_circuit_resources,
     multicontrol_and_pairs,
     t_cost_for_z_rotation,
 )
 from .trotter import (
     TrotterPartition,
     _suzuki_term_occurrences,
-    build_trotter_circuit,
     estimate_suzuki_error,
     suzuki_commutator_bounds,
 )
 
 
 @dataclass(frozen=True)
-class BenchmarkConfig:
-    """Shared benchmark inputs, including the selected MPF exponent table."""
+class _EvaluationConfig:
+    """Validated inputs for one method at one benchmark point."""
 
     time: float = 1.0
     target_error: float = 1e-3
@@ -60,7 +54,9 @@ class BenchmarkConfig:
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
 
 
-def choose_parameters(hamiltonian: PauliHamiltonian, config: BenchmarkConfig) -> dict[str, int]:
+def choose_parameters(
+    hamiltonian: PauliHamiltonian, config: _EvaluationConfig
+) -> dict[str, int]:
     """Choose parameters from error bounds of comparable tightness.
 
     Orders 1 and 2 use the rigorous Childs et al. commutator bounds.  Orders 4
@@ -107,7 +103,7 @@ _CX_PER_AND = 6
 
 def estimate_resources_analytically(
     hamiltonian: PauliHamiltonian,
-    config: BenchmarkConfig,
+    config: _EvaluationConfig,
     algorithm: str,
 ) -> ResourceEstimate:
     """Estimate resources without constructing the potentially huge circuit.
@@ -215,104 +211,3 @@ def estimate_resources_analytically(
         rotation_synthesis_error=synth_error,
         toffoli_count=int(and_pairs),
     )
-
-
-def benchmark_scaling(
-    sizes: list[int],
-    hamiltonian_factory: Callable[[int], PauliHamiltonian],
-    config: BenchmarkConfig = BenchmarkConfig(),
-    *,
-    transpile_circuits: bool = False,
-) -> pd.DataFrame:
-    """Count all algorithms at each system size under one error budget.
-
-    The default analytical model does not allocate large circuits; it mirrors
-    the amplified circuit structure (robust OAA for MPF and QSVT), so all
-    three algorithms are compared deterministic-to-deterministic.
-    Set ``transpile_circuits=True`` to synthesize real QSP phases and compile
-    the complete circuit for small systems; note that Qiskit's generic
-    ``.control()`` decompositions make that path considerably more expensive
-    than the efficient compilation assumed by the analytical model.
-    """
-    records: list[dict[str, int | float | str]] = []
-    synthesis_error = config.target_error * config.synthesis_error_fraction
-    for size in sizes:
-        hamiltonian = hamiltonian_factory(size)
-        parameters = choose_parameters(hamiltonian, config)
-        circuits = None
-        if transpile_circuits:
-            circuits = {
-                "trotter": build_trotter_circuit(
-                    hamiltonian,
-                    config.time,
-                    parameters["trotter_reps"],
-                    config.trotter_order,
-                    partition=config.trotter_partition,
-                ),
-                "multiproduct": build_multiproduct_circuit(
-                    hamiltonian,
-                    config.time,
-                    config.mpf_m,
-                    parameters["mpf_segments"],
-                    schedule=config.mpf_schedule,
-                ),
-                "qsvt": build_hamiltonian_qsvt_circuit(
-                    hamiltonian,
-                    config.time,
-                    config.target_error * (1 - config.synthesis_error_fraction),
-                ),
-            }
-        for algorithm in ("trotter", "multiproduct", "qsvt"):
-            if circuits is None:
-                resource = estimate_resources_analytically(hamiltonian, config, algorithm)
-            else:
-                resource = count_circuit_resources(
-                    circuits[algorithm],
-                    algorithm=algorithm,
-                    total_synthesis_error=synthesis_error,
-                    optimization_level=config.optimization_level,
-                )
-            estimate = resource.as_dict()
-            trotter_error = estimate_suzuki_error(
-                hamiltonian,
-                config.time,
-                parameters["trotter_reps"],
-                config.trotter_order,
-                partition=config.trotter_partition,
-            )
-            if algorithm in ("multiproduct", "qsvt"):
-                # Pre-amplification LCU normalization; both circuits apply one
-                # robust-OAA round, so the counted cost is near-deterministic.
-                lcu_scale = 2.0
-                nominal_success_probability = 1.0
-            else:
-                lcu_scale = 1.0
-                nominal_success_probability = 1.0
-            estimate.update(
-                system_size=size,
-                alpha=hamiltonian.alpha,
-                target_error=config.target_error,
-                lcu_scale=lcu_scale,
-                nominal_success_probability=nominal_success_probability,
-                parameter=(
-                    parameters["trotter_reps"]
-                    if algorithm == "trotter"
-                    else parameters["mpf_segments"]
-                    if algorithm == "multiproduct"
-                        else parameters["qsvt_degree"]
-                ),
-                trotter_partition=(
-                    trotter_error.partition if algorithm == "trotter" else None
-                ),
-                trotter_group_count=(
-                    trotter_error.group_count if algorithm == "trotter" else None
-                ),
-                trotter_error_method=(
-                    trotter_error.method if algorithm == "trotter" else None
-                ),
-                trotter_error_rigorous=(
-                    trotter_error.rigorous if algorithm == "trotter" else None
-                ),
-            )
-            records.append(estimate)
-    return pd.DataFrame.from_records(records)

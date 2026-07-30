@@ -1,19 +1,37 @@
 {
-  "hamiltonian_model": "transverse_field_ising",
-  "model_parameters": {
-    "coupling": 1.0,
-    "field": 3.0,
-    "periodic": false
+  "benchmark": {
+    "hamiltonian": {
+      "model": "transverse_field_ising",
+      "parameters": {
+        "coupling": 1.0,
+        "field": 3.0,
+        "periodic": false
+      }
+    },
+    "system_sizes": [2, 4, 6, 8, 10, 12],
+    "target_errors": [0.1, 0.03, 0.01, 0.003, 0.001],
+    "time": {
+      "mode": "proportional",
+      "coefficient": 1.0
+    },
+    "fixed_system_size": 8,
+    "fixed_target_error": 0.001,
+    "methods": [
+      {"family": "trotter", "order": 1},
+      {"family": "trotter", "order": 2},
+      {"family": "trotter", "order": 4},
+      {"family": "trotter", "order": 6},
+      {"family": "multiproduct", "term_count": 3, "schedule": "new"},
+      {"family": "multiproduct", "term_count": 5, "schedule": "new"},
+      {"family": "multiproduct", "term_count": 7, "schedule": "new"},
+      {"family": "qsvt"}
+    ],
+    "synthesis_error_fraction": 0.1,
+    "trotter_partition": "auto"
   },
-  "system_qubit_values": [2, 4, 6, 8, 10, 12],
-  "target_error_values": [0.1, 0.03, 0.01, 0.003, 0.001],
-  "evolution_time": 1.0,
-  "fixed_system_qubits_for_error_sweep": 8,
-  "fixed_target_error_for_size_sweep": 0.001,
-  "synthesis_error_fraction": 0.1,
-  "trotter_partition": "auto",
-  "mpf_schedule": "new",
-  "output_directory": "benchmark_outputs",
-  "output_formats": ["png", "pdf"],
-  "generate_summary_plots": false
+  "output": {
+    "root": "benchmark_outputs",
+    "formats": ["png", "pdf"],
+    "generate_summary_plots": false
+  }
 }
