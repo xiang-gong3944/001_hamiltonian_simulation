@@ -51,7 +51,7 @@ def test_full_plot_defaults_and_arbitrary_metric(benchmark_frame):
 
     assert isinstance(size_figure.canvas, FigureCanvasAgg)
     assert size_axis.get_xscale() == "log"
-    assert size_axis.xaxis._scale.base == 2
+    assert size_axis.xaxis._scale.base == 10
     assert size_axis.get_yscale() == "log"
     assert len(size_axis.lines) == 3
     assert error_axis.get_xscale() == "linear"

@@ -80,7 +80,7 @@ MPF `m=3,5,7`、QSVTを独立に評価します。system-size sweepでは局所�
 厳密な推定ではなく、明記された無次元の比較規約です。
 
 `notebooks/resource_comparison.ipynb`では、NumPy配列を含むパラメータセルを変更し、
-計算とlog2サイズ軸での描画までnotebook内で完結できます。Python APIは結果を
+計算とlog10サイズ軸での描画までnotebook内で完結できます。Python APIは結果を
 メモリ上のDataFrameとして返し、自動保存しません。
 
 ```powershell

@@ -208,7 +208,7 @@ def plot_benchmark(
     if yscale not in {"linear", "log"}:
         raise ValueError("yscale must be 'linear' or 'log'")
     if resolved_xscale == "log":
-        axis.set_xscale("log", base=xbase or (2 if sweep == "system-size" else 10))
+        axis.set_xscale("log", base=xbase or 10)
     else:
         axis.set_xscale("linear")
     if yscale == "log":

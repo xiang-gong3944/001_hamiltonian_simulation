@@ -42,8 +42,8 @@ a benchmark convention, not a computed Lieb--Robinson velocity. Use
 `TimeScaling("fixed", t)` when a fixed-time comparison is intentionally wanted.
 The same rule is evaluated at `fixed_system_size` during the target-error sweep.
 
-The default system-size x-axis is logarithmic with base two. The target-error
-axis is logarithmic with base ten and reversed. Both axes, their bases, the
+The default system-size and target-error x-axes are logarithmic with base ten;
+the target-error axis is reversed. Both axes, their bases, the
 y-scale, grouping columns, and any positive numeric resource metric can be
 selected through `plot_benchmark`.
 
