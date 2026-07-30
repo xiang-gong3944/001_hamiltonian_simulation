@@ -188,6 +188,14 @@ def test_low_bound_matches_theorem_equations_14_and_15():
     assert estimate.error == pytest.approx(expected)
 
 
+def test_mpf_estimators_reject_invalid_policy_and_nonfinite_time():
+    hamiltonian = transverse_field_ising(2)
+    with pytest.raises(ValueError, match="method"):
+        estimate_mpf_error(hamiltonian, 0.2, 2, 2, method="unknown")
+    with pytest.raises(ValueError, match="finite"):
+        select_mpf_segments(hamiltonian, np.inf, 1e-3, 2)
+
+
 def test_imbalanced_two_term_case_exposes_legacy_proxy_failure():
     hamiltonian = PauliHamiltonian.from_terms(
         1,

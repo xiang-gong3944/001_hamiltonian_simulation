@@ -64,7 +64,22 @@ def test_python_run_is_in_memory_and_explicit_save_is_collision_free(
     assert first_directory != second_directory
     assert first_csv.name == "benchmark.csv"
     assert first_metadata.name == "metadata.json"
-    assert load_benchmark(first_csv)["method_id"].tolist() == first["method_id"].tolist()
+    loaded = load_benchmark(first_csv)
+    metadata = json.loads(first_metadata.read_text(encoding="utf-8"))
+    mpf_config = next(
+        method
+        for method in metadata["configuration"]["methods"]
+        if method["family"] == "multiproduct"
+    )
+
+    assert loaded["method_id"].tolist() == first["method_id"].tolist()
+    assert {
+        "bound_method",
+        "bound_rigorous",
+        "bound_scope",
+        "circuit_bound_rigorous",
+    } <= set(metadata["columns"])
+    assert mpf_config["error_method"] == "low-rigorous"
 
 
 def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):

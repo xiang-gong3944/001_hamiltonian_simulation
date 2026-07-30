@@ -285,6 +285,8 @@ def select_mpf_segments(
     Kliuchnikov, and Wiebe, arXiv:1907.11679.  ``legacy-w2-proxy`` exactly
     reproduces the repository's historical heuristic.
     """
+    if not np.isfinite(time):
+        raise ValueError("time must be finite")
     if not 0 < target_error <= 1:
         raise ValueError("target_error must lie in (0, 1]")
     optimal_mpf_exponents(m, schedule=schedule)

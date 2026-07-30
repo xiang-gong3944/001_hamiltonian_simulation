@@ -210,6 +210,14 @@ def plot_benchmark(
         heuristic = not bool(_bound_target_satisfied(values).all())
         if heuristic and "heuristic" not in label.lower():
             label += " [heuristic/non-certified]"
+        if family == "multiproduct":
+            circuit_rigorous = (
+                values["circuit_bound_rigorous"].fillna(False).astype(bool)
+                if "circuit_bound_rigorous" in values
+                else pd.Series(False, index=values.index)
+            )
+            if not bool(circuit_rigorous.all()):
+                label += " [ideal bound; circuit unproven]"
         if summary and "selected_method_label" in values:
             methods = list(dict.fromkeys(values["selected_method_label"].astype(str)))
             if len(methods) > 1:
