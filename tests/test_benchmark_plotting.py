@@ -101,3 +101,35 @@ def test_plot_can_group_mixed_models_without_unique_value_failure(benchmark_fram
         series_by=["hamiltonian_model", "method_label"],
     )
     assert len(figure.axes[0].lines) == 6
+
+
+def test_heuristic_mpf_is_excluded_from_rigorous_best_and_styled():
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        time=TimeScaling("fixed", 0.2),
+        methods=[
+            MultiproductMethod(3),
+            MultiproductMethod(3, error_method="legacy-w2-proxy"),
+        ],
+    )
+    frame = run_benchmark(config, sweeps="system-size")
+    rigorous = frame[frame["bound_rigorous"]].iloc[0]
+    heuristic = frame[~frame["bound_rigorous"]].iloc[0]
+    frame.loc[frame["method_id"] == heuristic["method_id"], "t_count"] = 1
+
+    best = select_best_by_family(frame, "t_count", sweep="system-size")
+    unconstrained = select_best_by_family(
+        frame,
+        "t_count",
+        sweep="system-size",
+        rigorous_only=False,
+    )
+    figure = plot_benchmark(frame, sweep="system-size", metric="t_count")
+    heuristic_lines = [
+        line for line in figure.axes[0].lines if "heuristic" in line.get_label().lower()
+    ]
+
+    assert best.iloc[0]["method_id"] == rigorous["method_id"]
+    assert unconstrained.iloc[0]["method_id"] == heuristic["method_id"]
+    assert len(heuristic_lines) == 1
+    assert heuristic_lines[0].get_linestyle() == ":"

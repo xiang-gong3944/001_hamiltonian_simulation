@@ -54,22 +54,38 @@ def _metric_values(frame: pd.DataFrame, metric: str) -> pd.Series:
     return values
 
 
+def _bound_target_satisfied(frame: pd.DataFrame) -> pd.Series:
+    """Return scoped certification status, including early schema-2 data."""
+    if "bound_target_satisfied" in frame.columns:
+        return frame["bound_target_satisfied"].fillna(False).astype(bool)
+    rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
+    bound = pd.to_numeric(frame["bound_value"], errors="coerce")
+    budget = pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
+    return rigorous & bound.notna() & budget.notna() & (bound <= budget)
+
+
 def select_best_by_family(
     frame: pd.DataFrame,
     metric: str,
     *,
     sweep: BenchmarkSweep,
+    rigorous_only: bool = True,
 ) -> pd.DataFrame:
-    """Select the minimum successful method and retain its identity at every point."""
+    """Select the minimum method per family, rigorously scoped by default."""
     selected = _sweep_frame(frame, sweep)
     selected[metric] = _metric_values(selected, metric)
+    if rigorous_only:
+        selected = selected[_bound_target_satisfied(selected)]
     selected = selected[
         (selected["status"] == "ok")
         & selected[metric].notna()
         & (selected[metric] > 0)
     ]
     if selected.empty:
-        raise ValueError(f"no positive successful values for metric {metric!r}")
+        qualifier = " rigorously target-satisfying" if rigorous_only else ""
+        raise ValueError(
+            f"no positive successful{qualifier} values for metric {metric!r}"
+        )
     x_column = "system_qubits" if sweep == "system-size" else "target_error"
     context_columns = [
         "hamiltonian_model",
@@ -86,7 +102,7 @@ def select_best_by_family(
     result["summary_label"] = result["method_family"].map(
         {
             "trotter": "Best evaluated Trotter",
-            "multiproduct": "Best evaluated MPF",
+            "multiproduct": "Best ideal-certified MPF (circuit unproven)",
             "qsvt": "QSVT",
         }
     ).fillna("Best " + result["method_family"].astype(str))
@@ -155,7 +171,12 @@ def plot_benchmark(
     selected = _sweep_frame(frame, sweep)
     selected[metric] = _metric_values(selected, metric)
     if summary:
-        selected = select_best_by_family(selected, metric, sweep=sweep)
+        selected = select_best_by_family(
+            selected,
+            metric,
+            sweep=sweep,
+            rigorous_only=True,
+        )
         if series_by == "method_label":
             series_by = "summary_label"
     x_column = "system_qubits" if sweep == "system-size" else "target_error"
@@ -186,6 +207,9 @@ def plot_benchmark(
         variant = family_variant.get(family, 0)
         family_variant[family] = variant + 1
         label = _series_label(key, columns)
+        heuristic = not bool(_bound_target_satisfied(values).all())
+        if heuristic and "heuristic" not in label.lower():
+            label += " [heuristic/non-certified]"
         if summary and "selected_method_label" in values:
             methods = list(dict.fromkeys(values["selected_method_label"].astype(str)))
             if len(methods) > 1:
@@ -195,9 +219,12 @@ def plot_benchmark(
             values[metric],
             label=label,
             color=color,
-            linestyle=_LINESTYLES[variant % len(_LINESTYLES)],
+            linestyle=(
+                ":" if heuristic else _LINESTYLES[variant % len(_LINESTYLES)]
+            ),
             marker=_MARKERS[variant % len(_MARKERS)],
             linewidth=2.0 if summary else 1.7,
+            alpha=0.7 if heuristic else 1.0,
         )
 
     resolved_xscale = xscale or "log"
