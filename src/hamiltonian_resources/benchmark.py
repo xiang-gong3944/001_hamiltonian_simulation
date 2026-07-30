@@ -55,7 +55,9 @@ class _EvaluationConfig:
 
 
 def choose_parameters(
-    hamiltonian: PauliHamiltonian, config: _EvaluationConfig
+    hamiltonian: PauliHamiltonian,
+    config: _EvaluationConfig,
+    algorithm: str | None = None,
 ) -> dict[str, int]:
     """Choose parameters from error bounds of comparable tightness.
 
@@ -72,29 +74,34 @@ def choose_parameters(
     why the product-formula rules are commutator-based.  Calibrate small
     instances with ``compare_with_exact``.
     """
+    if algorithm not in (None, "trotter", "multiproduct", "qsvt"):
+        raise ValueError(f"unknown algorithm: {algorithm}")
     budget = config.target_error * (1 - config.synthesis_error_fraction)
     time = config.time
     alpha_time = hamiltonian.alpha * time
-    p = config.trotter_order
-    w1, w2 = suzuki_commutator_bounds(hamiltonian)
-    one_step_error = estimate_suzuki_error(
-        hamiltonian,
-        time,
-        reps=1,
-        order=p,
-        partition=config.trotter_partition,
-    ).error
-    trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
-    alpha_eff = min(hamiltonian.alpha, w2 ** (1 / 3))
-    mpf_order = 2 * config.mpf_m
-    mpf_segments = math.ceil(
-        (((alpha_eff * time) ** (mpf_order + 1)) / budget) ** (1 / mpf_order)
-    )
-    return {
-        "trotter_reps": max(1, trotter_reps),
-        "mpf_segments": max(1, mpf_segments),
-        "qsvt_degree": estimate_qsvt_degree(alpha_time, budget),
-    }
+    parameters: dict[str, int] = {}
+    if algorithm in (None, "trotter"):
+        p = config.trotter_order
+        one_step_error = estimate_suzuki_error(
+            hamiltonian,
+            time,
+            reps=1,
+            order=p,
+            partition=config.trotter_partition,
+        ).error
+        trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
+        parameters["trotter_reps"] = max(1, trotter_reps)
+    if algorithm in (None, "multiproduct"):
+        _, w2 = suzuki_commutator_bounds(hamiltonian)
+        alpha_eff = min(hamiltonian.alpha, w2 ** (1 / 3))
+        mpf_order = 2 * config.mpf_m
+        mpf_segments = math.ceil(
+            (((alpha_eff * time) ** (mpf_order + 1)) / budget) ** (1 / mpf_order)
+        )
+        parameters["mpf_segments"] = max(1, mpf_segments)
+    if algorithm in (None, "qsvt"):
+        parameters["qsvt_degree"] = estimate_qsvt_degree(alpha_time, budget)
+    return parameters
 
 
 #: CX cost charged per temporary-AND compute/uncompute pair.
@@ -119,7 +126,7 @@ def estimate_resources_analytically(
     on the quadrature/component qubits; the Qiskit ``.control()`` construction
     used by ``transpile_circuits=True`` is substantially more expensive.
     """
-    params = choose_parameters(hamiltonian, config)
+    params = choose_parameters(hamiltonian, config, algorithm)
     mpf_exponents = optimal_mpf_exponents(
         config.mpf_m,
         schedule=config.mpf_schedule,

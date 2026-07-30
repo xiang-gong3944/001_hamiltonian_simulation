@@ -535,7 +535,7 @@ def _evaluate_method(
     method: MethodSpec,
 ) -> dict[str, Any]:
     evaluation = _evaluation_config(config, evolution_time, target_error, method)
-    parameters = choose_parameters(hamiltonian, evaluation)
+    parameters = choose_parameters(hamiltonian, evaluation, method.family)
     resource = estimate_resources_analytically(hamiltonian, evaluation, method.family)
     result = _method_metadata(hamiltonian, evaluation, method, parameters)
     result.update(

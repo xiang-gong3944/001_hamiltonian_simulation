@@ -155,8 +155,30 @@ def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
     if alpha_time == 0:
         return 0
     source_budget = epsilon / 18
-    _, sine, _, _ = _jacobi_anger_polynomials(alpha_time, source_budget, 1 - source_budget)
-    return len(sine) - 1
+    abs_time = abs(alpha_time)
+
+    def satisfies(truncation_order: int) -> bool:
+        return (
+            _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
+            <= source_budget
+            and _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
+            <= source_budget
+        )
+
+    # Degree estimation needs only the tail bound.  Avoid constructing the
+    # coefficient arrays, which can be very large for scaling benchmarks.
+    lower = 0
+    upper = max(1, math.ceil(abs_time / 2))
+    while not satisfies(upper):
+        lower = upper
+        upper *= 2
+    while lower + 1 < upper:
+        middle = (lower + upper) // 2
+        if satisfies(middle):
+            upper = middle
+        else:
+            lower = middle
+    return 2 * upper + 1
 
 
 def synthesize_hamsim_phases(
