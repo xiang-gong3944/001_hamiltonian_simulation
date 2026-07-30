@@ -1,229 +1,253 @@
-"""Publication-friendly plots loaded from persisted benchmark data."""
+"""Configurable plots for schema-2 benchmark data."""
 
 from __future__ import annotations
 
-import json
+import itertools
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pandas as pd
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from .benchmark_suite import METHOD_LABELS, load_benchmark_data
+from .benchmark_suite import BenchmarkSweep, validate_benchmark_frame
 
 
 FAMILY_COLORS = {
-    "trotter": "#0072B2",  # Okabe-Ito blue
-    "multiproduct": "#D55E00",  # Okabe-Ito vermillion
-    "qsvt": "#009E73",  # Okabe-Ito bluish green
+    "trotter": "#0072B2",
+    "multiproduct": "#D55E00",
+    "qsvt": "#009E73",
+}
+_FALLBACK_COLORS = ("#CC79A7", "#E69F00", "#56B4E9", "#000000")
+_LINESTYLES = ("-", "--", "-.", ":")
+_MARKERS = ("o", "s", "^", "D", "v", "P", "X", "*")
+_METRIC_LABELS = {
+    "t_count": "T count",
+    "cnot_count": "CNOT count",
+    "total_qubits": "Total qubits",
+    "query_count": "Query count",
+    "rotation_count": "Rotation count",
+    "toffoli_count": "Toffoli count",
+    "depth": "Depth",
 }
 
-METHOD_STYLES: dict[str, dict[str, Any]] = {
-    "Trotter p=1": {
-        "color": FAMILY_COLORS["trotter"],
-        "linestyle": "-",
-        "marker": "o",
-        "linewidth": 1.7,
-    },
-    "Trotter p=2": {
-        "color": FAMILY_COLORS["trotter"],
-        "linestyle": "--",
-        "marker": "s",
-        "linewidth": 1.7,
-    },
-    "Trotter p=4": {
-        "color": FAMILY_COLORS["trotter"],
-        "linestyle": "-.",
-        "marker": "^",
-        "linewidth": 1.7,
-    },
-    "Trotter p=6": {
-        "color": FAMILY_COLORS["trotter"],
-        "linestyle": ":",
-        "marker": "D",
-        "linewidth": 1.9,
-    },
-    "MPF m=3": {
-        "color": FAMILY_COLORS["multiproduct"],
-        "linestyle": "-",
-        "marker": "v",
-        "linewidth": 1.7,
-    },
-    "MPF m=5": {
-        "color": FAMILY_COLORS["multiproduct"],
-        "linestyle": "--",
-        "marker": "P",
-        "linewidth": 1.7,
-    },
-    "MPF m=7": {
-        "color": FAMILY_COLORS["multiproduct"],
-        "linestyle": "-.",
-        "marker": "X",
-        "linewidth": 1.7,
-    },
-    "QSVT": {
-        "color": FAMILY_COLORS["qsvt"],
-        "linestyle": "-",
-        "marker": "*",
-        "linewidth": 2.4,
-        "markersize": 9,
-    },
-}
 
-SUMMARY_STYLES: dict[str, dict[str, Any]] = {
-    "Best Trotter (p=1,2,4,6)": {
-        "color": FAMILY_COLORS["trotter"],
-        "linestyle": "-",
-        "marker": "o",
-        "linewidth": 2.1,
-    },
-    "Best MPF (m=3,5,7)": {
-        "color": FAMILY_COLORS["multiproduct"],
-        "linestyle": "--",
-        "marker": "s",
-        "linewidth": 2.1,
-    },
-    "QSVT": METHOD_STYLES["QSVT"],
-}
-
-_METRIC_LABELS = {"t_count": "T count", "cnot_count": "CNOT count"}
-_SUPPORTED_FORMATS = {"png", "pdf", "svg"}
+def _sweep_frame(frame: pd.DataFrame, sweep: BenchmarkSweep) -> pd.DataFrame:
+    validate_benchmark_frame(frame)
+    if sweep not in {"system-size", "target-error"}:
+        raise ValueError("sweep must be 'system-size' or 'target-error'")
+    selected = frame[frame["sweep"] == sweep].copy()
+    if selected.empty:
+        raise ValueError(f"benchmark data contains no {sweep!r} rows")
+    return selected
 
 
-def _unique_value(frame: pd.DataFrame, column: str) -> Any:
-    values = frame[column].dropna().unique()
-    if len(values) != 1:
-        raise ValueError(f"plotting requires one {column}; found {len(values)}")
-    return values[0]
+def _metric_values(frame: pd.DataFrame, metric: str) -> pd.Series:
+    if metric not in frame.columns:
+        raise ValueError(f"benchmark metric column not found: {metric}")
+    values = pd.to_numeric(frame[metric], errors="coerce")
+    if values.notna().sum() == 0:
+        raise ValueError(f"benchmark metric must be numeric: {metric}")
+    return values
 
 
-def _format_number(value: float) -> str:
-    return f"{float(value):g}"
-
-
-def _plot_context(frame: pd.DataFrame) -> tuple[str, str, str]:
-    sweep = str(_unique_value(frame, "sweep"))
-    model = str(_unique_value(frame, "hamiltonian_model"))
-    parameters = json.loads(str(_unique_value(frame, "model_parameters_json")))
-    parameter_text = ", ".join(
-        f"{key}={value}" for key, value in sorted(parameters.items())
-    )
-    display_model = {
-        "transverse_field_ising": "Transverse-field Ising",
-        "heisenberg_chain": "Heisenberg chain",
-    }.get(model, model)
-    model_text = f"{display_model} ({parameter_text})" if parameter_text else display_model
-    time = _format_number(float(_unique_value(frame, "evolution_time")))
-    if sweep == "system-size":
-        epsilon = _format_number(float(_unique_value(frame, "target_error")))
-        fixed_text = f"t={time}, target error ε={epsilon}"
-        x_column = "system_qubits"
-    elif sweep == "target-error":
-        size = int(_unique_value(frame, "system_qubits"))
-        fixed_text = f"n={size} system qubits, t={time}"
-        x_column = "target_error"
-    else:
-        raise ValueError(f"unsupported sweep: {sweep}")
-    return sweep, x_column, f"{model_text}\n{fixed_text}"
-
-
-def _summary_series(
-    frame: pd.DataFrame, x_column: str, metric: str
-) -> tuple[tuple[str, pd.DataFrame], ...]:
-    successful = frame[
-        (frame["status"] == "ok")
-        & frame[metric].notna()
-        & (frame[metric] > 0)
-    ]
-    series: list[tuple[str, pd.DataFrame]] = []
-    for family, label in (
-        ("trotter", "Best Trotter (p=1,2,4,6)"),
-        ("multiproduct", "Best MPF (m=3,5,7)"),
-    ):
-        family_rows = successful[successful["method_family"] == family]
-        minimum = (
-            family_rows.groupby(x_column, as_index=False, sort=True)[metric].min()
-            if not family_rows.empty
-            else family_rows[[x_column, metric]]
-        )
-        series.append((label, minimum))
-    qsvt = successful[successful["method_label"] == "QSVT"][[x_column, metric]]
-    series.append(("QSVT", qsvt.sort_values(x_column)))
-    return tuple(series)
-
-
-def create_benchmark_figure(
+def select_best_by_family(
     frame: pd.DataFrame,
     metric: str,
     *,
-    summary: bool = False,
-) -> Figure:
-    """Create one figure from an already loaded benchmark DataFrame."""
-    if metric not in _METRIC_LABELS:
-        raise ValueError("metric must be 't_count' or 'cnot_count'")
-    sweep, x_column, context = _plot_context(frame)
-    figure = Figure(figsize=(9.2, 5.8))
-    FigureCanvasAgg(figure)
-    axis = figure.subplots()
-    missing_labels: list[str] = []
+    sweep: BenchmarkSweep,
+) -> pd.DataFrame:
+    """Select the minimum successful method and retain its identity at every point."""
+    selected = _sweep_frame(frame, sweep)
+    selected[metric] = _metric_values(selected, metric)
+    selected = selected[
+        (selected["status"] == "ok")
+        & selected[metric].notna()
+        & (selected[metric] > 0)
+    ]
+    if selected.empty:
+        raise ValueError(f"no positive successful values for metric {metric!r}")
+    x_column = "system_qubits" if sweep == "system-size" else "target_error"
+    context_columns = [
+        "hamiltonian_model",
+        "model_parameters_json",
+        "time_scaling_mode",
+        "time_scaling_coefficient",
+    ]
+    context_columns.append("target_error" if sweep == "system-size" else "system_qubits")
+    group_columns = [x_column, "method_family", *context_columns]
+    indices = selected.groupby(group_columns, dropna=False, sort=True)[metric].idxmin()
+    result = selected.loc[indices].copy().sort_values(group_columns)
+    result["selected_method_id"] = result["method_id"]
+    result["selected_method_label"] = result["method_label"]
+    result["summary_label"] = result["method_family"].map(
+        {
+            "trotter": "Best evaluated Trotter",
+            "multiproduct": "Best evaluated MPF",
+            "qsvt": "QSVT",
+        }
+    ).fillna("Best " + result["method_family"].astype(str))
+    return result
 
-    if summary:
-        plot_series = _summary_series(frame, x_column, metric)
-        styles: Mapping[str, Mapping[str, Any]] = SUMMARY_STYLES
-    else:
-        plot_series = tuple(
-            (
-                label,
-                frame[
-                    (frame["method_label"] == label)
-                    & (frame["status"] == "ok")
-                    & frame[metric].notna()
-                    & (frame[metric] > 0)
-                ][[x_column, metric]].sort_values(x_column),
-            )
-            for label in METHOD_LABELS
-        )
-        styles = METHOD_STYLES
 
-    for label, values in plot_series:
-        style = dict(styles[label])
-        if values.empty:
-            missing_labels.append(label)
-            axis.plot([], [], label=label, **style)
-            continue
-        axis.plot(values[x_column], values[metric], label=label, **style)
-
-    axis.set_yscale("log")
-    axis.set_ylabel(_METRIC_LABELS[metric])
+def _context_title(frame: pd.DataFrame, sweep: BenchmarkSweep) -> str:
+    details: list[str] = []
+    models = frame["hamiltonian_model"].dropna().astype(str).unique()
+    if len(models) == 1:
+        details.append(models[0])
     if sweep == "system-size":
-        axis.set_xlabel("Number of system qubits")
-        axis.xaxis.get_major_locator().set_params(integer=True)
-        sweep_title = "System-size scaling"
+        modes = frame["time_scaling_mode"].dropna().astype(str).unique()
+        coefficients = frame["time_scaling_coefficient"].dropna().unique()
+        if len(modes) == 1 and len(coefficients) == 1:
+            coefficient = float(coefficients[0])
+            if modes[0] == "proportional":
+                details.append(f"t={coefficient:g}×n")
+            else:
+                details.append(f"t={coefficient:g}")
+        errors = frame["target_error"].dropna().unique()
+        if len(errors) == 1:
+            details.append(f"ε={float(errors[0]):g}")
     else:
-        axis.set_xscale("log")
+        sizes = frame["system_qubits"].dropna().unique()
+        times = frame["evolution_time"].dropna().unique()
+        if len(sizes) == 1:
+            details.append(f"n={int(sizes[0])}")
+        if len(times) == 1:
+            details.append(f"t={float(times[0]):g}")
+    return ", ".join(details)
+
+
+def _series_columns(series_by: str | Sequence[str], frame: pd.DataFrame) -> list[str]:
+    columns = [series_by] if isinstance(series_by, str) else list(series_by)
+    if not columns:
+        raise ValueError("series_by must contain at least one column")
+    missing = set(columns) - set(frame.columns)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise ValueError(f"series columns not found: {names}")
+    return columns
+
+
+def _series_label(key: Any, columns: Sequence[str]) -> str:
+    values = key if isinstance(key, tuple) else (key,)
+    if len(columns) == 1:
+        return str(values[0])
+    return ", ".join(f"{column}={value}" for column, value in zip(columns, values))
+
+
+def plot_benchmark(
+    frame: pd.DataFrame,
+    *,
+    sweep: BenchmarkSweep,
+    metric: str,
+    xscale: str | None = None,
+    xbase: float | None = None,
+    yscale: str = "log",
+    ybase: float = 10,
+    summary: bool = False,
+    series_by: str | Sequence[str] = "method_label",
+    ax: Axes | None = None,
+) -> Figure:
+    """Plot any positive numeric benchmark metric with configurable axes and grouping."""
+    selected = _sweep_frame(frame, sweep)
+    selected[metric] = _metric_values(selected, metric)
+    if summary:
+        selected = select_best_by_family(selected, metric, sweep=sweep)
+        if series_by == "method_label":
+            series_by = "summary_label"
+    x_column = "system_qubits" if sweep == "system-size" else "target_error"
+    selected = selected[
+        (selected["status"] == "ok")
+        & selected[metric].notna()
+        & (selected[metric] > 0)
+    ].copy()
+    if selected.empty:
+        raise ValueError(f"no positive successful values for metric {metric!r}")
+    columns = _series_columns(series_by, selected)
+
+    if ax is None:
+        figure = Figure(figsize=(9.2, 5.8))
+        FigureCanvasAgg(figure)
+        axis = figure.subplots()
+    else:
+        axis = ax
+        figure = axis.figure
+
+    color_cycle = itertools.cycle(_FALLBACK_COLORS)
+    family_colors: dict[str, str] = dict(FAMILY_COLORS)
+    family_variant: dict[str, int] = {}
+    group_key: str | list[str] = columns[0] if len(columns) == 1 else columns
+    for key, values in selected.groupby(group_key, dropna=False, sort=False):
+        values = values.sort_values(x_column)
+        family_values = values["method_family"].dropna().astype(str).unique()
+        family = family_values[0] if len(family_values) == 1 else str(key)
+        color = family_colors.setdefault(family, next(color_cycle))
+        variant = family_variant.get(family, 0)
+        family_variant[family] = variant + 1
+        label = _series_label(key, columns)
+        if summary and "selected_method_label" in values:
+            methods = list(dict.fromkeys(values["selected_method_label"].astype(str)))
+            if len(methods) > 1:
+                label += " [" + " → ".join(methods) + "]"
+        axis.plot(
+            values[x_column],
+            values[metric],
+            label=label,
+            color=color,
+            linestyle=_LINESTYLES[variant % len(_LINESTYLES)],
+            marker=_MARKERS[variant % len(_MARKERS)],
+            linewidth=2.0 if summary else 1.7,
+        )
+
+    resolved_xscale = xscale or "log"
+    if resolved_xscale not in {"linear", "log"}:
+        raise ValueError("xscale must be 'linear' or 'log'")
+    if yscale not in {"linear", "log"}:
+        raise ValueError("yscale must be 'linear' or 'log'")
+    if resolved_xscale == "log":
+        axis.set_xscale("log", base=xbase or (2 if sweep == "system-size" else 10))
+    else:
+        axis.set_xscale("linear")
+    if yscale == "log":
+        axis.set_yscale("log", base=ybase)
+    else:
+        axis.set_yscale("linear")
+    if sweep == "target-error":
         axis.invert_xaxis()
         axis.set_xlabel("Target simulation error ε (smaller = higher precision)")
         sweep_title = "Target-error scaling"
-    qualifier = "best of evaluated configurations" if summary else "all configurations"
-    axis.set_title(f"{sweep_title}: {_METRIC_LABELS[metric]} ({qualifier})\n{context}")
+    else:
+        axis.set_xlabel("Number of system qubits")
+        sweep_title = "System-size scaling"
+    axis.set_ylabel(_METRIC_LABELS.get(metric, metric.replace("_", " ")))
+    qualifier = "best of evaluated methods" if summary else "all methods"
+    context = _context_title(selected, sweep)
+    title = f"{sweep_title}: {_METRIC_LABELS.get(metric, metric)} ({qualifier})"
+    axis.set_title(title + (f"\n{context}" if context else ""))
     axis.grid(True, which="both", alpha=0.28)
-    axis.legend(ncol=2 if not summary else 1, fontsize="small")
+    axis.legend(fontsize="small")
 
-    failed_count = int((frame["status"] == "error").sum())
+    source = _sweep_frame(frame, sweep)
+    failed_count = int((source["status"] == "error").sum())
     nonpositive_count = int(
-        ((frame["status"] == "ok") & frame[metric].notna() & (frame[metric] <= 0)).sum()
+        (
+            (source["status"] == "ok")
+            & pd.to_numeric(source[metric], errors="coerce").notna()
+            & (pd.to_numeric(source[metric], errors="coerce") <= 0)
+        ).sum()
     )
-    if failed_count or nonpositive_count or missing_labels:
-        details = []
-        if failed_count:
-            details.append(f"{failed_count} failed rows")
-        if nonpositive_count:
-            details.append(f"{nonpositive_count} nonpositive values")
-        if missing_labels:
-            details.append("missing curves: " + ", ".join(missing_labels))
-        message = "; ".join(details) + "; see benchmark CSV"
+    if failed_count or nonpositive_count:
+        message = "; ".join(
+            part
+            for part in (
+                f"{failed_count} failed rows" if failed_count else "",
+                f"{nonpositive_count} nonpositive values" if nonpositive_count else "",
+            )
+            if part
+        )
         warnings.warn(message, RuntimeWarning, stacklevel=2)
         axis.text(
             0.01,
@@ -238,62 +262,45 @@ def create_benchmark_figure(
     return figure
 
 
-def _load_sidecar(data_path: Path) -> dict[str, Any]:
-    metadata_path = data_path.with_suffix(".metadata.json")
-    if not metadata_path.exists():
-        raise FileNotFoundError(f"benchmark metadata sidecar not found: {metadata_path}")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if not isinstance(metadata, dict) or "configuration" not in metadata:
-        raise ValueError(f"invalid benchmark metadata sidecar: {metadata_path}")
-    return metadata
-
-
-def plot_saved_benchmark(
-    data_path: str | Path,
+def save_benchmark_plots(
+    frame: pd.DataFrame,
     *,
-    output_directory: str | Path | None = None,
-    output_formats: tuple[str, ...] | list[str] | None = None,
-    summary: bool | None = None,
+    output_directory: str | Path,
+    output_formats: Sequence[str] = ("png", "pdf"),
+    summary: bool = False,
 ) -> tuple[Path, ...]:
-    """Load one saved sweep and write its T/CNOT plots.
-
-    No resource estimator is called. Plot defaults are read from the metadata
-    sidecar written alongside the CSV.
-    """
-    csv_path = Path(data_path).resolve()
-    frame = load_benchmark_data(csv_path)
-    metadata = _load_sidecar(csv_path)
-    stored_config = metadata["configuration"]
-    formats = tuple(output_formats or stored_config.get("output_formats", ("png", "pdf")))
-    unknown_formats = set(formats) - _SUPPORTED_FORMATS
-    if not formats or unknown_formats:
-        names = ", ".join(sorted(unknown_formats))
+    """Write standard T/CNOT figures for every sweep present in a DataFrame."""
+    validate_benchmark_frame(frame)
+    formats = list(output_formats)
+    unknown = set(formats) - {"png", "pdf", "svg"}
+    if not formats or unknown:
+        names = ", ".join(sorted(unknown))
         raise ValueError(f"unsupported or empty output formats: {names}")
-    include_summary = (
-        bool(stored_config.get("generate_summary_plots", False))
-        if summary is None
-        else summary
-    )
-    target_directory = (
-        Path(output_directory).resolve()
-        if output_directory is not None
-        else csv_path.parent
-    )
-    target_directory.mkdir(parents=True, exist_ok=True)
-    sweep = str(_unique_value(frame, "sweep"))
-    prefix = "system_size" if sweep == "system-size" else "target_error"
+    target = Path(output_directory).resolve()
+    target.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
-    for metric in _METRIC_LABELS:
-        for is_summary in ((False, True) if include_summary else (False,)):
-            figure = create_benchmark_figure(frame, metric, summary=is_summary)
-            suffix = "_summary" if is_summary else ""
-            for output_format in formats:
-                output = target_directory / f"{prefix}_{metric}{suffix}.{output_format}"
-                figure.savefig(
-                    output,
-                    dpi=220 if output_format == "png" else None,
-                    bbox_inches="tight",
+    for sweep, prefix in (
+        ("system-size", "system_size"),
+        ("target-error", "target_error"),
+    ):
+        if sweep not in set(frame["sweep"]):
+            continue
+        for metric in ("t_count", "cnot_count"):
+            for is_summary in ((False, True) if summary else (False,)):
+                figure = plot_benchmark(
+                    frame,
+                    sweep=sweep,
+                    metric=metric,
+                    summary=is_summary,
                 )
-                outputs.append(output)
-            figure.clear()
+                suffix = "_summary" if is_summary else ""
+                for output_format in formats:
+                    output = target / f"{prefix}_{metric}{suffix}.{output_format}"
+                    figure.savefig(
+                        output,
+                        dpi=220 if output_format == "png" else None,
+                        bbox_inches="tight",
+                    )
+                    outputs.append(output)
+                figure.clear()
     return tuple(outputs)
