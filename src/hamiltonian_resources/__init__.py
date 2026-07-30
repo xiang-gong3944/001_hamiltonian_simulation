@@ -26,10 +26,15 @@ from .benchmark_suite import (
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
+    MPFErrorEstimate,
+    MPFErrorMethod,
+    MPFErrorScope,
     MPFSchedule,
     build_multiproduct_circuit,
+    estimate_mpf_error,
     multiproduct_coefficients,
     optimal_mpf_exponents,
+    select_mpf_segments,
 )
 from .qsvt import (
     HamiltonianSimulationPhases,
@@ -55,6 +60,9 @@ __all__ = [
     "FAMILY_COLORS",
     "HamiltonianSimulationPhases",
     "HamiltonianSpec",
+    "MPFErrorEstimate",
+    "MPFErrorMethod",
+    "MPFErrorScope",
     "MPFSchedule",
     "MultiproductMethod",
     "PauliHamiltonian",
@@ -72,6 +80,7 @@ __all__ = [
     "count_circuit_resources",
     "default_methods",
     "estimate_qsvt_degree",
+    "estimate_mpf_error",
     "estimate_suzuki_error",
     "heisenberg_chain",
     "load_benchmark",
@@ -82,6 +91,7 @@ __all__ = [
     "run_benchmark",
     "save_benchmark",
     "save_benchmark_plots",
+    "select_mpf_segments",
     "select_best_by_family",
     "suzuki_commutator_bounds",
     "synthesize_hamsim_phases",
