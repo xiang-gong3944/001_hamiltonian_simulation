@@ -21,9 +21,9 @@
       {"family": "trotter", "order": 2},
       {"family": "trotter", "order": 4},
       {"family": "trotter", "order": 6},
-      {"family": "multiproduct", "term_count": 3, "schedule": "new"},
-      {"family": "multiproduct", "term_count": 5, "schedule": "new"},
-      {"family": "multiproduct", "term_count": 7, "schedule": "new"},
+      {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "low-rigorous"},
+      {"family": "multiproduct", "term_count": 5, "schedule": "new", "error_method": "low-rigorous"},
+      {"family": "multiproduct", "term_count": 7, "schedule": "new", "error_method": "low-rigorous"},
       {"family": "qsvt"}
     ],
     "synthesis_error_fraction": 0.1,

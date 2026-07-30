@@ -35,6 +35,12 @@ data = run_benchmark(config)
 figure = plot_benchmark(data, sweep="system-size", metric="t_count")
 ```
 
+`MultiproductMethod(m)` uses `error_method="low-rigorous"` by default. To
+reproduce historical W2-calibrated projections, request
+`MultiproductMethod(m, error_method="legacy-w2-proxy")`. Such rows remain
+available in full plots but are explicitly styled as heuristic and are not
+eligible for rigorous best-of-family summaries.
+
 `TimeScaling("proportional", tau)` means `t(n) = tau * n`; the checked-in
 default has `tau=1`. This gives each one-dimensional local Hamiltonian enough
 simulated time to scale with the distance over which interactions spread. It is
@@ -90,17 +96,24 @@ are:
 | `method_family` / `method_label` | Plot grouping and human-readable name. |
 | `t_count`, `cnot_count`, `total_qubits` | Primary resource estimates. |
 | `query_count`, `rotation_count`, `toffoli_count`, `depth` | Additional metrics. |
-| `bound_method`, `bound_rigorous` | Parameter-selection provenance. |
+| `bound_method`, `bound_rigorous` | Parameter-selection provenance and rigor at the declared scope. |
+| `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
+| `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
+| `circuit_target_satisfied` | Whether the complete implemented circuit has a rigorous target-error guarantee. |
 | `status`, `error_type`, `error_message` | Per-method failure information. |
 
 The CSV retains detailed Trotter, MPF, QSVT, synthesis, software, and Git
 metadata columns. Validation requires the schema-2 core columns and valid row
-states, but permits reordered columns and user-added derived columns.
+states, but permits reordered columns and user-added derived columns. Loading
+an early schema-2 CSV without the scoped-bound extension columns fills them
+conservatively; historical MPF rows are never upgraded to circuit-rigorous.
 
 `select_best_by_family(data, metric=..., sweep=...)` returns the pointwise
-minimum successful row and adds `selected_method_id` and
-`selected_method_label`. Consequently, a summary never hides which evaluated
-Trotter order or MPF term count was selected.
+minimum rigorously target-satisfying row by default and adds
+`selected_method_id` and `selected_method_label`. Pass `rigorous_only=False`
+only for an explicitly unconstrained comparison. Consequently, a summary
+never hides which evaluated Trotter order or MPF term count was selected and
+does not silently select a heuristic row.
 
 ## Analytical assumptions
 
@@ -109,11 +122,19 @@ Trotter order or MPF term count was selected.
 2. Trotter orders 1 and 2 use rigorous commutator bounds. Higher supported
    orders use the Schubert--Mendl bound within the practical group cap and
    report an explicit nonrigorous fallback otherwise.
-3. MPF segment selection uses the documented commutator-calibrated proxy and is
-   not a certified higher-order MPF error bound.
+3. MPF segment selection defaults to
+   [Low--Kliuchnikov--Wiebe](https://arxiv.org/abs/1907.11679) Eq. (16), with
+   `lambda=sum_j ||h_j||=hamiltonian.alpha` for the individual Pauli
+   decomposition and the registered schedule's coefficient 1-norm. The saved
+   error evaluates their Eqs. (14)--(15). This is a rigorous operator-norm
+   bound for the ideal repeated MPF `M(t/r)^r`.
 4. QSVT degree selection uses the Jacobi--Anger truncation baseline and assumes
    efficient controlled-response compilation.
-5. MPF and QSVT resource counts include robust oblivious amplitude
-   amplification. Multi-control CNOT costs remain architecture-dependent.
+5. MPF resource counts include the implemented robust-OAA shared-ancilla
+   circuit, but the Low theorem does not by itself certify that complete
+   circuit. MPF rows therefore use `bound_scope="ideal-mpf"` while
+   `circuit_bound_scope="amplified-shared-ancilla"` and
+   `circuit_bound_rigorous=False`. Multi-control CNOT costs remain
+   architecture-dependent.
 6. The benchmark constructs neither dense Hamiltonian matrices nor concrete
    circuits. Use `compare_with_exact` separately for small-system calibration.
