@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
+    MPFErrorMethod,
     MPFSchedule,
-    legacy_w2_proxy_segments,
     optimal_mpf_exponents,
+    select_mpf_segments,
 )
 from .qsvt import estimate_qsvt_degree
 from .resources import (
@@ -36,6 +37,7 @@ class _EvaluationConfig:
     trotter_partition: TrotterPartition = "auto"
     mpf_m: int = 3
     mpf_schedule: MPFSchedule = "new"
+    mpf_error_method: MPFErrorMethod = "low-rigorous"
     optimization_level: int = 1
 
     def __post_init__(self) -> None:
@@ -52,6 +54,10 @@ class _EvaluationConfig:
                 "trotter_partition must be 'auto', 'individual', or 'commuting'"
             )
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
+        if self.mpf_error_method not in ("low-rigorous", "legacy-w2-proxy"):
+            raise ValueError(
+                "mpf_error_method must be 'low-rigorous' or 'legacy-w2-proxy'"
+            )
 
 
 def choose_parameters(
@@ -64,12 +70,11 @@ def choose_parameters(
     Orders 1 and 2 use the rigorous Childs et al. commutator bounds.  Orders 4
     and 6 use the rigorous Schubert--Mendl bound when the resolved partition is
     within the practical work cap; other even orders retain the documented
-    1-norm proxy.  An order-2m MPF currently uses the explicitly legacy
-    ``legacy-w2-proxy`` rule
-    (alpha_eff*t)^(2m+1)/r^(2m) with
-    alpha_eff = min(alpha, W2^(1/3)), which reproduces the certified order-2
-    rate but extrapolates the higher-order constants; it is a documented
-    heuristic, not a certified bound.  QSVT uses the rigorous Jacobi--Anger
+    1-norm proxy.  MPF defaults to the rigorous ideal-operator bound and
+    sufficient segment rule of Low, Kliuchnikov, and Wiebe.  The historical
+    W2-calibrated rule remains available as ``legacy-w2-proxy`` but is never
+    certified.  Neither MPF estimator certifies the complete robust-OAA
+    shared-ancilla circuit.  QSVT uses the rigorous Jacobi--Anger
     truncation degree.  Mixing loose 1-norm bounds for product formulas with
     the tight QSVT degree would systematically distort crossovers, which is
     why the product-formula rules are commutator-based.  Calibrate small
@@ -93,12 +98,14 @@ def choose_parameters(
         trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
         parameters["trotter_reps"] = max(1, trotter_reps)
     if algorithm in (None, "multiproduct"):
-        parameters["mpf_segments"] = legacy_w2_proxy_segments(
+        parameters["mpf_segments"] = select_mpf_segments(
             hamiltonian,
             time,
             budget,
             config.mpf_m,
-        )
+            schedule=config.mpf_schedule,
+            method=config.mpf_error_method,
+        ).segments
     if algorithm in (None, "qsvt"):
         parameters["qsvt_degree"] = estimate_qsvt_degree(alpha_time, budget)
     return parameters

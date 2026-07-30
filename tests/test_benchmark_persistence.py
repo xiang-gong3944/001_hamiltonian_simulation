@@ -74,6 +74,29 @@ def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):
     assert len(loaded) == len(benchmark_frame)
 
 
+def test_load_benchmark_upgrades_early_schema2_scope_columns(
+    tmp_path, benchmark_frame
+):
+    extension_columns = [
+        "bound_scope",
+        "bound_target_satisfied",
+        "circuit_bound_scope",
+        "circuit_bound_rigorous",
+        "circuit_target_satisfied",
+    ]
+    legacy = benchmark_frame.drop(columns=extension_columns)
+    csv_path = tmp_path / "early-schema2.csv"
+    legacy.to_csv(csv_path, index=False)
+
+    loaded = load_benchmark(csv_path)
+    mpf = loaded[loaded["method_family"] == "multiproduct"].iloc[0]
+
+    assert set(extension_columns) <= set(loaded.columns)
+    assert mpf["bound_scope"] == "ideal-mpf"
+    assert mpf["circuit_bound_scope"] == "amplified-shared-ancilla"
+    assert not bool(mpf["circuit_bound_rigorous"])
+
+
 def test_save_standard_plots(tmp_path, benchmark_frame):
     outputs = save_benchmark_plots(
         benchmark_frame,

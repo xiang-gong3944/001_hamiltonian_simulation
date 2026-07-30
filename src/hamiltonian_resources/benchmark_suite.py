@@ -24,7 +24,8 @@ from .benchmark import (
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
-    legacy_w2_proxy_error,
+    MPFErrorMethod,
+    estimate_mpf_error,
     multiproduct_coefficients,
     optimal_mpf_exponents,
 )
@@ -66,6 +67,11 @@ BENCHMARK_COLUMNS = (
     "bound_prefactor",
     "bound_method",
     "bound_rigorous",
+    "bound_scope",
+    "bound_target_satisfied",
+    "circuit_bound_scope",
+    "circuit_bound_rigorous",
+    "circuit_target_satisfied",
     "algorithm_error_budget",
     "mpf_schedule",
     "mpf_exponents_json",
@@ -93,6 +99,17 @@ BENCHMARK_COLUMNS = (
     "status",
     "error_type",
     "error_message",
+)
+
+_SCHEMA2_EXTENSION_COLUMNS = {
+    "bound_scope",
+    "bound_target_satisfied",
+    "circuit_bound_scope",
+    "circuit_bound_rigorous",
+    "circuit_target_satisfied",
+}
+_SCHEMA2_REQUIRED_COLUMNS = tuple(
+    column for column in BENCHMARK_COLUMNS if column not in _SCHEMA2_EXTENSION_COLUMNS
 )
 
 _MODEL_PARAMETERS = {
@@ -203,6 +220,7 @@ class TrotterMethod:
 class MultiproductMethod:
     term_count: int
     schedule: Literal["new", "legacy"] = "new"
+    error_method: MPFErrorMethod = "low-rigorous"
 
     @property
     def family(self) -> str:
@@ -211,23 +229,32 @@ class MultiproductMethod:
     @property
     def method_id(self) -> str:
         suffix = "" if self.schedule == "new" else f"-{self.schedule}"
+        if self.error_method != "low-rigorous":
+            suffix += f"-{self.error_method}"
         return f"mpf-m{self.term_count}{suffix}"
 
     @property
     def label(self) -> str:
         suffix = "" if self.schedule == "new" else f" ({self.schedule})"
+        if self.error_method == "legacy-w2-proxy":
+            suffix += " [legacy W2 heuristic]"
         return f"MPF m={self.term_count}{suffix}"
 
     def validate(self) -> None:
         if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
             raise ValueError("MPF term count must be an integer")
         optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+        if self.error_method not in ("low-rigorous", "legacy-w2-proxy"):
+            raise ValueError(
+                "MPF error method must be 'low-rigorous' or 'legacy-w2-proxy'"
+            )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "family": self.family,
             "term_count": int(self.term_count),
             "schedule": self.schedule,
+            "error_method": self.error_method,
         }
 
 
@@ -450,6 +477,9 @@ def _evaluation_config(
         trotter_partition=config.trotter_partition,
         mpf_m=method.term_count if isinstance(method, MultiproductMethod) else 3,
         mpf_schedule=method.schedule if isinstance(method, MultiproductMethod) else "new",
+        mpf_error_method=(
+            method.error_method if isinstance(method, MultiproductMethod) else "low-rigorous"
+        ),
     )
 
 
@@ -476,6 +506,15 @@ def _method_metadata(
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
             "bound_rigorous": error.rigorous,
+            "bound_scope": "implemented-product-formula",
+            "bound_target_satisfied": error.rigorous
+            and error.error
+            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
+            "circuit_bound_scope": "implemented-product-formula",
+            "circuit_bound_rigorous": error.rigorous,
+            "circuit_target_satisfied": error.rigorous
+            and error.error
+            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
             "lcu_normalization": 1.0,
             "amplitude_amplification": "none",
             "amplitude_amplification_rounds": 0,
@@ -487,19 +526,30 @@ def _method_metadata(
         exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
         coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
         coefficient_norm = float(np.sum(np.abs(coefficients)))
-        proxy, prefactor = legacy_w2_proxy_error(
+        error = estimate_mpf_error(
             hamiltonian,
             evaluation.time,
-            method.term_count,
             segments,
+            method.term_count,
+            schedule=method.schedule,
+            method=method.error_method,
+        )
+        algorithm_budget = evaluation.target_error * (
+            1 - evaluation.synthesis_error_fraction
         )
         return {
             "segment_count": segments,
             "query_count": 3 * segments * sum(exponents),
-            "bound_value": proxy,
-            "bound_prefactor": prefactor,
-            "bound_method": "legacy-w2-proxy",
-            "bound_rigorous": False,
+            "bound_value": error.error,
+            "bound_prefactor": error.prefactor,
+            "bound_method": error.method,
+            "bound_rigorous": error.rigorous,
+            "bound_scope": error.scope,
+            "bound_target_satisfied": error.rigorous
+            and error.error <= algorithm_budget,
+            "circuit_bound_scope": error.circuit_scope,
+            "circuit_bound_rigorous": error.circuit_rigorous,
+            "circuit_target_satisfied": False,
             "mpf_schedule": method.schedule,
             "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),
             "mpf_coefficients_json": json.dumps(
@@ -511,7 +561,7 @@ def _method_metadata(
             "amplitude_amplification": "one robust OAA round per segment",
             "amplitude_amplification_rounds": segments,
             "good_subspace": "branch register all-zero",
-            "nominal_success_probability": 1.0,
+            "nominal_success_probability": None,
         }
     degree = parameters["qsvt_degree"]
     queries = 0 if degree == 0 else 3 * ((degree - 1) + degree)
@@ -522,6 +572,11 @@ def _method_metadata(
         * (1 - evaluation.synthesis_error_fraction),
         "bound_method": "jacobi-anger-truncation",
         "bound_rigorous": True,
+        "bound_scope": "implemented-algorithm",
+        "bound_target_satisfied": True,
+        "circuit_bound_scope": "implemented-algorithm",
+        "circuit_bound_rigorous": True,
+        "circuit_target_satisfied": True,
         "lcu_normalization": 2.0,
         "amplitude_amplification": "one robust OAA round",
         "amplitude_amplification_rounds": 1,
@@ -712,8 +767,8 @@ def run_benchmark(
 
 
 def validate_benchmark_frame(frame: pd.DataFrame) -> None:
-    """Validate required schema-2 columns while allowing derived columns and reordering."""
-    missing = set(BENCHMARK_COLUMNS) - set(frame.columns)
+    """Validate schema-2 data, including files predating scoped MPF metadata."""
+    missing = set(_SCHEMA2_REQUIRED_COLUMNS) - set(frame.columns)
     if missing:
         names = ", ".join(sorted(missing))
         raise ValueError(f"benchmark data is missing required columns: {names}")
@@ -774,12 +829,17 @@ def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
             raise ValueError("Trotter method requires only family and order")
         return TrotterMethod(raw["order"])
     if family == "multiproduct":
-        unknown = set(raw) - {"family", "term_count", "schedule"}
+        unknown = set(raw) - {"family", "term_count", "schedule", "error_method"}
         if unknown or "term_count" not in raw:
             raise ValueError(
-                "multiproduct method requires family, term_count, and optional schedule"
+                "multiproduct method requires family, term_count, and optional "
+                "schedule/error_method"
             )
-        return MultiproductMethod(raw["term_count"], raw.get("schedule", "new"))
+        return MultiproductMethod(
+            raw["term_count"],
+            raw.get("schedule", "new"),
+            raw.get("error_method", "low-rigorous"),
+        )
     if family == "qsvt":
         if set(raw) != {"family"}:
             raise ValueError("QSVT method accepts only the family field")
@@ -878,6 +938,22 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
     """Load a benchmark CSV; a metadata sidecar is not required."""
     frame = pd.read_csv(path, keep_default_na=True)
     validate_benchmark_frame(frame)
+    if _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
+        is_mpf = frame["method_family"] == "multiproduct"
+        rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
+        within_bound = (
+            pd.to_numeric(frame["bound_value"], errors="coerce")
+            <= pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
+        )
+        frame["bound_scope"] = np.where(
+            is_mpf, "ideal-mpf", "implemented-algorithm"
+        )
+        frame["bound_target_satisfied"] = rigorous & within_bound
+        frame["circuit_bound_scope"] = np.where(
+            is_mpf, "amplified-shared-ancilla", "implemented-algorithm"
+        )
+        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf
+        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf
     return frame
 
 

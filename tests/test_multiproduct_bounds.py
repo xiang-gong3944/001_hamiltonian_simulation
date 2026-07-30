@@ -43,7 +43,7 @@ def test_legacy_w2_proxy_exactly_reproduces_historical_rule(m):
     )
 
 
-def test_legacy_w2_proxy_is_explicitly_noncertifying_metadata():
+def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     from hamiltonian_resources import BenchmarkConfig, MultiproductMethod, run_benchmark
 
     frame = run_benchmark(
@@ -52,8 +52,24 @@ def test_legacy_w2_proxy_is_explicitly_noncertifying_metadata():
     )
     row = frame.iloc[0]
 
-    assert row["bound_method"] == "legacy-w2-proxy"
-    assert not bool(row["bound_rigorous"])
+    assert row["bound_method"] == "low-rigorous"
+    assert bool(row["bound_rigorous"])
+    assert row["bound_scope"] == "ideal-mpf"
+    assert bool(row["bound_target_satisfied"])
+    assert row["circuit_bound_scope"] == "amplified-shared-ancilla"
+    assert not bool(row["circuit_bound_rigorous"])
+    assert not bool(row["circuit_target_satisfied"])
+
+    legacy = run_benchmark(
+        BenchmarkConfig(
+            system_sizes=[2],
+            methods=[MultiproductMethod(3, error_method="legacy-w2-proxy")],
+        ),
+        sweeps="system-size",
+    ).iloc[0]
+    assert legacy["bound_method"] == "legacy-w2-proxy"
+    assert not bool(legacy["bound_rigorous"])
+    assert not bool(legacy["bound_target_satisfied"])
 
 
 def test_low_bound_depends_on_schedule_coefficient_norm():

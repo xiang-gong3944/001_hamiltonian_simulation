@@ -624,7 +624,7 @@ def test_analytical_benchmark_does_not_build_large_unitaries():
     assert len(frame) == 2
     assert set(frame["counting_mode"]) == {"analytical-model"}
     assert (frame["t_count"] > 0).all()
-    assert (frame["nominal_success_probability"] <= 1).all()
+    assert frame["nominal_success_probability"].isna().all()
 
 
 def test_multiproduct_consumers_use_m_parameter():
@@ -685,7 +685,12 @@ def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
     )
     w1, w2 = suzuki_commutator_bounds(hamiltonian)
     parameters = choose_parameters(
-        hamiltonian, _EvaluationConfig(time=5.0, target_error=1e-6)
+        hamiltonian,
+        _EvaluationConfig(
+            time=5.0,
+            target_error=1e-6,
+            mpf_error_method="legacy-w2-proxy",
+        ),
     )
 
     assert w1 == 0.0 and w2 == 0.0
