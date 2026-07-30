@@ -1,8 +1,15 @@
 import math
 
+import numpy as np
 import pytest
+from qiskit.quantum_info import Operator
+from scipy.linalg import expm
 
-from hamiltonian_resources import transverse_field_ising
+from hamiltonian_resources import (
+    PauliHamiltonian,
+    build_trotter_circuit,
+    transverse_field_ising,
+)
 from hamiltonian_resources.multiproduct import (
     estimate_mpf_error,
     legacy_w2_proxy_error,
@@ -11,6 +18,42 @@ from hamiltonian_resources.multiproduct import (
     select_mpf_segments,
 )
 from hamiltonian_resources.trotter import suzuki_commutator_bounds
+
+
+def _ideal_mpf_operator(hamiltonian, time, segments, m, schedule="new"):
+    step_time = time / segments
+    step = sum(
+        coefficient
+        * Operator(
+            build_trotter_circuit(
+                hamiltonian,
+                step_time,
+                reps=exponent,
+                order=2,
+                partition="individual",
+            )
+        ).data
+        for coefficient, exponent in zip(
+            multiproduct_coefficients(m, schedule=schedule),
+            estimate_mpf_error(
+                hamiltonian,
+                time,
+                segments,
+                m,
+                schedule=schedule,
+            ).exponents,
+            strict=True,
+        )
+    )
+    return np.linalg.matrix_power(step, segments)
+
+
+def _ideal_mpf_operator_error(hamiltonian, time, segments, m, schedule="new"):
+    approximation = _ideal_mpf_operator(
+        hamiltonian, time, segments, m, schedule=schedule
+    )
+    exact = expm(-1j * time * hamiltonian.matrix())
+    return float(np.linalg.norm(approximation - exact, ord=2))
 
 
 @pytest.mark.parametrize("m", [2, 3, 5, 7])
@@ -143,3 +186,62 @@ def test_low_bound_matches_theorem_equations_14_and_15():
     expected = step_error * segments * (1 + step_error) ** (segments - 1)
 
     assert estimate.error == pytest.approx(expected)
+
+
+def test_imbalanced_two_term_case_exposes_legacy_proxy_failure():
+    hamiltonian = PauliHamiltonian.from_terms(
+        1,
+        [("Z", 30.0), ("X", 0.001)],
+        name="imbalanced",
+    )
+    algorithm_budget = 9e-7
+    legacy = select_mpf_segments(
+        hamiltonian,
+        1.0,
+        algorithm_budget,
+        3,
+        method="legacy-w2-proxy",
+    )
+    exact_legacy_error = _ideal_mpf_operator_error(
+        hamiltonian, 1.0, legacy.segments, 3
+    )
+    rigorous = select_mpf_segments(
+        hamiltonian,
+        1.0,
+        algorithm_budget,
+        3,
+        method="low-rigorous",
+    )
+    exact_rigorous_error = _ideal_mpf_operator_error(
+        hamiltonian, 1.0, rigorous.segments, 3
+    )
+
+    assert legacy.segments == 5
+    assert legacy.error <= algorithm_budget
+    assert exact_legacy_error > 100 * algorithm_budget
+    assert not legacy.rigorous
+    assert rigorous.error <= algorithm_budget
+    assert exact_rigorous_error <= rigorous.error
+
+
+@pytest.mark.parametrize(("m", "schedule"), [(2, "new"), (3, "new"), (3, "legacy")])
+def test_low_bound_upper_bounds_small_system_ideal_mpf_operator(m, schedule):
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.6,
+        1e-4,
+        m,
+        schedule=schedule,
+        method="low-rigorous",
+    )
+    exact_error = _ideal_mpf_operator_error(
+        hamiltonian,
+        0.6,
+        estimate.segments,
+        m,
+        schedule=schedule,
+    )
+
+    assert exact_error <= estimate.error
+    assert estimate.error <= 1e-4
