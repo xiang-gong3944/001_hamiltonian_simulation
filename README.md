@@ -72,15 +72,19 @@ docs/
   suzuki_error_bounds.md  # 積公式の分割、厳密誤差上界、fallback
 ```
 
-## 8構成の解析スケーリングbenchmark
+## notebook-first解析スケーリングbenchmark
 
-Trotter `p=1,2,4,6`、MPF `m=3,5,7`、QSVTを独立に評価する
-benchmark suiteを用意しています。既定の`benchmark_config.json`は開放境界TFIM
-`J=1, h=3, t=1`を使います。
+既定設定は開放境界TFIM `J=1, h=3`について、Trotter `p=1,2,4,6`、
+MPF `m=3,5,7`、QSVTを独立に評価します。system-size sweepでは局所相互作用が
+系全体へ広がる時間を比較するため、`t(n)=n`を使います。この比例則は伝播速度の
+厳密な推定ではなく、明記された無次元の比較規約です。
+
+`notebooks/resource_comparison.ipynb`では、NumPy配列を含むパラメータセルを変更し、
+計算とlog2サイズ軸での描画までnotebook内で完結できます。Python APIは結果を
+メモリ上のDataFrameとして返し、自動保存しません。
 
 ```powershell
 hamiltonian-benchmark generate --config benchmark_config.json --sweep all
-hamiltonian-benchmark plot --data-dir benchmark_outputs --sweep all
 ```
 
 生成とplotを続けて行う場合:
@@ -89,38 +93,38 @@ hamiltonian-benchmark plot --data-dir benchmark_outputs --sweep all
 hamiltonian-benchmark run --config benchmark_config.json
 ```
 
-plotは保存済みCSVだけを読み、resource estimateを再実行しません。
-`generate_summary_plots`または`--summary`を使うと、指定した4つのTrotter次数と
-3つのMPF term数の範囲内でのbest-of-family図も作れます。設定、全CSV列、failure
-row、解析上の仮定は
+各CLI実行は`benchmark_outputs/<timestamp>_<digest>_<run-id>/`を新規作成するため、
+以前の結果を上書きしません。単体CSVはsidecarなしで再描画できます。
+
+```powershell
+hamiltonian-benchmark plot --data benchmark_outputs/<run>/benchmark.csv --summary
+```
+
+設定、schema、failure row、解析上の仮定は
 [`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)に記載しています。
 
 ## 最小例
 
 ```python
-from hamiltonian_resources import (
-    BenchmarkConfig, benchmark_scaling, transverse_field_ising
-)
+import numpy as np
+from hamiltonian_resources import BenchmarkConfig, QSVTMethod, run_benchmark
 
-config = BenchmarkConfig(time=1.0, target_error=1e-3)
-table = benchmark_scaling(
-    list(range(2, 21, 2)),
-    lambda n: transverse_field_ising(n, coupling=1.0, field=0.7),
-    config,
+config = BenchmarkConfig(
+    system_sizes=np.arange(2, 21, 2),
+    target_errors=np.logspace(-1, -3, 5),
+    methods=[QSVTMethod()],
 )
-print(table[["system_size", "algorithm", "t_count", "cnot_count"]])
+table = run_benchmark(config)
+print(table[["sweep", "system_qubits", "evolution_time", "method_label", "t_count"]])
 ```
 
 4次・6次 Suzuki 公式では、可換な Pauli 項を同じgroupにまとめた回路と、
 その回路に対応する交換子上界を同時に使用できます。
 
 ```python
-from hamiltonian_resources import (
-    BenchmarkConfig, estimate_suzuki_error, transverse_field_ising
-)
+from hamiltonian_resources import estimate_suzuki_error, transverse_field_ising
 
 H = transverse_field_ising(6, field=0.7)
-config = BenchmarkConfig(trotter_order=4, trotter_partition="auto")
 estimate = estimate_suzuki_error(H, time=0.5, reps=4, order=4)
 print(estimate.error, estimate.rigorous, estimate.method)
 ```
@@ -149,7 +153,7 @@ print(check)
 `scale * exp(-i H t) / 2`で、成功確率は`scale**2 / 4`です。増幅後は同じblockが
 `exp(-i H t)`に近づきます。
 
-`benchmark_scaling(..., transpile_circuits=False)`（既定）は大規模向けの明示的な分解コストモデルです。`True` は実回路を Qiskit で基底ゲートへ分解するので、小規模な校正に使ってください。
+`run_benchmark`は大規模向けの明示的な解析分解コストモデルを使い、具体回路や密行列を構築しません。
 
 MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な
 Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
