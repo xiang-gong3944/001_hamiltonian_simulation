@@ -8,8 +8,9 @@ before the same branch register is reused for the next simulation segment.
 
 from __future__ import annotations
 
+import math
 from numbers import Integral
-from typing import Literal
+from typing import Literal, TypeAlias
 
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
@@ -21,11 +22,12 @@ from .circuit_utils import (
     state_preparation,
 )
 from .hamiltonians import PauliHamiltonian
-from .trotter import build_trotter_circuit
+from .trotter import build_trotter_circuit, suzuki_commutator_bounds
 
 
 _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
+MPFErrorMethod: TypeAlias = Literal["low-rigorous", "legacy-w2-proxy"]
 
 
 _NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
@@ -107,6 +109,41 @@ def multiproduct_coefficients(
             if q != j:
                 coefficients[j] *= k_j_squared / (k_j_squared - k_q**2)
     return coefficients
+
+
+def legacy_w2_proxy_error(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+) -> tuple[float, float]:
+    """Return the historical W2-calibrated MPF proxy and its prefactor.
+
+    This is not a rigorous MPF error bound.  It is retained under an explicit
+    name solely for reproducing earlier benchmark data.
+    """
+    if segments < 1:
+        raise ValueError("segments must be positive")
+    optimal_mpf_exponents(m)
+    _, w2 = suzuki_commutator_bounds(hamiltonian)
+    alpha_effective = min(hamiltonian.alpha, w2 ** (1 / 3))
+    formal_order = 2 * m
+    prefactor = alpha_effective ** (formal_order + 1)
+    error = prefactor * abs(float(time)) ** (formal_order + 1) / segments**formal_order
+    return error, prefactor
+
+
+def legacy_w2_proxy_segments(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    target_error: float,
+    m: int,
+) -> int:
+    """Reproduce the historical non-rigorous MPF segment-selection rule."""
+    if target_error <= 0:
+        raise ValueError("target_error must be positive")
+    one_segment_error, _ = legacy_w2_proxy_error(hamiltonian, time, m, 1)
+    return max(1, math.ceil((one_segment_error / target_error) ** (1 / (2 * m))))
 
 
 def _multiproduct_select_gate(

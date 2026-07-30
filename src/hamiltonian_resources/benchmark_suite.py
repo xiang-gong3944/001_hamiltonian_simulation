@@ -23,8 +23,12 @@ from .benchmark import (
     estimate_resources_analytically,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
-from .multiproduct import multiproduct_coefficients, optimal_mpf_exponents
-from .trotter import estimate_suzuki_error, suzuki_commutator_bounds
+from .multiproduct import (
+    legacy_w2_proxy_error,
+    multiproduct_coefficients,
+    optimal_mpf_exponents,
+)
+from .trotter import estimate_suzuki_error
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
@@ -483,19 +487,18 @@ def _method_metadata(
         exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
         coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
         coefficient_norm = float(np.sum(np.abs(coefficients)))
-        _, w2 = suzuki_commutator_bounds(hamiltonian)
-        alpha_effective = min(hamiltonian.alpha, w2 ** (1 / 3))
-        formal_order = 2 * method.term_count
-        proxy = (
-            (alpha_effective * evaluation.time) ** (formal_order + 1)
-            / segments**formal_order
+        proxy, prefactor = legacy_w2_proxy_error(
+            hamiltonian,
+            evaluation.time,
+            method.term_count,
+            segments,
         )
         return {
             "segment_count": segments,
             "query_count": 3 * segments * sum(exponents),
             "bound_value": proxy,
-            "bound_prefactor": alpha_effective ** (formal_order + 1),
-            "bound_method": "commutator-calibrated-mpf-proxy",
+            "bound_prefactor": prefactor,
+            "bound_method": "legacy-w2-proxy",
             "bound_rigorous": False,
             "mpf_schedule": method.schedule,
             "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),

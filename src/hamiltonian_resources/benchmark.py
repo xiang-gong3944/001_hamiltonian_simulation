@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
     MPFSchedule,
+    legacy_w2_proxy_segments,
     optimal_mpf_exponents,
 )
 from .qsvt import estimate_qsvt_degree
@@ -21,7 +22,6 @@ from .trotter import (
     TrotterPartition,
     _suzuki_term_occurrences,
     estimate_suzuki_error,
-    suzuki_commutator_bounds,
 )
 
 
@@ -64,7 +64,8 @@ def choose_parameters(
     Orders 1 and 2 use the rigorous Childs et al. commutator bounds.  Orders 4
     and 6 use the rigorous Schubert--Mendl bound when the resolved partition is
     within the practical work cap; other even orders retain the documented
-    1-norm proxy.  An order-2m MPF uses the commutator-calibrated proxy
+    1-norm proxy.  An order-2m MPF currently uses the explicitly legacy
+    ``legacy-w2-proxy`` rule
     (alpha_eff*t)^(2m+1)/r^(2m) with
     alpha_eff = min(alpha, W2^(1/3)), which reproduces the certified order-2
     rate but extrapolates the higher-order constants; it is a documented
@@ -92,13 +93,12 @@ def choose_parameters(
         trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
         parameters["trotter_reps"] = max(1, trotter_reps)
     if algorithm in (None, "multiproduct"):
-        _, w2 = suzuki_commutator_bounds(hamiltonian)
-        alpha_eff = min(hamiltonian.alpha, w2 ** (1 / 3))
-        mpf_order = 2 * config.mpf_m
-        mpf_segments = math.ceil(
-            (((alpha_eff * time) ** (mpf_order + 1)) / budget) ** (1 / mpf_order)
+        parameters["mpf_segments"] = legacy_w2_proxy_segments(
+            hamiltonian,
+            time,
+            budget,
+            config.mpf_m,
         )
-        parameters["mpf_segments"] = max(1, mpf_segments)
     if algorithm in (None, "qsvt"):
         parameters["qsvt_degree"] = estimate_qsvt_degree(alpha_time, budget)
     return parameters
