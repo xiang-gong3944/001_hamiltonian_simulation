@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from .benchmark_suite import BenchmarkSweep, validate_benchmark_frame
@@ -169,9 +169,7 @@ def plot_benchmark(
     columns = _series_columns(series_by, selected)
 
     if ax is None:
-        figure = Figure(figsize=(9.2, 5.8))
-        FigureCanvasAgg(figure)
-        axis = figure.subplots()
+        figure, axis = plt.subplots(figsize=(9.2, 5.8))
     else:
         axis = ax
         figure = axis.figure

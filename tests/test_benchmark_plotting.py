@@ -4,6 +4,7 @@ matplotlib.use("Agg")
 
 import pandas as pd
 import pytest
+from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from hamiltonian_resources import (
@@ -50,6 +51,7 @@ def test_full_plot_defaults_and_arbitrary_metric(benchmark_frame):
     error_axis = error_figure.axes[0]
 
     assert isinstance(size_figure.canvas, FigureCanvasAgg)
+    assert size_figure.number in plt.get_fignums()
     assert size_axis.get_xscale() == "log"
     assert size_axis.xaxis._scale.base == 10
     assert size_axis.get_yscale() == "log"
