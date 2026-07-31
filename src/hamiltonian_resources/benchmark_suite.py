@@ -220,7 +220,7 @@ class TrotterMethod:
 class MultiproductMethod:
     term_count: int
     schedule: Literal["new", "legacy"] = "new"
-    error_method: MPFErrorMethod = "low-rigorous"
+    error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
 
     @property
     def family(self) -> str:
@@ -229,7 +229,10 @@ class MultiproductMethod:
     @property
     def method_id(self) -> str:
         suffix = "" if self.schedule == "new" else f"-{self.schedule}"
-        if self.error_method != "low-rigorous":
+        if self.error_method not in (
+            "low2019-l1-ideal-rigorous",
+            "low-rigorous",
+        ):
             suffix += f"-{self.error_method}"
         return f"mpf-m{self.term_count}{suffix}"
 
@@ -244,9 +247,14 @@ class MultiproductMethod:
         if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
             raise ValueError("MPF term count must be an integer")
         optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
-        if self.error_method not in ("low-rigorous", "legacy-w2-proxy"):
+        if self.error_method not in (
+            "low2019-l1-ideal-rigorous",
+            "low-rigorous",
+            "legacy-w2-proxy",
+        ):
             raise ValueError(
-                "MPF error method must be 'low-rigorous' or 'legacy-w2-proxy'"
+                "MPF error method must be 'low2019-l1-ideal-rigorous' "
+                "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -478,7 +486,9 @@ def _evaluation_config(
         mpf_m=method.term_count if isinstance(method, MultiproductMethod) else 3,
         mpf_schedule=method.schedule if isinstance(method, MultiproductMethod) else "new",
         mpf_error_method=(
-            method.error_method if isinstance(method, MultiproductMethod) else "low-rigorous"
+            method.error_method
+            if isinstance(method, MultiproductMethod)
+            else "low2019-l1-ideal-rigorous"
         ),
     )
 
@@ -838,7 +848,7 @@ def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
         return MultiproductMethod(
             raw["term_count"],
             raw.get("schedule", "new"),
-            raw.get("error_method", "low-rigorous"),
+            raw.get("error_method", "low2019-l1-ideal-rigorous"),
         )
     if family == "qsvt":
         if set(raw) != {"family"}:

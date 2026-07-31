@@ -37,7 +37,7 @@ class _EvaluationConfig:
     trotter_partition: TrotterPartition = "auto"
     mpf_m: int = 3
     mpf_schedule: MPFSchedule = "new"
-    mpf_error_method: MPFErrorMethod = "low-rigorous"
+    mpf_error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
     optimization_level: int = 1
 
     def __post_init__(self) -> None:
@@ -54,9 +54,14 @@ class _EvaluationConfig:
                 "trotter_partition must be 'auto', 'individual', or 'commuting'"
             )
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
-        if self.mpf_error_method not in ("low-rigorous", "legacy-w2-proxy"):
+        if self.mpf_error_method not in (
+            "low2019-l1-ideal-rigorous",
+            "low-rigorous",
+            "legacy-w2-proxy",
+        ):
             raise ValueError(
-                "mpf_error_method must be 'low-rigorous' or 'legacy-w2-proxy'"
+                "mpf_error_method must be 'low2019-l1-ideal-rigorous' "
+                "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
             )
 
 

@@ -35,7 +35,9 @@ data = run_benchmark(config)
 figure = plot_benchmark(data, sweep="system-size", metric="t_count")
 ```
 
-`MultiproductMethod(m)` uses `error_method="low-rigorous"` by default. To
+`MultiproductMethod(m)` uses
+`error_method="low2019-l1-ideal-rigorous"` by default. The historical
+`low-rigorous` spelling remains an input alias. To
 reproduce historical W2-calibrated projections, request
 `MultiproductMethod(m, error_method="legacy-w2-proxy")`. Such rows remain
 available in full plots but are explicitly styled as heuristic and are not

@@ -28,7 +28,11 @@ from .trotter import build_trotter_circuit, suzuki_commutator_bounds
 
 _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
-MPFErrorMethod: TypeAlias = Literal["low-rigorous", "legacy-w2-proxy"]
+MPFErrorMethod: TypeAlias = Literal[
+    "low2019-l1-ideal-rigorous",
+    "low-rigorous",
+    "legacy-w2-proxy",
+]
 MPFErrorScope: TypeAlias = Literal["ideal-mpf", "amplified-shared-ancilla"]
 
 
@@ -182,6 +186,33 @@ def _low_ideal_mpf_bound(
     coefficient_l1_norm: float,
 ) -> tuple[float, float]:
     """Evaluate Low--Kliuchnikov--Wiebe Eqs. (14)--(15)."""
+    log_error, prefactor_log = _low_log_ideal_mpf_bound(
+        hamiltonian,
+        time,
+        m,
+        segments,
+        coefficient_l1_norm,
+    )
+    prefactor = math.exp(prefactor_log) if prefactor_log < 709 else math.inf
+    error = math.exp(log_error) if log_error < 709 else math.inf
+    return error, prefactor
+
+
+def _log1p_exp(value: float) -> float:
+    """Return ``log(1 + exp(value))`` without overflow."""
+    if value > 0:
+        return value + math.log1p(math.exp(-value))
+    return math.log1p(math.exp(value))
+
+
+def _low_log_ideal_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+    coefficient_l1_norm: float,
+) -> tuple[float, float]:
+    """Evaluate Low 2019 Eqs. (14)--(15) entirely in the log domain."""
     formal_order = 2 * m
     lambda_norm = hamiltonian.alpha
     factorial_log = math.lgamma(formal_order + 2)
@@ -192,26 +223,28 @@ def _low_ideal_mpf_bound(
         if lambda_norm > 0
         else -math.inf
     )
-    prefactor = math.exp(prefactor_log) if prefactor_log < 709 else math.inf
     scaled_time = lambda_norm * abs(float(time)) / segments
     if scaled_time == 0:
-        return 0.0, prefactor
+        return -math.inf, prefactor_log
     log_step_error = (
         math.log(2 * coefficient_l1_norm)
         + (formal_order + 1) * math.log(scaled_time)
         - factorial_log
         + scaled_time
     )
-    if log_step_error > 709:
-        return math.inf, prefactor
-    step_error = math.exp(log_step_error)
     log_global_error = (
         log_step_error
         + math.log(segments)
-        + (segments - 1) * math.log1p(step_error)
+        + (segments - 1) * _log1p_exp(log_step_error)
     )
-    error = math.exp(log_global_error) if log_global_error < 709 else math.inf
-    return error, prefactor
+    return log_global_error, prefactor_log
+
+
+def _normalize_mpf_error_method(method: MPFErrorMethod) -> MPFErrorMethod:
+    """Map the historical Low method name to its explicit canonical name."""
+    if method == "low-rigorous":
+        return "low2019-l1-ideal-rigorous"
+    return method
 
 
 def estimate_mpf_error(
@@ -221,7 +254,7 @@ def estimate_mpf_error(
     m: int,
     *,
     schedule: MPFSchedule = "new",
-    method: MPFErrorMethod = "low-rigorous",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
 ) -> MPFErrorEstimate:
     """Estimate ideal-MPF error while preserving certification provenance."""
     if isinstance(segments, bool) or not isinstance(segments, Integral):
@@ -233,7 +266,8 @@ def estimate_mpf_error(
     exponents = optimal_mpf_exponents(m, schedule=schedule)
     coefficients = multiproduct_coefficients(m, schedule=schedule)
     coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
-    if method == "low-rigorous":
+    method = _normalize_mpf_error_method(method)
+    if method == "low2019-l1-ideal-rigorous":
         error, prefactor = _low_ideal_mpf_bound(
             hamiltonian,
             time,
@@ -252,7 +286,8 @@ def estimate_mpf_error(
         rigorous = False
     else:
         raise ValueError(
-            "MPF error method must be 'low-rigorous' or 'legacy-w2-proxy'"
+            "MPF error method must be 'low2019-l1-ideal-rigorous' "
+            "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
         )
     return MPFErrorEstimate(
         error=error,
@@ -277,22 +312,25 @@ def select_mpf_segments(
     m: int,
     *,
     schedule: MPFSchedule = "new",
-    method: MPFErrorMethod = "low-rigorous",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
 ) -> MPFErrorEstimate:
     """Select segments and return the resulting scoped MPF estimate.
 
-    ``low-rigorous`` uses the sufficient segment count in Eq. (16) of Low,
-    Kliuchnikov, and Wiebe, arXiv:1907.11679.  ``legacy-w2-proxy`` exactly
-    reproduces the repository's historical heuristic.
+    ``low2019-l1-ideal-rigorous`` uses Eq. (16) of Low, Kliuchnikov, and
+    Wiebe, arXiv:1907.11679, only as a safe upper bracket, then finds the
+    smallest integer satisfying their direct Eqs. (14)--(15) bound by binary
+    search. ``low-rigorous`` remains a backward-compatible alias.
+    ``legacy-w2-proxy`` exactly reproduces the historical heuristic.
     """
     if not np.isfinite(time):
         raise ValueError("time must be finite")
     if not 0 < target_error <= 1:
         raise ValueError("target_error must lie in (0, 1]")
     optimal_mpf_exponents(m, schedule=schedule)
+    method = _normalize_mpf_error_method(method)
     if method == "legacy-w2-proxy":
         segments = legacy_w2_proxy_segments(hamiltonian, time, target_error, m)
-    elif method == "low-rigorous":
+    elif method == "low2019-l1-ideal-rigorous":
         coefficients = multiproduct_coefficients(m, schedule=schedule)
         coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
         scaled_time = hamiltonian.alpha * abs(float(time))
@@ -310,9 +348,42 @@ def select_mpf_segments(
             if log_segments > 709:
                 raise OverflowError("required MPF segment count exceeds float range")
             segments = max(1, math.ceil(math.exp(log_segments)))
+
+        target_log = math.log(target_error)
+
+        def satisfies(candidate: int) -> bool:
+            log_error, _ = _low_log_ideal_mpf_bound(
+                hamiltonian,
+                time,
+                m,
+                candidate,
+                coefficient_l1_norm,
+            )
+            return log_error <= target_log
+
+        # Eq. (16) is the analytical upper bracket. Doubling is retained as a
+        # guard against floating-point rounding at its integer boundary.
+        while not satisfies(segments):
+            segments *= 2
+            if math.log(segments) > 709:
+                raise OverflowError("required MPF segment count exceeds float range")
+
+        if segments > 1 and satisfies(1):
+            segments = 1
+        elif segments > 1:
+            lower = 1
+            upper = segments
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                if satisfies(midpoint):
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            segments = upper
     else:
         raise ValueError(
-            "MPF error method must be 'low-rigorous' or 'legacy-w2-proxy'"
+            "MPF error method must be 'low2019-l1-ideal-rigorous' "
+            "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
         )
     estimate = estimate_mpf_error(
         hamiltonian,
@@ -322,18 +393,6 @@ def select_mpf_segments(
         schedule=schedule,
         method=method,
     )
-    # Eq. (16) is sufficient analytically; this guards floating-point rounding
-    # at the integer boundary without replacing the theorem-based selector.
-    while method == "low-rigorous" and estimate.error > target_error:
-        segments += 1
-        estimate = estimate_mpf_error(
-            hamiltonian,
-            time,
-            segments,
-            m,
-            schedule=schedule,
-            method=method,
-        )
     return estimate
 
 

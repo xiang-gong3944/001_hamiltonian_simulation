@@ -95,7 +95,7 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     )
     row = frame.iloc[0]
 
-    assert row["bound_method"] == "low-rigorous"
+    assert row["bound_method"] == "low2019-l1-ideal-rigorous"
     assert bool(row["bound_rigorous"])
     assert row["bound_scope"] == "ideal-mpf"
     assert bool(row["bound_target_satisfied"])
@@ -118,10 +118,20 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
 def test_low_bound_depends_on_schedule_coefficient_norm():
     hamiltonian = transverse_field_ising(2, field=0.7)
     new = estimate_mpf_error(
-        hamiltonian, 0.4, 8, 3, schedule="new", method="low-rigorous"
+        hamiltonian,
+        0.4,
+        8,
+        3,
+        schedule="new",
+        method="low2019-l1-ideal-rigorous",
     )
     legacy = estimate_mpf_error(
-        hamiltonian, 0.4, 8, 3, schedule="legacy", method="low-rigorous"
+        hamiltonian,
+        0.4,
+        8,
+        3,
+        schedule="legacy",
+        method="low2019-l1-ideal-rigorous",
     )
 
     assert new.coefficient_l1_norm == pytest.approx(
@@ -146,7 +156,7 @@ def test_low_segment_selection_is_monotone_and_satisfies_bound():
             target,
             3,
             schedule="new",
-            method="low-rigorous",
+            method="low2019-l1-ideal-rigorous",
         )
         for target in (1e-2, 1e-4, 1e-6)
     ]
@@ -165,6 +175,17 @@ def test_low_segment_selection_is_monotone_and_satisfies_bound():
         estimate.circuit_scope == "amplified-shared-ancilla"
         for estimate in estimates
     )
+    for estimate, target in zip(estimates, (1e-2, 1e-4, 1e-6), strict=True):
+        if estimate.segments > 1:
+            previous = estimate_mpf_error(
+                hamiltonian,
+                0.8,
+                estimate.segments - 1,
+                3,
+                schedule="new",
+                method="low2019-l1-ideal-rigorous",
+            )
+            assert previous.error > target
 
 
 def test_low_bound_matches_theorem_equations_14_and_15():
@@ -173,7 +194,11 @@ def test_low_bound_matches_theorem_equations_14_and_15():
     segments = 7
     m = 2
     estimate = estimate_mpf_error(
-        hamiltonian, time, segments, m, method="low-rigorous"
+        hamiltonian,
+        time,
+        segments,
+        m,
+        method="low2019-l1-ideal-rigorous",
     )
     scaled_time = hamiltonian.alpha * time / segments
     step_error = (
@@ -194,6 +219,30 @@ def test_mpf_estimators_reject_invalid_policy_and_nonfinite_time():
         estimate_mpf_error(hamiltonian, 0.2, 2, 2, method="unknown")
     with pytest.raises(ValueError, match="finite"):
         select_mpf_segments(hamiltonian, np.inf, 1e-3, 2)
+
+
+def test_historical_low_method_name_is_a_backward_compatible_alias():
+    hamiltonian = transverse_field_ising(2)
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.2,
+        1e-4,
+        2,
+        method="low-rigorous",
+    )
+
+    assert estimate.method == "low2019-l1-ideal-rigorous"
+
+
+def test_low_selector_reports_float_range_overflow_explicitly():
+    with pytest.raises(OverflowError, match="segment count"):
+        select_mpf_segments(
+            transverse_field_ising(2),
+            1e308,
+            1e-6,
+            2,
+            method="low2019-l1-ideal-rigorous",
+        )
 
 
 def test_imbalanced_two_term_case_exposes_legacy_proxy_failure():
@@ -218,7 +267,7 @@ def test_imbalanced_two_term_case_exposes_legacy_proxy_failure():
         1.0,
         algorithm_budget,
         3,
-        method="low-rigorous",
+        method="low2019-l1-ideal-rigorous",
     )
     exact_rigorous_error = _ideal_mpf_operator_error(
         hamiltonian, 1.0, rigorous.segments, 3
@@ -241,7 +290,7 @@ def test_low_bound_upper_bounds_small_system_ideal_mpf_operator(m, schedule):
         1e-4,
         m,
         schedule=schedule,
-        method="low-rigorous",
+        method="low2019-l1-ideal-rigorous",
     )
     exact_error = _ideal_mpf_operator_error(
         hamiltonian,
