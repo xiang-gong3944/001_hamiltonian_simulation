@@ -1,4 +1,6 @@
 import math
+import json
+from itertools import product
 
 import numpy as np
 import pytest
@@ -8,6 +10,7 @@ from scipy.linalg import expm
 from hamiltonian_resources import (
     PauliHamiltonian,
     build_trotter_circuit,
+    pauli_nested_commutator_bounds,
     transverse_field_ising,
 )
 from hamiltonian_resources.multiproduct import (
@@ -113,6 +116,41 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     assert legacy["bound_method"] == "legacy-w2-proxy"
     assert not bool(legacy["bound_rigorous"])
     assert not bool(legacy["bound_target_satisfied"])
+
+
+def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
+    from hamiltonian_resources import (
+        BenchmarkConfig,
+        MultiproductMethod,
+        TimeScaling,
+        run_benchmark,
+    )
+
+    row = run_benchmark(
+        BenchmarkConfig(
+            system_sizes=[2],
+            time=TimeScaling("fixed", 0.01),
+            methods=[
+                MultiproductMethod(
+                    2,
+                    error_method="mizuta2026-commutator-ideal-rigorous",
+                )
+            ],
+        ),
+        sweeps="system-size",
+    ).iloc[0]
+
+    assert row["status"] == "ok"
+    assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    assert "Mizuta" in row["bound_reference"]
+    assert row["bound_theorem_or_equations"].startswith("Theorem 4")
+    assert row["hamiltonian_decomposition"] == "ordered individual Pauli terms"
+    assert bool(row["bound_rigorous"])
+    assert bool(row["locality_compatible"])
+    assert row["max_nested_commutator_order"] >= 3
+    assert json.loads(row["bound_components_json"])["mu_upper"] > 0
+    assert json.loads(row["commutator_bounds_json"])
+    assert not bool(row["circuit_bound_rigorous"])
 
 
 def test_low_bound_depends_on_schedule_coefficient_norm():
@@ -302,3 +340,125 @@ def test_low_bound_upper_bounds_small_system_ideal_mpf_operator(m, schedule):
 
     assert exact_error <= estimate.error
     assert estimate.error <= 1e-4
+
+
+def test_pauli_nested_commutators_vanish_for_commuting_decomposition():
+    hamiltonian = PauliHamiltonian.from_terms(
+        3,
+        [("ZII", 0.3), ("IZI", -0.4), ("ZZI", 0.2), ("III", 1.7)],
+    )
+    bounds = pauli_nested_commutator_bounds(hamiltonian, 7)
+
+    assert bounds.values == (0.0,) * 6
+    assert bounds.max_exact_order == 7
+    assert not bounds.used_locality_fallback
+
+
+def test_exact_pauli_commutator_sums_agree_with_dense_tiny_validation():
+    hamiltonian = PauliHamiltonian.from_terms(
+        1,
+        [("X", 0.3), ("Y", -0.2), ("Z", 0.7)],
+    )
+    term_matrices = [
+        coefficient * PauliHamiltonian.from_terms(1, [(label, 1.0)]).matrix()
+        for label, coefficient in hamiltonian.terms
+    ]
+    bounds = pauli_nested_commutator_bounds(hamiltonian, 5)
+
+    for order in range(2, 6):
+        dense_sum = 0.0
+        for indices in product(range(len(term_matrices)), repeat=order):
+            nested = term_matrices[indices[0]]
+            for outer in indices[1:]:
+                nested = term_matrices[outer] @ nested - nested @ term_matrices[outer]
+            dense_sum += np.linalg.norm(nested, ord=2)
+        assert bounds.at(order) == pytest.approx(dense_sum, rel=1e-12, abs=1e-14)
+
+
+def test_pauli_commutator_cap_uses_explicit_rigorous_locality_fallback():
+    hamiltonian = transverse_field_ising(4, field=0.7)
+    bounds = pauli_nested_commutator_bounds(
+        hamiltonian,
+        6,
+        transition_cap=1,
+    )
+
+    assert bounds.used_locality_fallback
+    assert bounds.max_exact_order == 1
+    assert "Mizuta 2026 Eq. (8)" in bounds.fallback_reason
+    assert all(value > 0 for value in bounds.values)
+
+
+def test_mizuta_bound_is_exact_zero_for_commuting_pauli_terms():
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("ZI", 0.7), ("IZ", -0.2), ("ZZ", 0.4)],
+    )
+    estimate = select_mpf_segments(
+        hamiltonian,
+        5.0,
+        1e-8,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+
+    assert estimate.segments == 1
+    assert estimate.error == 0.0
+    assert estimate.rigorous
+    assert estimate.locality_compatible
+    assert estimate.max_nested_commutator_order >= 3
+
+
+def test_mizuta_bound_upper_bounds_small_system_ideal_mpf_error():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-3,
+        2,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    exact_error = _ideal_mpf_operator_error(
+        hamiltonian,
+        0.01,
+        estimate.segments,
+        2,
+    )
+
+    assert estimate.error <= 1e-3
+    assert exact_error <= estimate.error
+    assert estimate.rigorous
+    assert estimate.theorem_or_equations.startswith("Theorem 4")
+    assert estimate.max_exact_nested_commutator_order >= 3
+
+
+def test_mizuta_analytical_path_never_constructs_dense_hamiltonian(monkeypatch):
+    hamiltonian = transverse_field_ising(2, field=0.7)
+
+    def fail_if_called(self):
+        raise AssertionError("dense Hamiltonian matrix is forbidden")
+
+    monkeypatch.setattr(PauliHamiltonian, "matrix", fail_if_called)
+    estimate = estimate_mpf_error(
+        hamiltonian,
+        0.01,
+        300,
+        2,
+        method="mizuta2026-commutator-ideal-rigorous",
+        target_error=1e-3,
+    )
+
+    assert estimate.max_nested_commutator_order >= 3
+
+
+def test_local_chain_nested_commutator_sum_is_extensive_at_fixed_order():
+    small = pauli_nested_commutator_bounds(
+        transverse_field_ising(6, field=0.7),
+        3,
+    ).at(3)
+    large = pauli_nested_commutator_bounds(
+        transverse_field_ising(12, field=0.7),
+        3,
+    ).at(3)
+
+    assert 1.5 < large / small < 2.5

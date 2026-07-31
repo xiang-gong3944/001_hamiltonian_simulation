@@ -66,9 +66,20 @@ BENCHMARK_COLUMNS = (
     "bound_value",
     "bound_prefactor",
     "bound_method",
+    "bound_reference",
+    "bound_theorem_or_equations",
+    "bound_components_json",
     "bound_rigorous",
     "bound_scope",
     "bound_target_satisfied",
+    "hamiltonian_decomposition",
+    "bound_assumptions_json",
+    "bound_fallback_reason",
+    "max_nested_commutator_order",
+    "max_exact_nested_commutator_order",
+    "locality_compatible",
+    "commutator_cap_fallback",
+    "commutator_bounds_json",
     "circuit_bound_scope",
     "circuit_bound_rigorous",
     "circuit_target_satisfied",
@@ -102,8 +113,19 @@ BENCHMARK_COLUMNS = (
 )
 
 _SCHEMA2_EXTENSION_COLUMNS = {
+    "bound_reference",
+    "bound_theorem_or_equations",
+    "bound_components_json",
     "bound_scope",
     "bound_target_satisfied",
+    "hamiltonian_decomposition",
+    "bound_assumptions_json",
+    "bound_fallback_reason",
+    "max_nested_commutator_order",
+    "max_exact_nested_commutator_order",
+    "locality_compatible",
+    "commutator_cap_fallback",
+    "commutator_bounds_json",
     "circuit_bound_scope",
     "circuit_bound_rigorous",
     "circuit_target_satisfied",
@@ -241,6 +263,8 @@ class MultiproductMethod:
         suffix = "" if self.schedule == "new" else f" ({self.schedule})"
         if self.error_method == "legacy-w2-proxy":
             suffix += " [legacy W2 heuristic]"
+        elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
+            suffix += " [Mizuta 2026 commutator]"
         return f"MPF m={self.term_count}{suffix}"
 
     def validate(self) -> None:
@@ -249,12 +273,14 @@ class MultiproductMethod:
         optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
         if self.error_method not in (
             "low2019-l1-ideal-rigorous",
+            "mizuta2026-commutator-ideal-rigorous",
             "low-rigorous",
             "legacy-w2-proxy",
         ):
             raise ValueError(
                 "MPF error method must be 'low2019-l1-ideal-rigorous' "
-                "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
+                "(historical alias 'low-rigorous'), "
+                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
             )
 
     def as_dict(self) -> dict[str, Any]:
@@ -543,6 +569,12 @@ def _method_metadata(
             method.term_count,
             schedule=method.schedule,
             method=method.error_method,
+            target_error=(
+                evaluation.target_error * (1 - evaluation.synthesis_error_fraction)
+                if method.error_method
+                == "mizuta2026-commutator-ideal-rigorous"
+                else None
+            ),
         )
         algorithm_budget = evaluation.target_error * (
             1 - evaluation.synthesis_error_fraction
@@ -553,6 +585,11 @@ def _method_metadata(
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
+            "bound_reference": error.reference,
+            "bound_theorem_or_equations": error.theorem_or_equations,
+            "bound_components_json": json.dumps(
+                dict(error.bound_components), sort_keys=True, separators=(",", ":")
+            ),
             "bound_rigorous": error.rigorous,
             "bound_scope": error.scope,
             "bound_target_satisfied": error.rigorous
@@ -560,6 +597,22 @@ def _method_metadata(
             "circuit_bound_scope": error.circuit_scope,
             "circuit_bound_rigorous": error.circuit_rigorous,
             "circuit_target_satisfied": False,
+            "hamiltonian_decomposition": error.hamiltonian_decomposition,
+            "bound_assumptions_json": json.dumps(
+                error.assumptions, separators=(",", ":")
+            ),
+            "bound_fallback_reason": error.fallback_reason,
+            "max_nested_commutator_order": error.max_nested_commutator_order,
+            "max_exact_nested_commutator_order": (
+                error.max_exact_nested_commutator_order
+            ),
+            "locality_compatible": error.locality_compatible,
+            "commutator_cap_fallback": error.fallback_reason is not None,
+            "commutator_bounds_json": json.dumps(
+                dict(error.commutator_bounds),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
             "mpf_schedule": method.schedule,
             "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),
             "mpf_coefficients_json": json.dumps(
@@ -964,6 +1017,8 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
         )
         frame["circuit_bound_rigorous"] = rigorous & ~is_mpf
         frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf
+        for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
+            frame[column] = None
     return frame
 
 

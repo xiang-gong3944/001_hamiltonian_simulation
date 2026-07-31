@@ -23,13 +23,19 @@ from .circuit_utils import (
     state_preparation,
 )
 from .hamiltonians import PauliHamiltonian
-from .trotter import build_trotter_circuit, suzuki_commutator_bounds
+from .trotter import (
+    PauliNestedCommutatorBounds,
+    build_trotter_circuit,
+    pauli_nested_commutator_bounds,
+    suzuki_commutator_bounds,
+)
 
 
 _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
 MPFErrorMethod: TypeAlias = Literal[
     "low2019-l1-ideal-rigorous",
+    "mizuta2026-commutator-ideal-rigorous",
     "low-rigorous",
     "legacy-w2-proxy",
 ]
@@ -60,6 +66,17 @@ class MPFErrorEstimate:
     rigorous: bool
     circuit_scope: MPFErrorScope = "amplified-shared-ancilla"
     circuit_rigorous: bool = False
+    reference: str = ""
+    theorem_or_equations: str = ""
+    local_step_size: float = 0.0
+    bound_components: tuple[tuple[str, float], ...] = ()
+    hamiltonian_decomposition: str = "ordered individual Pauli terms"
+    assumptions: tuple[str, ...] = ()
+    fallback_reason: str | None = None
+    max_nested_commutator_order: int = 0
+    max_exact_nested_commutator_order: int = 0
+    locality_compatible: bool = False
+    commutator_bounds: tuple[tuple[int, float], ...] = ()
 
 
 _NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
@@ -240,6 +257,214 @@ def _low_log_ideal_mpf_bound(
     return log_global_error, prefactor_log
 
 
+def _logsumexp(values: list[float]) -> float:
+    """Return the log of a positive exponential sum."""
+    maximum = max(values)
+    if math.isinf(maximum):
+        return maximum
+    return maximum + math.log(math.fsum(math.exp(value - maximum) for value in values))
+
+
+def _mizuta_mu_upper_bound(
+    commutators: PauliNestedCommutatorBounds,
+    *,
+    base_order: int = 2,
+) -> float:
+    """Upper-bound Mizuta 2026 Eq. (61) by a finite polynomial root.
+
+    Let ``A(x)=sum_q alpha_com,q x^q`` for ``base_order < q <= p0``.
+    If ``A(x_*)=1``, every coefficient of ``A(x_*)^n`` is at most one.
+    Therefore the supremum in Eq. (61) is at most ``1/x_*``. This retains
+    every finite commutator order required by Theorem 4 without enumerating
+    its unbounded repetition index ``n``.
+    """
+    log_terms = [
+        (order, math.log(commutators.at(order)))
+        for order in range(base_order + 1, commutators.max_order + 1)
+        if commutators.at(order) > 0
+    ]
+    if not log_terms:
+        return 0.0
+    if any(math.isinf(log_value) for _, log_value in log_terms):
+        return math.inf
+
+    # Solve sum_q alpha_q / mu^q = 1 in log(mu). At the lower endpoint
+    # at least one summand is one; the upper endpoint makes the whole sum <= 1.
+    lower = max(log_value / order for order, log_value in log_terms)
+    upper = lower + math.log(len(log_terms)) / min(order for order, _ in log_terms)
+
+    def log_polynomial(log_mu: float) -> float:
+        return _logsumexp(
+            [log_value - order * log_mu for order, log_value in log_terms]
+        )
+
+    for _ in range(80):
+        midpoint = (lower + upper) / 2
+        if log_polynomial(midpoint) > 0:
+            lower = midpoint
+        else:
+            upper = midpoint
+    if upper > 709:
+        return math.inf
+    return float(np.nextafter(math.exp(upper), np.inf))
+
+
+def _repeated_step_error(step_error: float, segments: int) -> float:
+    """Apply the telescoping bound used in Low 2019 Eq. (15)."""
+    if step_error == 0:
+        return 0.0
+    if not math.isfinite(step_error):
+        return math.inf
+    log_error = (
+        math.log(step_error)
+        + math.log(segments)
+        + (segments - 1) * math.log1p(step_error)
+    )
+    return math.exp(log_error) if log_error < 709 else math.inf
+
+
+def _mizuta_ideal_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponents: tuple[int, ...],
+    target_error: float,
+) -> tuple[
+    float,
+    float,
+    tuple[tuple[str, float], ...],
+    PauliNestedCommutatorBounds,
+    tuple[str, ...],
+    bool,
+]:
+    """Evaluate Mizuta 2026 Theorem 4/Eqs. (61)--(63) for ``p=2``."""
+    formal_order = 2 * m
+    base_order = 2
+    base_repetitions = 2  # c_p for the ordered Strang formula, paper Eq. (6)
+    exponent_l1_norm = float(sum(exponents))
+    step_time = abs(float(time)) / segments
+
+    # Allocate half of the exact local budget implied by the repeated-step
+    # target to the truncated-BCH remainder in Theorem 4.
+    local_budget = math.expm1(math.log1p(target_error) / segments)
+    auxiliary_error = local_budget / (2 * coefficient_l1_norm * exponent_l1_norm)
+    if auxiliary_error <= 0:
+        raise OverflowError("Mizuta auxiliary error underflowed float range")
+    truncation_order = math.ceil(
+        math.log(3 * hamiltonian.num_qubits / auxiliary_error)
+    )
+    truncation_order = max(base_order + 1, truncation_order)
+    commutators = pauli_nested_commutator_bounds(
+        hamiltonian,
+        truncation_order,
+    )
+
+    if all(value == 0 for value in commutators.values):
+        components = (
+            ("mu_upper", 0.0),
+            ("local_commutator_error", 0.0),
+            ("local_truncated_bch_error", 0.0),
+            ("auxiliary_error", auxiliary_error),
+            ("truncation_order_p0", float(truncation_order)),
+            ("locality_k", float(commutators.locality_k)),
+            ("extensiveness_g", commutators.extensiveness_g),
+        )
+        return (
+            0.0,
+            0.0,
+            components,
+            commutators,
+            ("all individual Pauli summands commute; the ordered Strang formula is exact",),
+            True,
+        )
+
+    mu_upper = _mizuta_mu_upper_bound(commutators, base_order=base_order)
+    if mu_upper == 0:
+        prefactor = 0.0
+        local_commutator_error = 0.0
+    else:
+        log_prefactor = (
+            math.log(2)
+            + 0.5
+            + math.log(coefficient_l1_norm)
+            + (formal_order + 1) * math.log(base_repetitions * mu_upper)
+        )
+        prefactor = math.exp(log_prefactor) if log_prefactor < 709 else math.inf
+        if step_time == 0:
+            local_commutator_error = 0.0
+        else:
+            log_commutator_error = log_prefactor + (formal_order + 1) * math.log(
+                step_time
+            )
+            local_commutator_error = (
+                math.exp(log_commutator_error)
+                if log_commutator_error < 709
+                else math.inf
+            )
+    local_truncated_bch_error = coefficient_l1_norm * exponent_l1_norm * auxiliary_error
+    local_step_error = local_commutator_error + local_truncated_bch_error
+
+    k_value = commutators.locality_k
+    g_value = commutators.extensiveness_g
+    first_time_limit = (
+        math.inf
+        if k_value == 0 or g_value == 0
+        else 1
+        / (
+            8
+            * math.e**3
+            * base_repetitions
+            * truncation_order
+            * k_value
+            * g_value
+        )
+    )
+    second_time_limit = (
+        math.inf
+        if mu_upper == 0
+        else 1 / (2 * base_repetitions * mu_upper)
+    )
+    time_hypothesis_satisfied = step_time <= min(first_time_limit, second_time_limit)
+    assumptions = (
+        "individual Pauli summands define the ordered H_gamma decomposition",
+        "Pauli support gives k-locality and per-site coefficient sums give g-extensiveness",
+        "base formula is the symmetric second-order formula with c_p=2",
+        (
+            "Theorem 4 time hypothesis Eq. (62) is satisfied"
+            if time_hypothesis_satisfied
+            else "Theorem 4 time hypothesis Eq. (62) is not satisfied"
+        ),
+        "the repeated ideal MPF is composed with the Eq. (15) telescoping argument",
+    )
+    components = (
+        ("mu_upper", mu_upper),
+        ("local_commutator_error", local_commutator_error),
+        ("local_truncated_bch_error", local_truncated_bch_error),
+        ("local_step_error", local_step_error),
+        ("auxiliary_error", auxiliary_error),
+        ("truncation_order_p0", float(truncation_order)),
+        ("first_time_limit", first_time_limit),
+        ("second_time_limit", second_time_limit),
+        ("locality_k", float(k_value)),
+        ("extensiveness_g", g_value),
+    )
+    error = (
+        _repeated_step_error(local_step_error, segments)
+        if time_hypothesis_satisfied
+        else math.inf
+    )
+    return (
+        error,
+        prefactor,
+        components,
+        commutators,
+        assumptions,
+        time_hypothesis_satisfied,
+    )
+
+
 def _normalize_mpf_error_method(method: MPFErrorMethod) -> MPFErrorMethod:
     """Map the historical Low method name to its explicit canonical name."""
     if method == "low-rigorous":
@@ -255,6 +480,7 @@ def estimate_mpf_error(
     *,
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    target_error: float | None = None,
 ) -> MPFErrorEstimate:
     """Estimate ideal-MPF error while preserving certification provenance."""
     if isinstance(segments, bool) or not isinstance(segments, Integral):
@@ -276,6 +502,15 @@ def estimate_mpf_error(
             coefficient_l1_norm,
         )
         rigorous = True
+        reference = "Low, Kliuchnikov, and Wiebe, arXiv:1907.11679v2 (2019)"
+        theorem_or_equations = "Theorem 2, Eqs. (13)--(15)"
+        bound_components = (("worst_case_prefactor", prefactor),)
+        assumptions = (
+            "H is decomposed into the ordered individual Pauli summands",
+            "lambda is upper-bounded by the Pauli coefficient 1-norm",
+            "the bound certifies the repeated ideal MPF operator only",
+        )
+        commutators: PauliNestedCommutatorBounds | None = None
     elif method == "legacy-w2-proxy":
         error, prefactor = legacy_w2_proxy_error(
             hamiltonian,
@@ -284,10 +519,45 @@ def estimate_mpf_error(
             int(segments),
         )
         rigorous = False
+        reference = "historical repository W2 calibration; no MPF theorem"
+        theorem_or_equations = "none (nonrigorous proxy)"
+        bound_components = (("legacy_w2_prefactor", prefactor),)
+        assumptions = (
+            "alpha_eff=min(alpha,W2^(1/3)) is a heuristic MPF substitution",
+        )
+        commutators = None
+    elif method == "mizuta2026-commutator-ideal-rigorous":
+        if target_error is None or not 0 < target_error <= 1:
+            raise ValueError(
+                "target_error in (0, 1] is required for the Mizuta estimator"
+            )
+        (
+            error,
+            prefactor,
+            bound_components,
+            commutators,
+            assumptions,
+            rigorous,
+        ) = _mizuta_ideal_mpf_bound(
+            hamiltonian,
+            time,
+            m,
+            int(segments),
+            coefficient_l1_norm,
+            exponents,
+            target_error,
+        )
+        reference = (
+            "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
+        )
+        theorem_or_equations = (
+            "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
+        )
     else:
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
-            "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
+            "(historical alias 'low-rigorous'), "
+            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
         )
     return MPFErrorEstimate(
         error=error,
@@ -302,6 +572,29 @@ def estimate_mpf_error(
         method=method,
         scope="ideal-mpf",
         rigorous=rigorous,
+        reference=reference,
+        theorem_or_equations=theorem_or_equations,
+        local_step_size=abs(float(time)) / int(segments),
+        bound_components=bound_components,
+        assumptions=assumptions,
+        fallback_reason=(
+            commutators.fallback_reason if commutators is not None else None
+        ),
+        max_nested_commutator_order=(
+            commutators.max_order if commutators is not None else 0
+        ),
+        max_exact_nested_commutator_order=(
+            commutators.max_exact_order if commutators is not None else 0
+        ),
+        locality_compatible=commutators is not None,
+        commutator_bounds=(
+            tuple(
+                (order, commutators.at(order))
+                for order in range(2, commutators.max_order + 1)
+            )
+            if commutators is not None
+            else ()
+        ),
     )
 
 
@@ -380,10 +673,39 @@ def select_mpf_segments(
                 else:
                     lower = midpoint
             segments = upper
+    elif method == "mizuta2026-commutator-ideal-rigorous":
+        def satisfies_mizuta(candidate: int) -> bool:
+            candidate_estimate = estimate_mpf_error(
+                hamiltonian,
+                time,
+                candidate,
+                m,
+                schedule=schedule,
+                method=method,
+                target_error=target_error,
+            )
+            return candidate_estimate.rigorous and candidate_estimate.error <= target_error
+
+        segments = 1
+        while not satisfies_mizuta(segments):
+            segments *= 2
+            if math.log(segments) > 709:
+                raise OverflowError("required MPF segment count exceeds float range")
+        if segments > 1:
+            lower = 1
+            upper = segments
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                if satisfies_mizuta(midpoint):
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            segments = upper
     else:
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
-            "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
+            "(historical alias 'low-rigorous'), "
+            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
         )
     estimate = estimate_mpf_error(
         hamiltonian,
@@ -392,6 +714,11 @@ def select_mpf_segments(
         m,
         schedule=schedule,
         method=method,
+        target_error=(
+            target_error
+            if method == "mizuta2026-commutator-ideal-rigorous"
+            else None
+        ),
     )
     return estimate
 

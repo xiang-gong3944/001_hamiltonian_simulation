@@ -28,6 +28,7 @@ SuzukiErrorMethod: TypeAlias = Literal[
 ]
 
 _MAX_HIGHER_ORDER_COMMUTATORS = 4096
+_MAX_EXACT_PAULI_COMMUTATOR_TRANSITIONS = 250_000
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,34 @@ class SuzukiErrorEstimate:
     group_count: int
     method: SuzukiErrorMethod
     rigorous: bool
+
+
+@dataclass(frozen=True)
+class PauliNestedCommutatorBounds:
+    """Exact or rigorously upper-bounded ``alpha_com,q`` values.
+
+    ``values[q - 2]`` bounds the sum of operator norms of all ordered
+    ``q``-term nested commutators of the individual Pauli summands. Exact
+    evaluation aggregates Pauli words with nonnegative norm weights, so it
+    does not construct dense Hamiltonian matrices or discard cancellations.
+    If the transition cap is reached, the remaining entries use Mizuta 2026
+    Eq. (8), ``(q-1)! (2 k g)^(q-1) N g``.
+    """
+
+    values: tuple[float, ...]
+    max_order: int
+    max_exact_order: int
+    state_counts: tuple[int, ...]
+    used_locality_fallback: bool
+    fallback_reason: str | None
+    locality_k: int
+    extensiveness_g: float
+    decomposition: str = "ordered individual Pauli terms"
+
+    def at(self, order: int) -> float:
+        if not 2 <= order <= self.max_order:
+            raise ValueError(f"order must lie between 2 and {self.max_order}")
+        return self.values[order - 2]
 
 
 @dataclass(frozen=True)
@@ -82,6 +111,173 @@ def _pauli_l1(operator: SparsePauliOp) -> float:
 
 def _commutator(a: SparsePauliOp, b: SparsePauliOp) -> SparsePauliOp:
     return _simplify(a @ b - b @ a)
+
+
+def _encoded_pauli(label: str) -> tuple[int, int]:
+    """Encode a Pauli word as binary symplectic X/Z masks."""
+    x_mask = 0
+    z_mask = 0
+    for bit, symbol in enumerate(reversed(label)):
+        if symbol in "XY":
+            x_mask |= 1 << bit
+        if symbol in "YZ":
+            z_mask |= 1 << bit
+    return x_mask, z_mask
+
+
+def _paulis_anticommute(left: tuple[int, int], right: tuple[int, int]) -> bool:
+    left_x, left_z = left
+    right_x, right_z = right
+    parity_mask = (left_x & right_z) ^ (left_z & right_x)
+    return bool(parity_mask.bit_count() & 1)
+
+
+def _locality_parameters(
+    hamiltonian: PauliHamiltonian,
+) -> tuple[int, float]:
+    """Return the exact Pauli support size ``k`` and extensiveness ``g``."""
+    site_weights = [0.0] * hamiltonian.num_qubits
+    locality_k = 0
+    for label, coefficient in hamiltonian.terms:
+        support = [site for site, symbol in enumerate(reversed(label)) if symbol != "I"]
+        locality_k = max(locality_k, len(support))
+        for site in support:
+            site_weights[site] = float(
+                np.nextafter(site_weights[site] + abs(coefficient), np.inf)
+            )
+    return locality_k, max(site_weights, default=0.0)
+
+
+def _locality_commutator_bound(
+    order: int,
+    num_qubits: int,
+    locality_k: int,
+    extensiveness_g: float,
+) -> float:
+    """Evaluate Mizuta 2026 Eq. (8) in the log domain."""
+    if locality_k == 0 or extensiveness_g == 0:
+        return 0.0
+    log_value = (
+        math.lgamma(order)
+        + (order - 1) * math.log(2 * locality_k * extensiveness_g)
+        + math.log(num_qubits * extensiveness_g)
+    )
+    if log_value > 709:
+        return math.inf
+    value = math.exp(log_value)
+    return float(np.nextafter(value, np.inf))
+
+
+@lru_cache(maxsize=None)
+def pauli_nested_commutator_bounds(
+    hamiltonian: PauliHamiltonian,
+    max_order: int,
+    *,
+    transition_cap: int = _MAX_EXACT_PAULI_COMMUTATOR_TRANSITIONS,
+) -> PauliNestedCommutatorBounds:
+    """Return rigorous ``alpha_com,q`` bounds through ``max_order``.
+
+    For individual Pauli summands, every nonzero nested commutator is a
+    scalar times one Pauli word. The recurrence therefore stores total norm
+    weight by resultant Pauli word while retaining the sum over all ordered
+    term sequences required by Aftab 2024 Eq. (10) and Mizuta 2026 Eq. (8).
+    Floating operations are rounded upward with ``nextafter``.
+    """
+    if isinstance(max_order, bool) or not isinstance(max_order, int):
+        raise TypeError("max_order must be an integer")
+    if max_order < 2:
+        raise ValueError("max_order must be at least 2")
+    if isinstance(transition_cap, bool) or not isinstance(transition_cap, int):
+        raise TypeError("transition_cap must be an integer")
+    if transition_cap < 1:
+        raise ValueError("transition_cap must be positive")
+
+    encoded_terms = tuple(
+        (_encoded_pauli(label), abs(float(coefficient)))
+        for label, coefficient in hamiltonian.terms
+        if any(symbol != "I" for symbol in label)
+    )
+    locality_k, extensiveness_g = _locality_parameters(hamiltonian)
+    if not encoded_terms:
+        return PauliNestedCommutatorBounds(
+            values=(0.0,) * (max_order - 1),
+            max_order=max_order,
+            max_exact_order=max_order,
+            state_counts=(0,) * (max_order - 1),
+            used_locality_fallback=False,
+            fallback_reason=None,
+            locality_k=locality_k,
+            extensiveness_g=extensiveness_g,
+        )
+
+    current: dict[tuple[int, int], float] = {}
+    for pauli, coefficient in encoded_terms:
+        current[pauli] = float(
+            np.nextafter(current.get(pauli, 0.0) + coefficient, np.inf)
+        )
+
+    values: list[float] = []
+    state_counts: list[int] = []
+    max_exact_order = 1
+    fallback_reason: str | None = None
+    for order in range(2, max_order + 1):
+        transition_count = len(current) * len(encoded_terms)
+        if fallback_reason is not None or transition_count > transition_cap:
+            if fallback_reason is None:
+                fallback_reason = (
+                    "exact Pauli recurrence would require "
+                    f"{transition_count} transitions at order {order}, above cap "
+                    f"{transition_cap}; remaining orders use Mizuta 2026 Eq. (8)"
+                )
+            values.append(
+                _locality_commutator_bound(
+                    order,
+                    hamiltonian.num_qubits,
+                    locality_k,
+                    extensiveness_g,
+                )
+            )
+            state_counts.append(len(current))
+            continue
+
+        following: dict[tuple[int, int], float] = {}
+        for inner_pauli, inner_weight in current.items():
+            for outer_pauli, outer_weight in encoded_terms:
+                if not _paulis_anticommute(outer_pauli, inner_pauli):
+                    continue
+                result = (
+                    outer_pauli[0] ^ inner_pauli[0],
+                    outer_pauli[1] ^ inner_pauli[1],
+                )
+                contribution = float(
+                    np.nextafter(2 * outer_weight * inner_weight, np.inf)
+                )
+                following[result] = float(
+                    np.nextafter(following.get(result, 0.0) + contribution, np.inf)
+                )
+        current = following
+        value = math.fsum(current.values())
+        values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
+        state_counts.append(len(current))
+        max_exact_order = order
+
+        if not current:
+            remaining = max_order - order
+            values.extend([0.0] * remaining)
+            state_counts.extend([0] * remaining)
+            max_exact_order = max_order
+            break
+
+    return PauliNestedCommutatorBounds(
+        values=tuple(values),
+        max_order=max_order,
+        max_exact_order=max_exact_order,
+        state_counts=tuple(state_counts),
+        used_locality_fallback=fallback_reason is not None,
+        fallback_reason=fallback_reason,
+        locality_k=locality_k,
+        extensiveness_g=extensiveness_g,
+    )
 
 
 def _validate_order(order: int) -> None:
@@ -536,4 +732,3 @@ def build_trotter_circuit(
         "trotter_group_sizes": specification.group_sizes,
     }
     return circuit
-

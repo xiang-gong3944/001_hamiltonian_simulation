@@ -45,10 +45,12 @@ from .qsvt import (
 from .resources import ResourceEstimate, count_circuit_resources
 from .simulation import compare_with_exact
 from .trotter import (
+    PauliNestedCommutatorBounds,
     SuzukiErrorEstimate,
     TrotterPartition,
     build_trotter_circuit,
     estimate_suzuki_error,
+    pauli_nested_commutator_bounds,
     suzuki_commutator_bounds,
 )
 
@@ -65,6 +67,7 @@ __all__ = [
     "MPFErrorScope",
     "MPFSchedule",
     "MultiproductMethod",
+    "PauliNestedCommutatorBounds",
     "PauliHamiltonian",
     "QSVTMethod",
     "ResourceEstimate",
@@ -87,6 +90,7 @@ __all__ = [
     "load_benchmark_job",
     "multiproduct_coefficients",
     "optimal_mpf_exponents",
+    "pauli_nested_commutator_bounds",
     "plot_benchmark",
     "run_benchmark",
     "save_benchmark",

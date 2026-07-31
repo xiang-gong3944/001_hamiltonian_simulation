@@ -56,12 +56,14 @@ class _EvaluationConfig:
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
         if self.mpf_error_method not in (
             "low2019-l1-ideal-rigorous",
+            "mizuta2026-commutator-ideal-rigorous",
             "low-rigorous",
             "legacy-w2-proxy",
         ):
             raise ValueError(
                 "mpf_error_method must be 'low2019-l1-ideal-rigorous' "
-                "(historical alias 'low-rigorous') or 'legacy-w2-proxy'"
+                "(historical alias 'low-rigorous'), "
+                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
             )
 
 
