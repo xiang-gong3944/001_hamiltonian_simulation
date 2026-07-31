@@ -642,8 +642,63 @@ def test_multiproduct_consumers_use_m_parameter():
     select_rotations = (2 * hamiltonian.term_count - 1) * sum(NEW_MPF_EXPONENTS[3])
     expected_per_segment = 3 * 2 * select_rotations + 6 * (2**branch_bits - 1)
     assert estimate.rotation_count == parameters["mpf_segments"] * expected_per_segment
-    assert estimate.toffoli_count > 0
+    # m=3 has three physical branches, one negative coefficient, and one
+    # negative identity-padding branch. With three SELECTs and two reflections,
+    # the efficient reusable-flag model charges 3*3*2 + 3*2*1 + 2*1 pairs.
+    assert estimate.toffoli_count == parameters["mpf_segments"] * 26
     assert result["fidelity"] > 0.99
+
+
+def test_small_mpf_resource_model_calibrates_against_generic_qiskit_control():
+    hamiltonian = transverse_field_ising(1, field=0.7)
+    config = _EvaluationConfig(time=0.001, target_error=0.1, mpf_m=2)
+    assert choose_parameters(hamiltonian, config, "multiproduct")["mpf_segments"] == 1
+
+    analytical = estimate_resources_analytically(
+        hamiltonian,
+        config,
+        "multiproduct",
+    )
+    concrete = build_multiproduct_circuit(
+        hamiltonian,
+        0.001,
+        m=2,
+        segments=1,
+    )
+    generic = count_circuit_resources(
+        concrete,
+        total_synthesis_error=0.01,
+    )
+
+    # The analytical model assumes a reusable equality-flag ancilla, while
+    # Qiskit's generic .control() decomposition uses no work ancilla and more
+    # rotations/CNOTs. This is the documented efficient-compilation gap.
+    assert analytical.num_qubits == generic.num_qubits + 1
+    assert analytical.rotation_count < generic.rotation_count
+    assert analytical.cnot_count < generic.cnot_count
+
+
+def test_mpf_resource_metadata_matches_physical_sign_and_padding_branches():
+    hamiltonian = transverse_field_ising(1, field=0.7)
+    circuit = build_multiproduct_circuit(
+        hamiltonian,
+        0.001,
+        m=3,
+        segments=1,
+    )
+    metadata = circuit.metadata
+    coefficients = multiproduct_coefficients(3)
+
+    assert metadata["physical_branch_count"] == 3
+    assert metadata["negative_coefficient_count"] == int(sum(coefficients < 0))
+    assert metadata["padding_branch_count"] == 2
+    assert metadata["sign_branch_count"] == int(sum(coefficients < 0)) + 1
+    assert metadata["active_branch_count"] == 5
+    assert metadata["unused_branch_state_count"] == 3
+    assert metadata["base_lcu_uses_per_segment"] == 3
+    assert metadata["logical_gate_counts_per_segment"]["prepare"] == 6
+    assert metadata["logical_gate_counts_per_segment"]["select"] == 3
+    assert metadata["logical_gate_counts_per_segment"]["good_reflection"] == 2
 
 
 def test_multiproduct_schedule_propagates_through_consumers():

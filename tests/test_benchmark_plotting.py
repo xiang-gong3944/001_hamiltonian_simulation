@@ -117,12 +117,17 @@ def test_heuristic_mpf_is_excluded_from_rigorous_best_and_styled():
     heuristic = frame[~frame["bound_rigorous"]].iloc[0]
     frame.loc[frame["method_id"] == heuristic["method_id"], "t_count"] = 1
 
-    best = select_best_by_family(frame, "t_count", sweep="system-size")
+    best = select_best_by_family(
+        frame,
+        "t_count",
+        sweep="system-size",
+        certification_policy="declared-bound-scope",
+    )
     unconstrained = select_best_by_family(
         frame,
         "t_count",
         sweep="system-size",
-        rigorous_only=False,
+        certification_policy="unconstrained",
     )
     figure = plot_benchmark(frame, sweep="system-size", metric="t_count")
     heuristic_lines = [
@@ -133,3 +138,42 @@ def test_heuristic_mpf_is_excluded_from_rigorous_best_and_styled():
     assert unconstrained.iloc[0]["method_id"] == heuristic["method_id"]
     assert len(heuristic_lines) == 1
     assert heuristic_lines[0].get_linestyle() == ":"
+
+
+def test_default_strict_summary_excludes_ideal_only_mpf_rows():
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        time=TimeScaling("fixed", 0.2),
+        methods=[MultiproductMethod(3), QSVTMethod()],
+    )
+    frame = run_benchmark(config, sweeps="system-size")
+
+    strict = select_best_by_family(frame, "t_count", sweep="system-size")
+    declared = select_best_by_family(
+        frame,
+        "t_count",
+        sweep="system-size",
+        certification_policy="declared-bound-scope",
+    )
+    strict_figure = plot_benchmark(
+        frame,
+        sweep="system-size",
+        metric="t_count",
+        summary=True,
+    )
+    declared_figure = plot_benchmark(
+        frame,
+        sweep="system-size",
+        metric="t_count",
+        summary=True,
+        certification_policy="declared-bound-scope",
+    )
+
+    assert set(strict["method_family"]) == {"qsvt"}
+    assert set(declared["method_family"]) == {"multiproduct", "qsvt"}
+    assert "policy=implemented-circuit" in strict_figure.axes[0].get_title()
+    assert "policy=declared-bound-scope" in declared_figure.axes[0].get_title()
+    assert any(
+        "ideal-operator-certified MPF" in line.get_label()
+        for line in declared_figure.axes[0].lines
+    )

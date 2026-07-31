@@ -105,6 +105,17 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     assert row["circuit_bound_scope"] == "amplified-shared-ancilla"
     assert not bool(row["circuit_bound_rigorous"])
     assert not bool(row["circuit_target_satisfied"])
+    coefficients = multiproduct_coefficients(3)
+    assert row["mpf_physical_branch_count"] == 3
+    assert row["mpf_negative_coefficient_count"] == int(sum(coefficients < 0))
+    assert row["mpf_padding_branch_count"] == 2
+    assert row["mpf_sign_branch_count"] == int(sum(coefficients < 0)) + 1
+    assert row["mpf_active_branch_count"] == 5
+    assert row["mpf_unused_branch_state_count"] == 3
+    assert row["mpf_prepare_calls_per_segment"] == 6
+    assert row["mpf_select_calls_per_segment"] == 3
+    assert row["mpf_good_reflections_per_segment"] == 2
+    assert row["mpf_base_lcu_uses_per_segment"] == 3
 
     legacy = run_benchmark(
         BenchmarkConfig(

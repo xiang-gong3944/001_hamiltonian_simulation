@@ -6,7 +6,7 @@ import itertools
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -14,6 +14,13 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from .benchmark_suite import BenchmarkSweep, validate_benchmark_frame
+
+
+CertificationPolicy: TypeAlias = Literal[
+    "implemented-circuit",
+    "declared-bound-scope",
+    "unconstrained",
+]
 
 
 FAMILY_COLORS = {
@@ -64,27 +71,67 @@ def _bound_target_satisfied(frame: pd.DataFrame) -> pd.Series:
     return rigorous & bound.notna() & budget.notna() & (bound <= budget)
 
 
+def _circuit_target_satisfied(frame: pd.DataFrame) -> pd.Series:
+    """Return complete implemented-circuit certification conservatively."""
+    if "circuit_target_satisfied" not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame["circuit_target_satisfied"].fillna(False).astype(bool)
+
+
+def _certification_mask(
+    frame: pd.DataFrame,
+    policy: CertificationPolicy,
+) -> pd.Series:
+    if policy == "implemented-circuit":
+        return _circuit_target_satisfied(frame)
+    if policy == "declared-bound-scope":
+        return _bound_target_satisfied(frame)
+    if policy == "unconstrained":
+        return pd.Series(True, index=frame.index)
+    raise ValueError(
+        "certification_policy must be 'implemented-circuit', "
+        "'declared-bound-scope', or 'unconstrained'"
+    )
+
+
 def select_best_by_family(
     frame: pd.DataFrame,
     metric: str,
     *,
     sweep: BenchmarkSweep,
-    rigorous_only: bool = True,
+    certification_policy: CertificationPolicy = "implemented-circuit",
+    rigorous_only: bool | None = None,
 ) -> pd.DataFrame:
-    """Select the minimum method per family, rigorously scoped by default."""
+    """Select the minimum method per family under an explicit scope policy.
+
+    ``rigorous_only`` is the backward-compatible spelling: true maps to
+    ``declared-bound-scope`` and false maps to ``unconstrained``.
+    """
     selected = _sweep_frame(frame, sweep)
     selected[metric] = _metric_values(selected, metric)
-    if rigorous_only:
-        selected = selected[_bound_target_satisfied(selected)]
+    if rigorous_only is not None:
+        if certification_policy != "implemented-circuit":
+            raise ValueError(
+                "do not combine rigorous_only with certification_policy"
+            )
+        warnings.warn(
+            "rigorous_only is deprecated; use certification_policy explicitly",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        certification_policy = (
+            "declared-bound-scope" if rigorous_only else "unconstrained"
+        )
+    selected = selected[_certification_mask(selected, certification_policy)]
     selected = selected[
         (selected["status"] == "ok")
         & selected[metric].notna()
         & (selected[metric] > 0)
     ]
     if selected.empty:
-        qualifier = " rigorously target-satisfying" if rigorous_only else ""
         raise ValueError(
-            f"no positive successful{qualifier} values for metric {metric!r}"
+            "no positive successful values for "
+            f"metric {metric!r} under policy {certification_policy!r}"
         )
     x_column = "system_qubits" if sweep == "system-size" else "target_error"
     context_columns = [
@@ -99,13 +146,21 @@ def select_best_by_family(
     result = selected.loc[indices].copy().sort_values(group_columns)
     result["selected_method_id"] = result["method_id"]
     result["selected_method_label"] = result["method_label"]
-    result["summary_label"] = result["method_family"].map(
-        {
-            "trotter": "Best evaluated Trotter",
-            "multiproduct": "Best ideal-certified MPF (circuit unproven)",
-            "qsvt": "QSVT",
-        }
-    ).fillna("Best " + result["method_family"].astype(str))
+    family_labels = {
+        "trotter": "Best evaluated Trotter",
+        "multiproduct": (
+            "Best implemented-circuit-certified MPF"
+            if certification_policy == "implemented-circuit"
+            else "Best ideal-operator-certified MPF (circuit unproven)"
+            if certification_policy == "declared-bound-scope"
+            else "Best unconstrained MPF"
+        ),
+        "qsvt": "QSVT",
+    }
+    result["summary_label"] = result["method_family"].map(family_labels).fillna(
+        "Best " + result["method_family"].astype(str)
+    )
+    result["certification_policy"] = certification_policy
     return result
 
 
@@ -164,6 +219,7 @@ def plot_benchmark(
     yscale: str = "log",
     ybase: float = 10,
     summary: bool = False,
+    certification_policy: CertificationPolicy = "implemented-circuit",
     series_by: str | Sequence[str] = "method_label",
     ax: Axes | None = None,
 ) -> Figure:
@@ -175,7 +231,7 @@ def plot_benchmark(
             selected,
             metric,
             sweep=sweep,
-            rigorous_only=True,
+            certification_policy=certification_policy,
         )
         if series_by == "method_label":
             series_by = "summary_label"
@@ -256,7 +312,11 @@ def plot_benchmark(
         axis.set_xlabel("Number of system qubits")
         sweep_title = "System-size scaling"
     axis.set_ylabel(_METRIC_LABELS.get(metric, metric.replace("_", " ")))
-    qualifier = "best of evaluated methods" if summary else "all methods"
+    qualifier = (
+        f"best of evaluated methods; policy={certification_policy}"
+        if summary
+        else "all methods; certification scope shown in labels"
+    )
     context = _context_title(selected, sweep)
     title = f"{sweep_title}: {_METRIC_LABELS.get(metric, metric)} ({qualifier})"
     axis.set_title(title + (f"\n{context}" if context else ""))
@@ -301,6 +361,7 @@ def save_benchmark_plots(
     output_directory: str | Path,
     output_formats: Sequence[str] = ("png", "pdf"),
     summary: bool = False,
+    certification_policy: CertificationPolicy = "implemented-circuit",
 ) -> tuple[Path, ...]:
     """Write standard T/CNOT figures for every sweep present in a DataFrame."""
     validate_benchmark_frame(frame)
@@ -325,6 +386,7 @@ def save_benchmark_plots(
                     sweep=sweep,
                     metric=metric,
                     summary=is_summary,
+                    certification_policy=certification_policy,
                 )
                 suffix = "_summary" if is_summary else ""
                 for output_format in formats:

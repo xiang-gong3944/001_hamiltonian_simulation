@@ -9,6 +9,7 @@ from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
     MPFErrorMethod,
     MPFSchedule,
+    mpf_lcu_structure,
     optimal_mpf_exponents,
     select_mpf_segments,
 )
@@ -162,32 +163,49 @@ def estimate_resources_analytically(
         qubits = hamiltonian.num_qubits
     elif algorithm == "multiproduct":
         segments = params["mpf_segments"]
-        branches = len(mpf_exponents) + 2  # two cancelling identity branches
-        branch_bits = max(1, math.ceil(math.log2(branches)))
-        flag_pairs = multicontrol_and_pairs(branch_bits)
+        structure = mpf_lcu_structure(
+            config.mpf_m,
+            schedule=config.mpf_schedule,
+        )
+        branch_bits = structure.branch_bits
+        branch_flag_pairs = multicontrol_and_pairs(branch_bits)
+        phase_pairs = multicontrol_and_pairs(branch_bits - 1)
         # One robust-OAA round per segment: 3 SELECT, 6 PREPARE, 2 reflections.
         select_rotations = sum(
             _suzuki_term_occurrences(hamiltonian, k, 2, "individual")
             for k in mpf_exponents
         )
         prepare_rotations = 2**branch_bits - 1
-        # Branch flags reduce every S2 rotation to one singly-controlled Rz
-        # (two rotations); signs are one multi-controlled phase per branch.
+        # One reusable equality flag is computed only for each physical MPF
+        # branch. It reduces every S2 rotation to one singly-controlled Rz
+        # (two rotations). Multi-controlled pi phases are charged only to
+        # negative coefficients, the negative padding branch, and reflections.
         rotations = segments * (3 * 2 * select_rotations + 6 * prepare_rotations)
         and_pairs = segments * (
-            3 * branches * flag_pairs  # branch flag per SELECT
-            + 3 * branches * flag_pairs  # coefficient/padding sign phases
-            + 2 * flag_pairs  # good-subspace reflections
+            3
+            * structure.physical_branch_count
+            * branch_flag_pairs  # equality flag only for physical SELECT branches
+            + 3
+            * structure.sign_branch_count
+            * phase_pairs  # negative coefficients plus negative identity padding
+            + 2 * phase_pairs  # good-subspace reflections
         )
         cnots = math.ceil(
             segments
             * (
                 3 * select_rotations * (mean_ladder_cx + 2)
                 + 6 * max(0, 2**branch_bits - 2)
+                # One terminal CZ/CX remains after each sign/reflection
+                # multi-control has been reduced by its temporary-AND ladder.
+                + (3 * structure.sign_branch_count + 2)
             )
             + and_pairs * _CX_PER_AND
         )
-        qubits = hamiltonian.num_qubits + branch_bits + max(1, flag_pairs)
+        qubits = (
+            hamiltonian.num_qubits
+            + branch_bits
+            + max(branch_flag_pairs, phase_pairs)
+        )
     elif algorithm == "qsvt":
         index_bits = max(1, math.ceil(math.log2(term_count)))
         sine_degree = params["qsvt_degree"]

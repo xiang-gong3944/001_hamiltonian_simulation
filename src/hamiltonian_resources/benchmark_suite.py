@@ -26,6 +26,7 @@ from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_i
 from .multiproduct import (
     MPFErrorMethod,
     estimate_mpf_error,
+    mpf_lcu_structure,
     multiproduct_coefficients,
     optimal_mpf_exponents,
 )
@@ -89,6 +90,16 @@ BENCHMARK_COLUMNS = (
     "mpf_coefficients_json",
     "mpf_coefficient_l1_norm",
     "mpf_padding_weight",
+    "mpf_physical_branch_count",
+    "mpf_negative_coefficient_count",
+    "mpf_padding_branch_count",
+    "mpf_sign_branch_count",
+    "mpf_active_branch_count",
+    "mpf_unused_branch_state_count",
+    "mpf_prepare_calls_per_segment",
+    "mpf_select_calls_per_segment",
+    "mpf_good_reflections_per_segment",
+    "mpf_base_lcu_uses_per_segment",
     "lcu_normalization",
     "amplitude_amplification",
     "amplitude_amplification_rounds",
@@ -126,6 +137,16 @@ _SCHEMA2_EXTENSION_COLUMNS = {
     "locality_compatible",
     "commutator_cap_fallback",
     "commutator_bounds_json",
+    "mpf_physical_branch_count",
+    "mpf_negative_coefficient_count",
+    "mpf_padding_branch_count",
+    "mpf_sign_branch_count",
+    "mpf_active_branch_count",
+    "mpf_unused_branch_state_count",
+    "mpf_prepare_calls_per_segment",
+    "mpf_select_calls_per_segment",
+    "mpf_good_reflections_per_segment",
+    "mpf_base_lcu_uses_per_segment",
     "circuit_bound_scope",
     "circuit_bound_rigorous",
     "circuit_target_satisfied",
@@ -561,6 +582,7 @@ def _method_metadata(
         segments = parameters["mpf_segments"]
         exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
         coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
+        structure = mpf_lcu_structure(method.term_count, schedule=method.schedule)
         coefficient_norm = float(np.sum(np.abs(coefficients)))
         error = estimate_mpf_error(
             hamiltonian,
@@ -620,6 +642,16 @@ def _method_metadata(
             ),
             "mpf_coefficient_l1_norm": coefficient_norm,
             "mpf_padding_weight": 2.0 - coefficient_norm,
+            "mpf_physical_branch_count": structure.physical_branch_count,
+            "mpf_negative_coefficient_count": structure.negative_coefficient_count,
+            "mpf_padding_branch_count": structure.padding_branch_count,
+            "mpf_sign_branch_count": structure.sign_branch_count,
+            "mpf_active_branch_count": structure.active_branch_count,
+            "mpf_unused_branch_state_count": structure.unused_branch_state_count,
+            "mpf_prepare_calls_per_segment": 6,
+            "mpf_select_calls_per_segment": 3,
+            "mpf_good_reflections_per_segment": 2,
+            "mpf_base_lcu_uses_per_segment": 3,
             "lcu_normalization": 2.0,
             "amplitude_amplification": "one robust OAA round per segment",
             "amplitude_amplification_rounds": segments,

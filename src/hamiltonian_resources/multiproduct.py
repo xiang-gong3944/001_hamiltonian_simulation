@@ -79,6 +79,21 @@ class MPFErrorEstimate:
     commutator_bounds: tuple[tuple[int, float], ...] = ()
 
 
+@dataclass(frozen=True)
+class MPFLCUStructure:
+    """Logical branch structure shared by the circuit and resource model."""
+
+    physical_branch_count: int
+    negative_coefficient_count: int
+    padding_branch_count: int
+    sign_branch_count: int
+    active_branch_count: int
+    branch_bits: int
+    unused_branch_state_count: int
+    coefficient_l1_norm: float
+    padding_weight: float
+
+
 _NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
     2: (1, 2),
     3: (1, 2, 4),
@@ -158,6 +173,34 @@ def multiproduct_coefficients(
             if q != j:
                 coefficients[j] *= k_j_squared / (k_j_squared - k_q**2)
     return coefficients
+
+
+def mpf_lcu_structure(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> MPFLCUStructure:
+    """Return branch/sign counts for the implemented normalized MPF LCU."""
+    coefficients = multiproduct_coefficients(m, schedule=schedule)
+    coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
+    if coefficient_l1_norm >= _OAA_NORMALIZATION:
+        raise ValueError("the MPF coefficient 1-norm must be less than 2")
+    physical_branch_count = len(coefficients)
+    padding_branch_count = 2
+    active_branch_count = physical_branch_count + padding_branch_count
+    branch_bits = max(1, math.ceil(math.log2(active_branch_count)))
+    negative_coefficient_count = int(np.count_nonzero(coefficients < 0))
+    return MPFLCUStructure(
+        physical_branch_count=physical_branch_count,
+        negative_coefficient_count=negative_coefficient_count,
+        padding_branch_count=padding_branch_count,
+        sign_branch_count=negative_coefficient_count + 1,
+        active_branch_count=active_branch_count,
+        branch_bits=branch_bits,
+        unused_branch_state_count=2**branch_bits - active_branch_count,
+        coefficient_l1_norm=coefficient_l1_norm,
+        padding_weight=_OAA_NORMALIZATION - coefficient_l1_norm,
+    )
 
 
 def legacy_w2_proxy_error(
@@ -782,11 +825,9 @@ def _build_multiproduct_step_lcu(
 
     exponents = optimal_mpf_exponents(m, schedule=schedule)
     coefficients = multiproduct_coefficients(m, schedule=schedule)
-    coefficient_l1 = float(np.sum(np.abs(coefficients)))
-    if coefficient_l1 >= _OAA_NORMALIZATION:
-        raise ValueError("the MPF coefficient 1-norm must be less than 2")
-
-    padding_weight = _OAA_NORMALIZATION - coefficient_l1
+    structure = mpf_lcu_structure(m, schedule=schedule)
+    coefficient_l1 = structure.coefficient_l1_norm
+    padding_weight = structure.padding_weight
     branch_weights = np.concatenate(
         (coefficients, [padding_weight / 2, -padding_weight / 2])
     )
@@ -818,6 +859,12 @@ def _build_multiproduct_step_lcu(
         "coefficients": coefficients.tolist(),
         "coefficient_l1_norm": coefficient_l1,
         "padding_weight": padding_weight,
+        "physical_branch_count": structure.physical_branch_count,
+        "negative_coefficient_count": structure.negative_coefficient_count,
+        "padding_branch_count": structure.padding_branch_count,
+        "sign_branch_count": structure.sign_branch_count,
+        "active_branch_count": structure.active_branch_count,
+        "unused_branch_state_count": structure.unused_branch_state_count,
         "lcu_normalization": _OAA_NORMALIZATION,
         "formal_order": 2 * int(m),
         "step_time": float(step_time),
@@ -863,10 +910,9 @@ def build_multiproduct_circuit(
 
     exponents = optimal_mpf_exponents(m, schedule=schedule)
     coefficients = multiproduct_coefficients(m, schedule=schedule)
-    coefficient_l1 = float(np.sum(np.abs(coefficients)))
-    if coefficient_l1 >= _OAA_NORMALIZATION:
-        raise ValueError("the MPF coefficient 1-norm must be less than 2")
-    padding_weight = _OAA_NORMALIZATION - coefficient_l1
+    structure = mpf_lcu_structure(m, schedule=schedule)
+    coefficient_l1 = structure.coefficient_l1_norm
+    padding_weight = structure.padding_weight
     step_time = float(time) / int(segments)
     oaa_factor = 3 if amplitude_amplification else 1
     per_segment_queries = oaa_factor * sum(exponents)
@@ -891,6 +937,12 @@ def build_multiproduct_circuit(
         "coefficients": coefficients.tolist(),
         "coefficient_l1_norm": coefficient_l1,
         "padding_weight": padding_weight,
+        "physical_branch_count": structure.physical_branch_count,
+        "negative_coefficient_count": structure.negative_coefficient_count,
+        "padding_branch_count": structure.padding_branch_count,
+        "sign_branch_count": structure.sign_branch_count,
+        "active_branch_count": structure.active_branch_count,
+        "unused_branch_state_count": structure.unused_branch_state_count,
         "lcu_normalization": _OAA_NORMALIZATION,
         "formal_order": 2 * int(m),
         "amplitude_amplification": bool(amplitude_amplification),
