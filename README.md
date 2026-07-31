@@ -182,9 +182,9 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。解析モデルでは多重制御ゲートの Toffoli 相当コストも temporary-AND（1 対あたり 4 T）で `t_count` に計上し、`toffoli_count` 列に対数を保存します。
-3. **固定誤差の次数選択**: `choose_parameters` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。MPFは既定で`low2019-l1-ideal-rigorous`を使い、Low–Kliuchnikov–Wiebe Eq. (16)を上側bracketとしてEq. (14)–(15)を満たす最小segment数を二分探索します。以前の`alpha_eff = min(alpha, W2^(1/3))`規則はopt-inの`legacy-w2-proxy`としてのみ残り、常に非厳密と表示されます。
+3. **固定誤差の次数選択**: `choose_parameters` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。MPFは既定で`low2019-l1-ideal-rigorous`を使い、Low–Kliuchnikov–Wiebe Eq. (16)を上側bracketとしてEq. (14)–(15)を満たす最小segment数を二分探索します。`mizuta2026-commutator-ideal-rigorous`はMizuta Theorem 4の有限次数交換子上界をexact Pauli algebraで評価します。Aftab 2024の任意次数条件を有限打切りで厳密と呼ばない理由を含む詳細は[`docs/mpf_error_bounds.md`](docs/mpf_error_bounds.md)に記載しています。以前の`alpha_eff = min(alpha, W2^(1/3))`規則はopt-inの`legacy-w2-proxy`としてのみ残り、常に非厳密と表示されます。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
-5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。このため`low2019-l1-ideal-rigorous`の厳密性scopeは`ideal-mpf`であり、`amplified-shared-ancilla`回路の保証は未実装です。benchmarkは`bound_scope`と`circuit_bound_rigorous`で両者を明示します。metadataにはschedule、係数1-norm、padding、論理Gate数、controlled-`U2` query数も保存します。
+5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。このためLow/Mizutaの厳密性scopeは`ideal-mpf`であり、`amplified-shared-ancilla`回路の保証は未実装です。summaryの既定policyは`implemented-circuit`なので現行MPFを除外し、`declared-bound-scope`を明示した場合だけideal保証付きとして含めます。metadataにはphysical/padding/unused branch数、負係数数、PREPARE/SELECT/reflection数も保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
 7. **解析コストと具体回路の対応**: 既定の解析式は具体回路の構造（QSVT の quadrature 抽出、cos/sin LCU、3-step OAA、MPF の identity padding・branch 幅・segment ごとの OAA factor 3）を反映します。したがって 3 手法とも「決定的動作あたり」の比較です。ただし controlled 応答回路については、`V` と `V^dagger` が block-encoding query を共有し projector 位相だけを選択する効率的コンパイルを仮定します。`transpile_circuits=True` は Qiskit の汎用 `.control()` 分解を使うため、これよりかなり大きな数値になります（校正時はこの差に注意）。
 
@@ -198,6 +198,8 @@ ruff check src tests
 ## 参考文献
 
 - G. H. Low, V. Kliuchnikov, N. Wiebe, [Well-conditioned multiproduct Hamiltonian simulation](https://arxiv.org/abs/1907.11679)
+- J. Aftab, D. An, K. Trivisa, [Multi-product Hamiltonian simulation with explicit commutator scaling](https://arxiv.org/abs/2403.08922)
+- K. Mizuta, [On the commutator scaling in Hamiltonian simulation with multi-product formulas](https://quantum-journal.org/papers/q-2026-01-19-1974/)
 - A. M. Childs et al., [Theory of Trotter Error with Commutator Scaling](https://arxiv.org/abs/1912.08854)
 - A. Schubert, C. B. Mendl, [Trotter error with commutator scaling for the Fermi-Hubbard model](https://arxiv.org/abs/2306.10603)
 - A. Gilyén et al., [Quantum singular value transformation and beyond](https://arxiv.org/abs/1806.01838)
