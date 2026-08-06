@@ -148,7 +148,7 @@ are:
 | `locality_compatible`, `commutator_cap_fallback` | Whether locality is preserved and whether the explicit work cap selected a proven fallback. |
 | `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
-| `circuit_target_satisfied` | Whether the complete implemented circuit has a rigorous target-error guarantee. |
+| `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
 | `status`, `error_type`, `error_message` | Per-method failure information. |
 
 The CSV retains detailed Trotter, MPF, QSVT, synthesis, software, and Git
@@ -183,16 +183,19 @@ alias. Plot titles record the selected policy, and summaries retain
    repeated MPF `M(t/r)^r`. The Mizuta method instead uses Theorem 4,
    Eqs. (61)--(63), with exact finite-order Pauli commutators and a proven
    locality fallback.
-4. QSVT degree selection uses the Jacobi--Anger truncation baseline and assumes
-   efficient controlled-response compilation.
+4. QSVT degree selection uses rigorous Jacobi--Anger parity-tail bounds. The
+   exact scaled polynomial and ideal cubic-OAA block have separate derived
+   claims; floating `pyqsp` phase residuals remain finite-grid observations,
+   so the constructed QSVT circuit is not certified by those claims.
 5. MPF resource counts include the implemented robust-OAA shared-ancilla
-   circuit, but the Low theorem does not by itself certify that complete
-   circuit. MPF rows therefore use `bound_scope="ideal-mpf"` while
-   `circuit_bound_scope="amplified-shared-ancilla"` and
-   `circuit_bound_rigorous=False`. The counter charges controlled product
-   formulas only to physical MPF branches, sign phases only to negative
-   coefficients and the negative identity-padding branch, and counts three
-   SELECT, six PREPARE/inverse-PREPARE, and two reflection calls per segment.
-   Multi-control CNOT costs remain architecture-dependent.
+   circuit. Low or Mizuta supplies the ideal/local MPF claim; the exact OAA
+   identity and Gilyén--Su--Low--Wiebe reused-ancilla product bound separately
+   produce a conservative claim for `repeated-shared-ancilla-good-block`.
+   This claim can be rigorous while failing the requested target. The counter
+   charges controlled product formulas only to physical MPF branches, sign
+   phases only to negative coefficients and the negative identity-padding
+   branch, and counts three SELECT, six PREPARE/inverse-PREPARE, and two
+   reflection calls per segment. Multi-control CNOT costs remain
+   architecture-dependent.
 6. The benchmark constructs neither dense Hamiltonian matrices nor concrete
    circuits. Use `compare_with_exact` separately for small-system calibration.
