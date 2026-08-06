@@ -571,17 +571,163 @@ class QSVTPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        from .error_models import QSVTSizingEstimate
+        from .qsvt import qsvt_polynomial_error_bound
+
+        estimate = qsvt_polynomial_error_bound(
+            self.hamiltonian.alpha * abs(self.time),
+            self.error_budget.algorithm_error,
+            self.degree,
+        )
+        polynomial_scope = "ideal-qsvt-scaled-polynomial"
+        ideal_scope = "ideal-qsvt-oaa-good-block"
+        circuit_scope = "implemented-qsvt-floating-phase-circuit"
+        sizing = QSVTSizingEstimate(
+            value=max(estimate.cosine_tail_bound, estimate.sine_tail_bound),
+            method="jacobi-anger-parity-tail",
+            category="analytical",
+            certification="rigorous",
+            quantity="component polynomial truncation error",
+            metric="uniform-scalar-error",
+            scope="ideal-qsvt-jacobi-anger-components",
+            target=self.source_error_budget,
+            truncation_order=self.truncation_order,
+            degree=self.degree,
+            cosine_degree=self.cosine_degree,
+            sine_degree=self.sine_degree,
+            cosine_first_omitted_degree=self.degree + 1,
+            sine_first_omitted_degree=self.degree + 2,
+            scale=estimate.scale,
+            cosine_tail_bound=estimate.cosine_tail_bound,
+            sine_tail_bound=estimate.sine_tail_bound,
+        )
+        reference = ReferenceRecord(
+            "Martyn, Rossi, Tan, and Chuang, arXiv:2105.02859",
+            "Eqs. (76)--(77)",
+            "https://arxiv.org/abs/2105.02859",
+        )
+        components = (
+            ErrorComponent(
+                "boundary-scaling-error",
+                estimate.scaling_error,
+                "uniform scalar error",
+            ),
+            ErrorComponent(
+                "scaled-cosine-tail",
+                estimate.scale * estimate.cosine_tail_bound,
+                "uniform scalar error",
+            ),
+            ErrorComponent(
+                "scaled-sine-tail",
+                estimate.scale * estimate.sine_tail_bound,
+                "uniform scalar error",
+            ),
+        )
+        support = EstimateSupport(
+            components=components[1:],
+            references=(reference,),
+            assumptions=(
+                AssumptionRecord("the encoded Hamiltonian spectrum lies in [-1, 1]", True),
+            ),
+        )
+        polynomial_claim = ErrorClaim(
+            value=estimate.polynomial_error,
+            category="derived",
+            certification="rigorous",
+            quantity="scaled polynomial evolution approximation error",
+            metric="operator-2-norm",
+            scope=polynomial_scope,
+        )
+        ideal_claim = ErrorClaim(
+            value=estimate.amplified_good_block_error,
+            category="derived",
+            certification="rigorous",
+            quantity="ideal amplified good-block approximation error",
+            metric="operator-2-norm",
+            scope=ideal_scope,
+        )
+        claims = (
+            SupportedClaim(
+                polynomial_claim,
+                "scaled-jacobi-anger-polynomial",
+                components=components,
+                references=(reference,),
+                assumptions=support.assumptions,
+            ),
+            SupportedClaim(
+                ideal_claim,
+                "exact-cubic-oaa-unitarity-defect",
+                components=(
+                    ErrorComponent(
+                        "scaled-polynomial-error",
+                        estimate.polynomial_error,
+                        "operator error",
+                    ),
+                    ErrorComponent(
+                        "oaa-unitarity-defect-distortion",
+                        estimate.amplified_good_block_error
+                        - estimate.polynomial_error,
+                        "operator error",
+                    ),
+                ),
+                references=(reference,),
+                assumptions=(
+                    AssumptionRecord(
+                        "the cosine and sine polynomials are implemented exactly",
+                        True,
+                    ),
+                    AssumptionRecord("the unamplified good block is exactly Q/2", True),
+                ),
+                warnings=(
+                    "floating-point phase reconstruction is outside this claim",
+                    "the constructed Qiskit circuit is not uniformly certified",
+                ),
+            ),
+        )
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=claims,
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=assess_claim(
+                ideal_claim,
+                self.error_budget.algorithm_error,
+                ideal_scope,
+            ),
+            implemented_circuit_target=assess_claim(
+                None,
+                self.error_budget.algorithm_error,
+                circuit_scope,
+            ),
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
+        analysis = self.error_analysis
+        ideal_entry = analysis.claim_for_scope("ideal-qsvt-oaa-good-block")
+        if ideal_entry is None:
+            raise RuntimeError("QSVT plan is missing its ideal OAA claim")
         return {
-            "bound_value": self.error_budget.algorithm_error,
+            "bound_value": ideal_entry.claim.value,
             "bound_prefactor": None,
-            "bound_method": "jacobi-anger-truncation",
+            "bound_method": "jacobi-anger-polynomial-oaa",
+            "bound_reference": "Martyn et al., arXiv:2105.02859, Eqs. (76)--(77)",
+            "bound_theorem_or_equations": "Jacobi--Anger tails plus exact cubic OAA identity",
+            "bound_components": tuple(
+                (component.name, component.value) for component in ideal_entry.components
+            ),
             "bound_rigorous": True,
-            "bound_scope": "implemented-algorithm",
-            "bound_target_satisfied": True,
-            "circuit_bound_scope": "implemented-algorithm",
-            "circuit_bound_rigorous": True,
-            "circuit_target_satisfied": True,
+            "bound_scope": "ideal-qsvt-oaa-good-block",
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
+            "circuit_bound_scope": "implemented-qsvt-floating-phase-circuit",
+            "circuit_bound_rigorous": False,
+            "circuit_target_satisfied": False,
+            "bound_assumptions": tuple(
+                assumption.description for assumption in ideal_entry.assumptions
+            ),
+            "bound_fallback_reason": None,
         }
 
 
