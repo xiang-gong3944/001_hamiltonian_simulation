@@ -7,14 +7,19 @@ from dataclasses import dataclass
 from .analytical import ResourceModelProvenance, compile_resources_analytically
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec
+from .multiproduct import build_multiproduct_circuit_from_plan
 from .planning import (
     ErrorBudget,
     LogicalOperationCounts,
+    MPFPlan,
+    QSVTPlan,
     SimulationPlan,
+    TrotterPlan,
     plan_simulation,
 )
+from .qsvt import build_hamiltonian_qsvt_circuit_from_plan
 from .resources import ResourceEstimate
-from .trotter import TrotterPartition
+from .trotter import TrotterPartition, build_trotter_circuit_from_plan
 
 
 @dataclass(frozen=True)
@@ -67,3 +72,14 @@ def estimate_resources(
         trotter_partition=trotter_partition,
     )
     return estimate_plan_resources(plan)
+
+
+def build_simulation_circuit(plan: SimulationPlan):
+    """Compile a selected plan with the reference Qiskit backend."""
+    if isinstance(plan, TrotterPlan):
+        return build_trotter_circuit_from_plan(plan)
+    if isinstance(plan, MPFPlan):
+        return build_multiproduct_circuit_from_plan(plan)
+    if isinstance(plan, QSVTPlan):
+        return build_hamiltonian_qsvt_circuit_from_plan(plan)
+    raise TypeError("plan must be a supported simulation plan")

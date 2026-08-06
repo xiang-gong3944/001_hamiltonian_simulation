@@ -826,10 +826,32 @@ def _build_multiproduct_step_lcu(
     exponents = optimal_mpf_exponents(m, schedule=schedule)
     coefficients = multiproduct_coefficients(m, schedule=schedule)
     structure = mpf_lcu_structure(m, schedule=schedule)
+    return _build_multiproduct_step_from_components(
+        hamiltonian,
+        step_time,
+        m,
+        schedule,
+        exponents,
+        tuple(float(value) for value in coefficients),
+        structure,
+    )
+
+
+def _build_multiproduct_step_from_components(
+    hamiltonian: PauliHamiltonian,
+    step_time: float,
+    m: int,
+    schedule: MPFSchedule,
+    exponents: tuple[int, ...],
+    coefficients: tuple[float, ...],
+    structure: MPFLCUStructure,
+) -> QuantumCircuit:
+    """Build one MPF LCU step from already-selected logical components."""
+    coefficient_array = np.asarray(coefficients, dtype=float)
     coefficient_l1 = structure.coefficient_l1_norm
     padding_weight = structure.padding_weight
     branch_weights = np.concatenate(
-        (coefficients, [padding_weight / 2, -padding_weight / 2])
+        (coefficient_array, [padding_weight / 2, -padding_weight / 2])
     )
     prepare = state_preparation(
         np.sqrt(np.abs(branch_weights) / _OAA_NORMALIZATION),
@@ -856,7 +878,7 @@ def _build_multiproduct_step_lcu(
         "schedule": schedule,
         "exponents": exponents,
         "exponent_sum": int(sum(exponents)),
-        "coefficients": coefficients.tolist(),
+        "coefficients": list(coefficients),
         "coefficient_l1_norm": coefficient_l1,
         "padding_weight": padding_weight,
         "physical_branch_count": structure.physical_branch_count,
@@ -909,8 +931,35 @@ def build_multiproduct_circuit(
         raise ValueError("unamplified MPF is only supported for segments=1")
 
     exponents = optimal_mpf_exponents(m, schedule=schedule)
-    coefficients = multiproduct_coefficients(m, schedule=schedule)
+    coefficients = tuple(
+        float(value) for value in multiproduct_coefficients(m, schedule=schedule)
+    )
     structure = mpf_lcu_structure(m, schedule=schedule)
+    return _build_multiproduct_circuit_from_components(
+        hamiltonian,
+        time,
+        m,
+        segments,
+        schedule,
+        amplitude_amplification,
+        exponents,
+        coefficients,
+        structure,
+    )
+
+
+def _build_multiproduct_circuit_from_components(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+    schedule: MPFSchedule,
+    amplitude_amplification: bool,
+    exponents: tuple[int, ...],
+    coefficients: tuple[float, ...],
+    structure: MPFLCUStructure,
+) -> QuantumCircuit:
+    """Compile a complete MPF circuit from selected logical components."""
     coefficient_l1 = structure.coefficient_l1_norm
     padding_weight = structure.padding_weight
     step_time = float(time) / int(segments)
@@ -934,7 +983,7 @@ def build_multiproduct_circuit(
         "exponent_sum": int(sum(exponents)),
         "segments": int(segments),
         "step_time": step_time,
-        "coefficients": coefficients.tolist(),
+        "coefficients": list(coefficients),
         "coefficient_l1_norm": coefficient_l1,
         "padding_weight": padding_weight,
         "physical_branch_count": structure.physical_branch_count,
@@ -976,11 +1025,14 @@ def build_multiproduct_circuit(
         circuit.metadata = metadata
         return circuit
 
-    base_step = _build_multiproduct_step_lcu(
+    base_step = _build_multiproduct_step_from_components(
         hamiltonian,
         step_time,
         m,
-        schedule=schedule,
+        schedule,
+        exponents,
+        coefficients,
+        structure,
     )
     if amplitude_amplification:
         step = build_three_step_oaa(
@@ -1002,3 +1054,22 @@ def build_multiproduct_circuit(
     metadata["registers"]["branch"] = branch_count
     circuit.metadata = metadata
     return circuit
+
+
+def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
+    """Compile the logical branches and segments stored in an MPF plan."""
+    from .planning import MPFPlan
+
+    if not isinstance(plan, MPFPlan):
+        raise TypeError("plan must be an MPFPlan")
+    return _build_multiproduct_circuit_from_components(
+        plan.hamiltonian,
+        plan.time,
+        plan.method.term_count,
+        plan.segments,
+        plan.method.schedule,
+        True,
+        plan.exponents,
+        plan.coefficients,
+        plan.lcu_structure,
+    )

@@ -782,7 +782,28 @@ def build_trotter_circuit(
     """
     if reps < 1:
         raise ValueError("reps must be positive")
-    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
+    structure = resolve_trotter_structure(hamiltonian, order, partition)
+    return _build_trotter_circuit_from_structure(
+        hamiltonian,
+        time,
+        reps,
+        order,
+        structure,
+        insert_barriers=insert_barriers,
+    )
+
+
+def _build_trotter_circuit_from_structure(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    reps: int,
+    order: int,
+    structure: TrotterStructure,
+    *,
+    insert_barriers: bool = False,
+) -> QuantumCircuit:
+    """Compile an already-resolved Trotter structure."""
+    groups = _groups_from_term_indices(hamiltonian, structure.group_term_indices)
     if order == 1:
         synthesis = LieTrotter(
             reps=reps,
@@ -797,10 +818,10 @@ def build_trotter_circuit(
             preserve_order=True,
         )
     evolution_operator: SparsePauliOp | list[SparsePauliOp]
-    if specification.partition == "individual":
+    if structure.partition == "individual":
         evolution_operator = hamiltonian.to_sparse_pauli_op()
     else:
-        evolution_operator = list(specification.groups)
+        evolution_operator = list(groups)
     gate = PauliEvolutionGate(
         evolution_operator,
         time=float(time),
@@ -813,8 +834,29 @@ def build_trotter_circuit(
         **(circuit.metadata or {}),
         "trotter_order": order,
         "trotter_reps": reps,
-        "trotter_partition": specification.partition,
-        "trotter_group_count": len(specification.groups),
-        "trotter_group_sizes": specification.group_sizes,
+        "trotter_partition": structure.partition,
+        "trotter_group_count": len(structure.group_term_indices),
+        "trotter_group_sizes": structure.group_sizes,
     }
     return circuit
+
+
+def build_trotter_circuit_from_plan(
+    plan,
+    *,
+    insert_barriers: bool = False,
+) -> QuantumCircuit:
+    """Compile the exact grouping and repetitions stored in a Trotter plan."""
+    from .planning import TrotterPlan
+
+    if not isinstance(plan, TrotterPlan):
+        raise TypeError("plan must be a TrotterPlan")
+    structure = TrotterStructure(plan.resolved_partition, plan.group_term_indices)
+    return _build_trotter_circuit_from_structure(
+        plan.hamiltonian,
+        plan.time,
+        plan.repetitions,
+        plan.method.order,
+        structure,
+        insert_barriers=insert_barriers,
+    )

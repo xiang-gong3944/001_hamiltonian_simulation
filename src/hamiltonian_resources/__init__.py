@@ -27,7 +27,12 @@ from .benchmark_suite import (
     validate_benchmark_frame,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
-from .evaluation import EvaluationReport, estimate_plan_resources, estimate_resources
+from .evaluation import (
+    EvaluationReport,
+    build_simulation_circuit,
+    estimate_plan_resources,
+    estimate_resources,
+)
 from .multiproduct import (
     MPFErrorEstimate,
     MPFErrorMethod,
@@ -106,6 +111,7 @@ __all__ = [
     "TrotterStructure",
     "build_hamiltonian_qsvt_circuit",
     "build_multiproduct_circuit",
+    "build_simulation_circuit",
     "build_trotter_circuit",
     "compare_with_exact",
     "count_circuit_resources",
