@@ -108,8 +108,33 @@ def test_load_benchmark_upgrades_early_schema2_scope_columns(
 
     assert set(extension_columns) <= set(loaded.columns)
     assert mpf["bound_scope"] == "ideal-mpf"
-    assert mpf["circuit_bound_scope"] == "amplified-shared-ancilla"
+    assert mpf["circuit_bound_scope"] == "repeated-shared-ancilla-good-block"
     assert not bool(mpf["circuit_bound_rigorous"])
+
+
+def test_load_benchmark_downgrades_withdrawn_qsvt_circuit_claim(
+    tmp_path, benchmark_frame
+):
+    legacy = benchmark_frame.copy()
+    qsvt = legacy["method_family"] == "qsvt"
+    legacy.loc[qsvt, "bound_scope"] = "implemented-algorithm"
+    legacy.loc[qsvt, "bound_rigorous"] = True
+    legacy.loc[qsvt, "bound_target_satisfied"] = True
+    legacy.loc[qsvt, "circuit_bound_scope"] = "implemented-algorithm"
+    legacy.loc[qsvt, "circuit_bound_rigorous"] = True
+    legacy.loc[qsvt, "circuit_target_satisfied"] = True
+    csv_path = tmp_path / "legacy-qsvt-claim.csv"
+    legacy.to_csv(csv_path, index=False)
+
+    loaded = load_benchmark(csv_path)
+    row = loaded[loaded["method_family"] == "qsvt"].iloc[0]
+
+    assert row["bound_scope"] == "legacy-qsvt-unscoped"
+    assert not bool(row["bound_rigorous"])
+    assert not bool(row["bound_target_satisfied"])
+    assert row["circuit_bound_scope"] == "implemented-qsvt-floating-phase-circuit"
+    assert not bool(row["circuit_bound_rigorous"])
+    assert not bool(row["circuit_target_satisfied"])
 
 
 def test_save_standard_plots(tmp_path, benchmark_frame):

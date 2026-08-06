@@ -149,9 +149,9 @@ def select_best_by_family(
     family_labels = {
         "trotter": "Best evaluated Trotter",
         "multiproduct": (
-            "Best implemented-circuit-certified MPF"
+            "Best repeated-good-block-certified MPF"
             if certification_policy == "implemented-circuit"
-            else "Best ideal-operator-certified MPF (circuit unproven)"
+            else "Best ideal-operator-certified MPF"
             if certification_policy == "declared-bound-scope"
             else "Best unconstrained MPF"
         ),

@@ -149,19 +149,143 @@ class TrotterPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        from .error_models import SuzukiSizingEstimate
+
+        error = self.error_estimate
+        scope = "implemented-product-formula"
+        category = "analytical" if error.rigorous else "proxy"
+        certification = "rigorous" if error.rigorous else "nonrigorous"
+        sizing = SuzukiSizingEstimate(
+            value=error.error,
+            method=error.method,
+            category=category,
+            certification=certification,
+            quantity="evolution-operator approximation error",
+            metric="operator-2-norm",
+            scope=scope,
+            target=self.error_budget.algorithm_error,
+            repetitions=error.reps,
+            order=error.order,
+            prefactor=error.prefactor,
+            partition=error.partition,
+            group_count=error.group_count,
+        )
+        fallback = None
+        if error.method == "alpha-proxy":
+            reason = (
+                "commutator evaluation exceeds the configured practical cap"
+                if error.order in {4, 6}
+                else "no rigorous estimator is implemented for this Suzuki order"
+            )
+            fallback = FallbackRecord(
+                requested_method="higher-order-commutator-bound",
+                used_method="alpha-proxy",
+                reason=reason,
+            )
+        references = ()
+        if error.method == "childs-commutator":
+            references = (
+                ReferenceRecord(
+                    "Childs, Su, Tran, Wiebe, and Zhu, arXiv:1912.08854",
+                    "Propositions 9--10",
+                    "https://arxiv.org/abs/1912.08854",
+                ),
+            )
+        elif error.method == "schubert-mendl-commutator":
+            references = (
+                ReferenceRecord(
+                    "Schubert and Mendl, arXiv:2306.10603",
+                    "Theorem 1",
+                    "https://arxiv.org/abs/2306.10603",
+                ),
+            )
+        support = EstimateSupport(
+            components=(
+                ErrorComponent("prefactor", error.prefactor, "operator-error prefactor"),
+            ),
+            assumptions=(
+                AssumptionRecord(
+                    "the resolved ordered Hamiltonian groups match the implemented formula",
+                    True,
+                ),
+            ),
+            references=references,
+            fallback=fallback,
+        )
+        claim = (
+            ErrorClaim(
+                value=error.error,
+                category="analytical",
+                certification="rigorous",
+                quantity="evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=scope,
+            )
+            if error.rigorous
+            else None
+        )
+        claims = (
+            (
+                SupportedClaim(
+                    claim,
+                    error.method,
+                    components=support.components,
+                    references=support.references,
+                    assumptions=support.assumptions,
+                ),
+            )
+            if claim is not None
+            else ()
+        )
+        assessment = assess_claim(claim, self.error_budget.algorithm_error, scope)
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=claims,
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=assessment,
+            implemented_circuit_target=assessment,
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
-        target_satisfied = error.rigorous and error.error <= self.error_budget.algorithm_error
+        analysis = self.error_analysis
         return {
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
             "bound_rigorous": error.rigorous,
             "bound_scope": "implemented-product-formula",
-            "bound_target_satisfied": target_satisfied,
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
             "circuit_bound_scope": "implemented-product-formula",
             "circuit_bound_rigorous": error.rigorous,
-            "circuit_target_satisfied": target_satisfied,
+            "circuit_target_satisfied": analysis.implemented_circuit_target_certified,
+            "bound_reference": (
+                analysis.sizing_support.references[0].citation
+                if analysis.sizing_support.references
+                else None
+            ),
+            "bound_theorem_or_equations": (
+                analysis.sizing_support.references[0].locator
+                if analysis.sizing_support.references
+                else None
+            ),
+            "bound_components": tuple(
+                (component.name, component.value)
+                for component in analysis.sizing_support.components
+            ),
+            "bound_assumptions": tuple(
+                assumption.description
+                for assumption in analysis.sizing_support.assumptions
+            ),
+            "bound_fallback_reason": (
+                analysis.sizing_support.fallback.reason
+                if analysis.sizing_support.fallback is not None
+                else None
+            ),
         }
 
 

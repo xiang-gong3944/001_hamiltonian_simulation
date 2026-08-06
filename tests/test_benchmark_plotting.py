@@ -80,13 +80,12 @@ def test_best_by_family_retains_selected_method_identity():
     assert {"selected_method_id", "selected_method_label", "summary_label"} <= set(
         best.columns
     )
-    assert set(best["selected_method_id"]) <= {"trotter-p1", "trotter-p2", "qsvt"}
+    assert set(best["selected_method_id"]) <= {"trotter-p1", "trotter-p2"}
     figure = plot_benchmark(
         frame, sweep="system-size", metric="t_count", summary=True
     )
     assert {line.get_label().split(" [")[0] for line in figure.axes[0].lines} == {
         "Best evaluated Trotter",
-        "QSVT",
     }
 
 
@@ -140,11 +139,11 @@ def test_heuristic_mpf_is_excluded_from_rigorous_best_and_styled():
     assert heuristic_lines[0].get_linestyle() == ":"
 
 
-def test_default_strict_summary_excludes_ideal_only_mpf_rows():
+def test_default_strict_summary_excludes_ideal_only_mpf_and_qsvt_rows():
     config = BenchmarkConfig(
         system_sizes=[2],
         time=TimeScaling("fixed", 0.2),
-        methods=[MultiproductMethod(3), QSVTMethod()],
+        methods=[TrotterMethod(2), MultiproductMethod(3), QSVTMethod()],
     )
     frame = run_benchmark(config, sweeps="system-size")
 
@@ -169,8 +168,8 @@ def test_default_strict_summary_excludes_ideal_only_mpf_rows():
         certification_policy="declared-bound-scope",
     )
 
-    assert set(strict["method_family"]) == {"qsvt"}
-    assert set(declared["method_family"]) == {"multiproduct", "qsvt"}
+    assert set(strict["method_family"]) == {"trotter"}
+    assert set(declared["method_family"]) == {"trotter", "multiproduct", "qsvt"}
     assert "policy=implemented-circuit" in strict_figure.axes[0].get_title()
     assert "policy=declared-bound-scope" in declared_figure.axes[0].get_title()
     assert any(

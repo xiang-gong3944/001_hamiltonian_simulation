@@ -479,7 +479,27 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
             amplitude_amplification="one robust OAA round",
             amplitude_amplification_rounds=plan.oaa_rounds,
             good_subspace="component, quadrature, and index registers all-zero",
-            nominal_success_probability=1.0,
+            nominal_success_probability=None,
+            bound_components_json=json.dumps(
+                dict(result["bound_components"]),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            bound_assumptions_json=json.dumps(
+                result["bound_assumptions"],
+                separators=(",", ":"),
+            ),
+        )
+    if "bound_components" in result and "bound_components_json" not in result:
+        result["bound_components_json"] = json.dumps(
+            dict(result["bound_components"]),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    if "bound_assumptions" in result and "bound_assumptions_json" not in result:
+        result["bound_assumptions_json"] = json.dumps(
+            result["bound_assumptions"],
+            separators=(",", ":"),
         )
     resource = report.resources
     result.update(
@@ -825,22 +845,44 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
     validate_benchmark_frame(frame)
     if _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
         is_mpf = frame["method_family"] == "multiproduct"
+        is_qsvt = frame["method_family"] == "qsvt"
         rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
         within_bound = (
             pd.to_numeric(frame["bound_value"], errors="coerce")
             <= pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
         )
-        frame["bound_scope"] = np.where(
-            is_mpf, "ideal-mpf", "implemented-algorithm"
+        frame["bound_scope"] = np.select(
+            [is_mpf, is_qsvt],
+            ["ideal-mpf", "legacy-qsvt-unscoped"],
+            default="implemented-product-formula",
         )
-        frame["bound_target_satisfied"] = rigorous & within_bound
-        frame["circuit_bound_scope"] = np.where(
-            is_mpf, "amplified-shared-ancilla", "implemented-algorithm"
+        frame["bound_target_satisfied"] = rigorous & within_bound & ~is_qsvt
+        frame["circuit_bound_scope"] = np.select(
+            [is_mpf, is_qsvt],
+            [
+                "repeated-shared-ancilla-good-block",
+                "implemented-qsvt-floating-phase-circuit",
+            ],
+            default="implemented-product-formula",
         )
-        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf
-        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf
+        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf & ~is_qsvt
+        frame["circuit_target_satisfied"] = (
+            rigorous & within_bound & ~is_mpf & ~is_qsvt
+        )
         for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
             frame[column] = None
+    legacy_qsvt_claim = (frame["method_family"] == "qsvt") & (
+        frame["bound_scope"] == "implemented-algorithm"
+    )
+    frame.loc[legacy_qsvt_claim, "bound_scope"] = "legacy-qsvt-unscoped"
+    frame.loc[legacy_qsvt_claim, "bound_rigorous"] = False
+    frame.loc[legacy_qsvt_claim, "bound_target_satisfied"] = False
+    frame.loc[
+        frame["method_family"] == "qsvt",
+        "circuit_bound_scope",
+    ] = "implemented-qsvt-floating-phase-circuit"
+    frame.loc[frame["method_family"] == "qsvt", "circuit_bound_rigorous"] = False
+    frame.loc[frame["method_family"] == "qsvt", "circuit_target_satisfied"] = False
     return frame
 
 
