@@ -8,6 +8,21 @@ from typing import TypeAlias
 
 import numpy as np
 
+from .error_models import (
+    AssumptionRecord,
+    ErrorAnalysis,
+    ErrorClaim,
+    ErrorComponent,
+    EstimateSupport,
+    FallbackRecord,
+    MPFSizingEstimate,
+    ReferenceRecord,
+    SupportedClaim,
+    assess_claim,
+    good_subspace_leakage_bound,
+    oaa_good_block_error_bound,
+    repeated_block_encoding_error_bound,
+)
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec, MultiproductMethod, QSVTMethod, TrotterMethod
 from .multiproduct import (
@@ -218,9 +233,225 @@ class MPFPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        error = self.error_estimate
+        ideal_scope = "ideal-mpf"
+        local_scope = "one-segment-ideal-mpf"
+        amplified_scope = "one-segment-amplified-good-block"
+        circuit_scope = "repeated-shared-ancilla-good-block"
+        certification = "rigorous" if error.rigorous else "nonrigorous"
+        sizing = MPFSizingEstimate(
+            value=error.error,
+            method=error.method,
+            category="analytical" if error.rigorous else "proxy",
+            certification=certification,
+            quantity="evolution-operator approximation error",
+            metric="operator-2-norm",
+            scope=ideal_scope,
+            target=self.error_budget.algorithm_error,
+            segments=error.segments,
+            term_count=error.m,
+            schedule=error.schedule,
+            exponents=error.exponents,
+            coefficient_l1_norm=error.coefficient_l1_norm,
+        )
+        components = tuple(
+            ErrorComponent(name, value, name.replace("_", " "))
+            for name, value in error.bound_components
+            if np.isfinite(value) and value >= 0
+        )
+        reference = ReferenceRecord(
+            error.reference,
+            error.theorem_or_equations,
+        )
+        fallback = (
+            FallbackRecord(
+                requested_method="exact-pauli-commutator-recurrence",
+                used_method="rigorous-locality-commutator-bound",
+                reason=error.fallback_reason,
+            )
+            if error.fallback_reason is not None
+            else None
+        )
+        assumptions = tuple(
+            AssumptionRecord(description, True if error.rigorous else None)
+            for description in error.assumptions
+        )
+        support = EstimateSupport(
+            components=components,
+            references=(reference,),
+            assumptions=assumptions,
+            fallback=fallback,
+        )
+
+        claims: list[SupportedClaim] = []
+        ideal_claim = None
+        if error.rigorous:
+            ideal_claim = ErrorClaim(
+                value=error.error,
+                category="analytical",
+                certification="rigorous",
+                quantity="evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=ideal_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    ideal_claim,
+                    error.method,
+                    components=components,
+                    references=(reference,),
+                    assumptions=assumptions,
+                    warnings=(
+                        "this claim applies to the repeated ideal MPF operator",
+                    ),
+                )
+            )
+
+        circuit_claim = None
+        if (
+            error.local_error_rigorous
+            and error.local_error is not None
+            and np.isfinite(error.local_error)
+        ):
+            local_claim = ErrorClaim(
+                value=error.local_error,
+                category="analytical",
+                certification="rigorous",
+                quantity="one-segment evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=local_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    local_claim,
+                    f"{error.method}-local-step",
+                    references=(reference,),
+                    assumptions=assumptions,
+                )
+            )
+            amplified_error = oaa_good_block_error_bound(error.local_error)
+            distortion = amplified_error - error.local_error
+            leakage = good_subspace_leakage_bound(amplified_error)
+            amplified_components = [
+                ErrorComponent(
+                    "mpf-formula-approximation",
+                    error.local_error,
+                    "one-segment operator error",
+                ),
+                ErrorComponent(
+                    "oaa-unitarity-defect-distortion",
+                    distortion,
+                    "one-segment operator error",
+                ),
+            ]
+            if leakage is not None:
+                amplified_components.append(
+                    ErrorComponent(
+                        "good-subspace-leakage-amplitude",
+                        leakage,
+                        "leakage amplitude",
+                    )
+                )
+            amplified_claim = ErrorClaim(
+                value=amplified_error,
+                category="derived",
+                certification="rigorous",
+                quantity="amplified good-block approximation error",
+                metric="operator-2-norm",
+                scope=amplified_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    amplified_claim,
+                    "exact-cubic-oaa-unitarity-defect",
+                    components=tuple(amplified_components),
+                    assumptions=(
+                        AssumptionRecord("the unamplified good block is exactly M/2", True),
+                        AssumptionRecord("the OAA convention is -U R U-dagger R U", True),
+                    ),
+                )
+            )
+            repeated_error = repeated_block_encoding_error_bound(
+                amplified_error,
+                self.segments,
+            )
+            if repeated_error is not None:
+                circuit_claim = ErrorClaim(
+                    value=repeated_error,
+                    category="derived",
+                    certification="rigorous",
+                    quantity="repeated projected good-block approximation error",
+                    metric="operator-2-norm",
+                    scope=circuit_scope,
+                )
+                claims.append(
+                    SupportedClaim(
+                        circuit_claim,
+                        "gslw2019-reused-ancilla-product",
+                        components=(
+                            ErrorComponent(
+                                "one-segment-amplified-good-block-error",
+                                amplified_error,
+                                "operator error",
+                            ),
+                            ErrorComponent(
+                                "repeated-good-block-error",
+                                repeated_error,
+                                "operator error",
+                            ),
+                        ),
+                        references=(
+                            ReferenceRecord(
+                                "Gilyen, Su, Low, and Wiebe, arXiv:1806.01838",
+                                "Lemma 54 and Corollary 55",
+                                "https://arxiv.org/abs/1806.01838",
+                            ),
+                        ),
+                        assumptions=(
+                            AssumptionRecord(
+                                "each repeated W is a scale-one block encoding of the same unitary step",
+                                True,
+                            ),
+                            AssumptionRecord(
+                                "the same branch register is reused by every segment",
+                                True,
+                            ),
+                        ),
+                        warnings=(
+                            "the claim is for P W^r P, not the full joint unitary",
+                            "postselected normalization and success overhead are outside scope",
+                        ),
+                    )
+                )
+
+        ideal_assessment = assess_claim(
+            ideal_claim,
+            self.error_budget.algorithm_error,
+            ideal_scope,
+        )
+        circuit_assessment = assess_claim(
+            circuit_claim,
+            self.error_budget.algorithm_error,
+            circuit_scope,
+        )
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=tuple(claims),
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=ideal_assessment,
+            implemented_circuit_target=circuit_assessment,
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
-        target_satisfied = error.rigorous and error.error <= self.error_budget.algorithm_error
+        analysis = self.error_analysis
+        circuit_entry = analysis.claim_for_scope(
+            "repeated-shared-ancilla-good-block"
+        )
         return {
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
@@ -230,10 +461,13 @@ class MPFPlan:
             "bound_components": error.bound_components,
             "bound_rigorous": error.rigorous,
             "bound_scope": error.scope,
-            "bound_target_satisfied": target_satisfied,
-            "circuit_bound_scope": error.circuit_scope,
-            "circuit_bound_rigorous": error.circuit_rigorous,
-            "circuit_target_satisfied": False,
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
+            "circuit_bound_value": (
+                circuit_entry.claim.value if circuit_entry is not None else None
+            ),
+            "circuit_bound_scope": "repeated-shared-ancilla-good-block",
+            "circuit_bound_rigorous": circuit_entry is not None,
+            "circuit_target_satisfied": analysis.implemented_circuit_target_certified,
             "hamiltonian_decomposition": error.hamiltonian_decomposition,
             "bound_assumptions": error.assumptions,
             "bound_fallback_reason": error.fallback_reason,

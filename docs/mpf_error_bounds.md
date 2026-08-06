@@ -11,8 +11,9 @@ available revisions checked on 2026-07-31:
   [arXiv:2507.06557v4](https://arxiv.org/abs/2507.06557).
 
 The word *rigorous* below applies only to the stated operator and circuit
-scope. None of these ideal-MPF bounds, by itself, certifies the repository's
-repeated shared-ancilla robust-OAA circuit.
+scope. The ideal-MPF bounds do not, by themselves, certify the repository's
+repeated shared-ancilla robust-OAA circuit. A separate block-encoding product
+argument for that circuit is documented below.
 
 ## Common repository construction
 
@@ -69,7 +70,7 @@ the positive integer segment count.
 | Local time | \(\Delta=t/r\) | \(\Delta=T/r\) | \(\tau=t/r\) | `local_step_size` |
 | Commutators | qualitative in the locality discussion | Eqs. (10), (130), all orders | Eq. (8), orders through \(p_0\) in Theorem 4 | `pauli_nested_commutator_bounds` |
 | Primary theorem scope | ideal MPF step and repeated ideal MPF | Theorem 8: one ideal step; Theorem 9: repeated ideal MPF/LCU complexity | Theorem 4: one ideal MPF step | repeated ideal MPF after the documented telescoping composition |
-| Current circuit scope | not the repository circuit | not the repository circuit | not the repository circuit | `amplified-shared-ancilla`, uncertified |
+| Current circuit scope | not the repository circuit by itself | not the repository circuit | not the repository circuit by itself | `repeated-shared-ancilla-good-block`, separately bounded when the local claim is rigorous |
 
 ## Low 2019 1-norm baseline
 
@@ -287,22 +288,71 @@ has good block
 \]
 
 The same branch register is reused across segments. The final good block is
-therefore not asserted to be \(M(t/r)^r\), and no circuit-level composition
-bound for this shared-ancilla construction is implemented. All MPF methods,
-including the two ideal-operator-rigorous methods, report
+therefore not asserted to be \(M(t/r)^r\). With \(P\) the all-zero branch
+projector and \(W\) one amplified segment,
+
+\[
+PW^2P=(PWP)^2+PW(I-P)WP.
+\]
+
+The second term is a real leave-and-reenter path and is retained by the
+reference circuit.
+
+Let \(A=PWP\), \(U_\tau=e^{-iH\tau}\), and suppose a rigorous ideal-MPF local
+bound gives \(\lVert M-U_\tau\rVert\le\delta\). The exact cubic identity gives
+
+\[
+\lVert A-U_\tau\rVert\le
+\eta=\delta+\frac12\delta(2+\delta)(1+\delta).
+\]
+
+Unitarity of \(W\) also gives
+
+\[
+A^\dagger A+C^\dagger C=I,
+\qquad C=(I-P)WP,
+\]
+
+and, for \(\eta\le1\),
+
+\[
+\lVert C\rVert\le\sqrt{2\eta-\eta^2}.
+\]
+
+Gilyén--Su--Low--Wiebe Lemma 54 and Corollary 55 cover products of
+scale-one unitary block encodings while reusing the same ancilla. Applying
+that result to the actual sequence of \(W\) gates yields the conservative
+projected-good-block bound
+
+\[
+\lVert PW^rP-e^{-iHt}\rVert\le
+\begin{cases}
+\eta,&r=1,\\
+\min\{2,4r^2\eta\},&r>1,\ \eta\le1.
+\end{cases}
+\]
+
+When \(\eta>1\), the repository emits no nontrivial repeated-use claim. The
+bound is for \(PW^rP\), not full joint-unitary closeness, normalized
+postselected state error, or success-overhead-adjusted resources.
+
+The structured report therefore carries independent ideal, one-segment, and
+repeated-good-block claims. Its flat compatibility view reports
 
 ```text
 bound_scope = ideal-mpf
-circuit_bound_scope = amplified-shared-ancilla
-circuit_bound_rigorous = false
+circuit_bound_scope = repeated-shared-ancilla-good-block
+circuit_bound_rigorous = true only when the product claim is available
+circuit_target_satisfied = (the repeated bound meets the algorithm budget)
 ```
 
 Benchmark summaries use one of three explicit policies:
 
-- `implemented-circuit` (default): require a complete implemented-circuit
-  guarantee; current MPF rows are excluded;
+- `implemented-circuit` (default): require a projected-good-block guarantee
+  that meets the target;
 - `declared-bound-scope`: accept a rigorous target-satisfying bound at its
-  declared scope; ideal MPF rows are included with a circuit-unproven label;
+  declared scope; ideal MPF rows may be included even when the repeated bound
+  is too loose;
 - `unconstrained`: permit heuristic/noncertified rows and label them as such.
 
 ## Analytical LCU/OAA resource structure

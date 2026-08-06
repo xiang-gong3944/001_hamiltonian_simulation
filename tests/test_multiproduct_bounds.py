@@ -8,9 +8,12 @@ from qiskit.quantum_info import Operator
 from scipy.linalg import expm
 
 from hamiltonian_resources import (
+    MultiproductMethod,
     PauliHamiltonian,
+    build_multiproduct_circuit,
     build_trotter_circuit,
     pauli_nested_commutator_bounds,
+    plan_simulation,
     transverse_field_ising,
 )
 from hamiltonian_resources.multiproduct import (
@@ -59,6 +62,11 @@ def _ideal_mpf_operator_error(hamiltonian, time, segments, m, schedule="new"):
     return float(np.linalg.norm(approximation - exact, ord=2))
 
 
+def _zero_ancilla_block(circuit, system_qubits):
+    ancillas = circuit.num_qubits - system_qubits
+    return Operator(circuit).data[:: 2**ancillas, :: 2**ancillas]
+
+
 @pytest.mark.parametrize("m", [2, 3, 5, 7])
 def test_legacy_w2_proxy_exactly_reproduces_historical_rule(m):
     hamiltonian = transverse_field_ising(4, field=3.0)
@@ -102,8 +110,8 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     assert bool(row["bound_rigorous"])
     assert row["bound_scope"] == "ideal-mpf"
     assert bool(row["bound_target_satisfied"])
-    assert row["circuit_bound_scope"] == "amplified-shared-ancilla"
-    assert not bool(row["circuit_bound_rigorous"])
+    assert row["circuit_bound_scope"] == "repeated-shared-ancilla-good-block"
+    assert bool(row["circuit_bound_rigorous"])
     assert not bool(row["circuit_target_satisfied"])
     coefficients = multiproduct_coefficients(3)
     assert row["mpf_physical_branch_count"] == 3
@@ -161,7 +169,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert row["max_nested_commutator_order"] >= 3
     assert json.loads(row["bound_components_json"])["mu_upper"] > 0
     assert json.loads(row["commutator_bounds_json"])
-    assert not bool(row["circuit_bound_rigorous"])
+    assert bool(row["circuit_bound_rigorous"])
 
 
 def test_low_bound_depends_on_schedule_coefficient_norm():
@@ -260,6 +268,63 @@ def test_low_bound_matches_theorem_equations_14_and_15():
     expected = step_error * segments * (1 + step_error) ** (segments - 1)
 
     assert estimate.error == pytest.approx(expected)
+    assert estimate.local_error == pytest.approx(step_error)
+    assert estimate.local_error_rigorous
+
+
+def test_repeated_shared_ancilla_claim_bounds_the_actual_projected_block():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    plan = plan_simulation(
+        hamiltonian,
+        MultiproductMethod(2),
+        0.5,
+        1e-2,
+    )
+    circuit = build_multiproduct_circuit(
+        hamiltonian,
+        plan.time,
+        m=plan.method.term_count,
+        segments=plan.segments,
+        schedule=plan.method.schedule,
+    )
+    projected = _zero_ancilla_block(circuit, hamiltonian.num_qubits)
+    exact = expm(-1j * plan.time * hamiltonian.matrix())
+    actual_error = np.linalg.norm(projected - exact, ord=2)
+    repeated = plan.error_analysis.claim_for_scope(
+        "repeated-shared-ancilla-good-block"
+    )
+
+    assert plan.segments == 2
+    assert repeated is not None
+    assert actual_error <= repeated.claim.value
+    assert plan.error_analysis.ideal_algorithm_target_certified
+    assert not plan.error_analysis.implemented_circuit_target_certified
+    assert plan.error_analysis.implemented_circuit_target.outcome == "not_met"
+
+
+def test_repeated_projected_block_is_not_silently_replaced_by_good_block_power():
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("XI", 0.7), ("ZZ", -0.9), ("IY", 0.4)],
+    )
+    total_time = 1.4
+    segments = 2
+    step = build_multiproduct_circuit(
+        hamiltonian,
+        total_time / segments,
+        m=2,
+    )
+    repeated = build_multiproduct_circuit(
+        hamiltonian,
+        total_time,
+        m=2,
+        segments=segments,
+    )
+    one_step_good_block = _zero_ancilla_block(step, hamiltonian.num_qubits)
+    repeated_good_block = _zero_ancilla_block(repeated, hamiltonian.num_qubits)
+
+    reentry_term = repeated_good_block - one_step_good_block @ one_step_good_block
+    assert np.linalg.norm(reentry_term, ord=2) > 1e-8
 
 
 def test_mpf_estimators_reject_invalid_policy_and_nonfinite_time():

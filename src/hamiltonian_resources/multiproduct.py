@@ -44,12 +44,13 @@ MPFErrorScope: TypeAlias = Literal["ideal-mpf", "amplified-shared-ancilla"]
 
 @dataclass(frozen=True)
 class MPFErrorEstimate:
-    """An MPF error estimate with explicit theorem and circuit scope.
+    """Compatibility view of one family-specific MPF sizing estimate.
 
     ``rigorous`` certifies ``error`` only for ``scope``.  In particular, the
     Low--Kliuchnikov--Wiebe bound implemented here applies to the ideal MPF
-    operator.  ``circuit_rigorous`` remains false because the repeated robust-
-    OAA shared-ancilla circuit needs a separate composition proof.
+    operator. The plan's canonical ``ErrorAnalysis`` derives one-segment and
+    repeated-good-block claims separately; the legacy ``circuit_*`` fields on
+    this adapter remain conservative for backward compatibility.
     """
 
     error: float
@@ -64,6 +65,8 @@ class MPFErrorEstimate:
     method: MPFErrorMethod
     scope: MPFErrorScope
     rigorous: bool
+    local_error: float | None = None
+    local_error_rigorous: bool = False
     circuit_scope: MPFErrorScope = "amplified-shared-ancilla"
     circuit_rigorous: bool = False
     reference: str = ""
@@ -256,6 +259,27 @@ def _low_ideal_mpf_bound(
     prefactor = math.exp(prefactor_log) if prefactor_log < 709 else math.inf
     error = math.exp(log_error) if log_error < 709 else math.inf
     return error, prefactor
+
+
+def _low_local_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+    coefficient_l1_norm: float,
+) -> float:
+    """Evaluate the one-step Low--Kliuchnikov--Wiebe Eq. (14) bound."""
+    formal_order = 2 * m
+    scaled_time = hamiltonian.alpha * abs(float(time)) / segments
+    if scaled_time == 0:
+        return 0.0
+    log_error = (
+        math.log(2 * coefficient_l1_norm)
+        + (formal_order + 1) * math.log(scaled_time)
+        - math.lgamma(formal_order + 2)
+        + scaled_time
+    )
+    return math.exp(log_error) if log_error < 709 else math.inf
 
 
 def _log1p_exp(value: float) -> float:
@@ -545,6 +569,14 @@ def estimate_mpf_error(
             coefficient_l1_norm,
         )
         rigorous = True
+        local_error = _low_local_mpf_bound(
+            hamiltonian,
+            time,
+            m,
+            int(segments),
+            coefficient_l1_norm,
+        )
+        local_error_rigorous = True
         reference = "Low, Kliuchnikov, and Wiebe, arXiv:1907.11679v2 (2019)"
         theorem_or_equations = "Theorem 2, Eqs. (13)--(15)"
         bound_components = (("worst_case_prefactor", prefactor),)
@@ -562,6 +594,8 @@ def estimate_mpf_error(
             int(segments),
         )
         rigorous = False
+        local_error = error / int(segments)
+        local_error_rigorous = False
         reference = "historical repository W2 calibration; no MPF theorem"
         theorem_or_equations = "none (nonrigorous proxy)"
         bound_components = (("legacy_w2_prefactor", prefactor),)
@@ -596,6 +630,8 @@ def estimate_mpf_error(
         theorem_or_equations = (
             "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
         )
+        local_error = dict(bound_components).get("local_step_error", 0.0)
+        local_error_rigorous = rigorous
     else:
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
@@ -615,6 +651,8 @@ def estimate_mpf_error(
         method=method,
         scope="ideal-mpf",
         rigorous=rigorous,
+        local_error=local_error,
+        local_error_rigorous=local_error_rigorous,
         reference=reference,
         theorem_or_equations=theorem_or_equations,
         local_step_size=abs(float(time)) / int(segments),
