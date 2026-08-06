@@ -33,7 +33,7 @@ def test_single_point_evaluation_selects_parameters_once(monkeypatch):
     monkeypatch.setattr(evaluation, "plan_simulation", counted)
     report = evaluation.estimate_resources(
         transverse_field_ising(2, field=0.7),
-        MultiproductMethod(3),
+        MultiproductMethod(3, error_method="low2019-l1-ideal-rigorous"),
         0.1,
         1e-2,
     )
@@ -84,7 +84,7 @@ def test_report_convenience_properties_are_derived_from_plan():
     [
         (TrotterMethod(2), "trotter", _EvaluationConfig(time=0.1, target_error=1e-2)),
         (
-            MultiproductMethod(3),
+            MultiproductMethod(3, error_method="low2019-l1-ideal-rigorous"),
             "multiproduct",
             _EvaluationConfig(time=0.1, target_error=1e-2, mpf_m=3),
         ),
