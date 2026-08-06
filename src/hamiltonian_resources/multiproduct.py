@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from numbers import Integral
 from typing import Literal, TypeAlias
 
@@ -332,6 +333,7 @@ def _logsumexp(values: list[float]) -> float:
     return maximum + math.log(math.fsum(math.exp(value - maximum) for value in values))
 
 
+@lru_cache(maxsize=None)
 def _mizuta_mu_upper_bound(
     commutators: PauliNestedCommutatorBounds,
     *,
@@ -755,17 +757,26 @@ def select_mpf_segments(
                     lower = midpoint
             segments = upper
     elif method == "mizuta2026-commutator-ideal-rigorous":
+        estimates: dict[int, MPFErrorEstimate] = {}
+
+        def candidate_estimate(candidate: int) -> MPFErrorEstimate:
+            estimate = estimates.get(candidate)
+            if estimate is None:
+                estimate = estimate_mpf_error(
+                    hamiltonian,
+                    time,
+                    candidate,
+                    m,
+                    schedule=schedule,
+                    method=method,
+                    target_error=target_error,
+                )
+                estimates[candidate] = estimate
+            return estimate
+
         def satisfies_mizuta(candidate: int) -> bool:
-            candidate_estimate = estimate_mpf_error(
-                hamiltonian,
-                time,
-                candidate,
-                m,
-                schedule=schedule,
-                method=method,
-                target_error=target_error,
-            )
-            return candidate_estimate.rigorous and candidate_estimate.error <= target_error
+            estimate = candidate_estimate(candidate)
+            return estimate.rigorous and estimate.error <= target_error
 
         segments = 1
         while not satisfies_mizuta(segments):
@@ -788,19 +799,17 @@ def select_mpf_segments(
             "(historical alias 'low-rigorous'), "
             "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
         )
-    estimate = estimate_mpf_error(
-        hamiltonian,
-        time,
-        segments,
-        m,
-        schedule=schedule,
-        method=method,
-        target_error=(
-            target_error
-            if method == "mizuta2026-commutator-ideal-rigorous"
-            else None
-        ),
-    )
+    if method == "mizuta2026-commutator-ideal-rigorous":
+        estimate = candidate_estimate(segments)
+    else:
+        estimate = estimate_mpf_error(
+            hamiltonian,
+            time,
+            segments,
+            m,
+            schedule=schedule,
+            method=method,
+        )
     return estimate
 
 

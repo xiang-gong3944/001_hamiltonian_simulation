@@ -7,6 +7,7 @@ from functools import lru_cache
 from itertools import permutations
 import math
 from collections import defaultdict
+from threading import RLock
 from typing import Literal, TypeAlias
 
 import numpy as np
@@ -191,7 +192,144 @@ def _locality_commutator_bound(
     return float(np.nextafter(value, np.inf))
 
 
+@dataclass
+class _PauliCommutatorRecurrence:
+    """Incrementally extend one exact Pauli-word recurrence."""
+
+    hamiltonian: PauliHamiltonian
+    transition_cap: int
+    encoded_terms: tuple[tuple[tuple[int, int], float], ...]
+    locality_k: int
+    extensiveness_g: float
+    current: dict[tuple[int, int], float]
+    values: list[float]
+    state_counts: list[int]
+    max_exact_order: int = 1
+    fallback_reason: str | None = None
+    exhausted: bool = False
+
+    def __post_init__(self) -> None:
+        self._neighbors: dict[
+            tuple[int, int], tuple[tuple[tuple[int, int], float], ...]
+        ] = {}
+        self._lock = RLock()
+
+    def _outer_neighbors(
+        self, inner_pauli: tuple[int, int]
+    ) -> tuple[tuple[tuple[int, int], float], ...]:
+        neighbors = self._neighbors.get(inner_pauli)
+        if neighbors is None:
+            neighbors = tuple(
+                (outer_pauli, outer_weight)
+                for outer_pauli, outer_weight in self.encoded_terms
+                if _paulis_anticommute(outer_pauli, inner_pauli)
+            )
+            self._neighbors[inner_pauli] = neighbors
+        return neighbors
+
+    def through(self, max_order: int) -> PauliNestedCommutatorBounds:
+        with self._lock:
+            while len(self.values) < max_order - 1:
+                order = len(self.values) + 2
+                if self.exhausted:
+                    self.values.append(0.0)
+                    self.state_counts.append(0)
+                    self.max_exact_order = order
+                    continue
+
+                transition_count = len(self.current) * len(self.encoded_terms)
+                if self.fallback_reason is not None or transition_count > self.transition_cap:
+                    if self.fallback_reason is None:
+                        self.fallback_reason = (
+                            "exact Pauli recurrence would require "
+                            f"{transition_count} transitions at order {order}, above cap "
+                            f"{self.transition_cap}; remaining orders use Mizuta 2026 Eq. (8)"
+                        )
+                    self.values.append(
+                        _locality_commutator_bound(
+                            order,
+                            self.hamiltonian.num_qubits,
+                            self.locality_k,
+                            self.extensiveness_g,
+                        )
+                    )
+                    self.state_counts.append(len(self.current))
+                    continue
+
+                following: dict[tuple[int, int], float] = {}
+                for inner_pauli, inner_weight in self.current.items():
+                    for outer_pauli, outer_weight in self._outer_neighbors(inner_pauli):
+                        result = (
+                            outer_pauli[0] ^ inner_pauli[0],
+                            outer_pauli[1] ^ inner_pauli[1],
+                        )
+                        contribution = float(
+                            np.nextafter(2 * outer_weight * inner_weight, np.inf)
+                        )
+                        following[result] = float(
+                            np.nextafter(
+                                following.get(result, 0.0) + contribution,
+                                np.inf,
+                            )
+                        )
+                self.current = following
+                value = math.fsum(following.values())
+                self.values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
+                self.state_counts.append(len(following))
+                self.max_exact_order = order
+                self.exhausted = not following
+
+            return PauliNestedCommutatorBounds(
+                values=tuple(self.values[: max_order - 1]),
+                max_order=max_order,
+                max_exact_order=(
+                    max_order
+                    if self.exhausted
+                    else min(self.max_exact_order, max_order)
+                ),
+                state_counts=tuple(self.state_counts[: max_order - 1]),
+                used_locality_fallback=(
+                    self.fallback_reason is not None
+                    and max_order > self.max_exact_order
+                ),
+                fallback_reason=(
+                    self.fallback_reason
+                    if max_order > self.max_exact_order
+                    else None
+                ),
+                locality_k=self.locality_k,
+                extensiveness_g=self.extensiveness_g,
+            )
+
+
 @lru_cache(maxsize=None)
+def _pauli_commutator_recurrence(
+    hamiltonian: PauliHamiltonian,
+    transition_cap: int,
+) -> _PauliCommutatorRecurrence:
+    aggregated: dict[tuple[int, int], float] = {}
+    for label, coefficient in hamiltonian.terms:
+        if not any(symbol != "I" for symbol in label):
+            continue
+        pauli = _encoded_pauli(label)
+        aggregated[pauli] = float(
+            np.nextafter(aggregated.get(pauli, 0.0) + abs(float(coefficient)), np.inf)
+        )
+    encoded_terms = tuple(aggregated.items())
+    locality_k, extensiveness_g = _locality_parameters(hamiltonian)
+    return _PauliCommutatorRecurrence(
+        hamiltonian=hamiltonian,
+        transition_cap=transition_cap,
+        encoded_terms=encoded_terms,
+        locality_k=locality_k,
+        extensiveness_g=extensiveness_g,
+        current=dict(encoded_terms),
+        values=[],
+        state_counts=[],
+        exhausted=not encoded_terms,
+    )
+
+
 def pauli_nested_commutator_bounds(
     hamiltonian: PauliHamiltonian,
     max_order: int,
@@ -200,11 +338,9 @@ def pauli_nested_commutator_bounds(
 ) -> PauliNestedCommutatorBounds:
     """Return rigorous ``alpha_com,q`` bounds through ``max_order``.
 
-    For individual Pauli summands, every nonzero nested commutator is a
-    scalar times one Pauli word. The recurrence therefore stores total norm
-    weight by resultant Pauli word while retaining the sum over all ordered
-    term sequences required by Aftab 2024 Eq. (10) and Mizuta 2026 Eq. (8).
-    Floating operations are rounded upward with ``nextafter``.
+    The exact prefix is retained and extended across calls for the same
+    Hamiltonian and transition cap. Floating operations are rounded upward
+    with ``nextafter``.
     """
     if isinstance(max_order, bool) or not isinstance(max_order, int):
         raise TypeError("max_order must be an integer")
@@ -214,93 +350,15 @@ def pauli_nested_commutator_bounds(
         raise TypeError("transition_cap must be an integer")
     if transition_cap < 1:
         raise ValueError("transition_cap must be positive")
+    return _pauli_commutator_recurrence(hamiltonian, transition_cap).through(max_order)
 
-    encoded_terms = tuple(
-        (_encoded_pauli(label), abs(float(coefficient)))
-        for label, coefficient in hamiltonian.terms
-        if any(symbol != "I" for symbol in label)
-    )
-    locality_k, extensiveness_g = _locality_parameters(hamiltonian)
-    if not encoded_terms:
-        return PauliNestedCommutatorBounds(
-            values=(0.0,) * (max_order - 1),
-            max_order=max_order,
-            max_exact_order=max_order,
-            state_counts=(0,) * (max_order - 1),
-            used_locality_fallback=False,
-            fallback_reason=None,
-            locality_k=locality_k,
-            extensiveness_g=extensiveness_g,
-        )
 
-    current: dict[tuple[int, int], float] = {}
-    for pauli, coefficient in encoded_terms:
-        current[pauli] = float(
-            np.nextafter(current.get(pauli, 0.0) + coefficient, np.inf)
-        )
+def _clear_pauli_nested_commutator_cache() -> None:
+    _pauli_commutator_recurrence.cache_clear()
 
-    values: list[float] = []
-    state_counts: list[int] = []
-    max_exact_order = 1
-    fallback_reason: str | None = None
-    for order in range(2, max_order + 1):
-        transition_count = len(current) * len(encoded_terms)
-        if fallback_reason is not None or transition_count > transition_cap:
-            if fallback_reason is None:
-                fallback_reason = (
-                    "exact Pauli recurrence would require "
-                    f"{transition_count} transitions at order {order}, above cap "
-                    f"{transition_cap}; remaining orders use Mizuta 2026 Eq. (8)"
-                )
-            values.append(
-                _locality_commutator_bound(
-                    order,
-                    hamiltonian.num_qubits,
-                    locality_k,
-                    extensiveness_g,
-                )
-            )
-            state_counts.append(len(current))
-            continue
 
-        following: dict[tuple[int, int], float] = {}
-        for inner_pauli, inner_weight in current.items():
-            for outer_pauli, outer_weight in encoded_terms:
-                if not _paulis_anticommute(outer_pauli, inner_pauli):
-                    continue
-                result = (
-                    outer_pauli[0] ^ inner_pauli[0],
-                    outer_pauli[1] ^ inner_pauli[1],
-                )
-                contribution = float(
-                    np.nextafter(2 * outer_weight * inner_weight, np.inf)
-                )
-                following[result] = float(
-                    np.nextafter(following.get(result, 0.0) + contribution, np.inf)
-                )
-        current = following
-        value = math.fsum(current.values())
-        values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
-        state_counts.append(len(current))
-        max_exact_order = order
-
-        if not current:
-            remaining = max_order - order
-            values.extend([0.0] * remaining)
-            state_counts.extend([0] * remaining)
-            max_exact_order = max_order
-            break
-
-    return PauliNestedCommutatorBounds(
-        values=tuple(values),
-        max_order=max_order,
-        max_exact_order=max_exact_order,
-        state_counts=tuple(state_counts),
-        used_locality_fallback=fallback_reason is not None,
-        fallback_reason=fallback_reason,
-        locality_k=locality_k,
-        extensiveness_g=extensiveness_g,
-    )
+# Preserve the useful cache-control hook exposed by the former lru_cache wrapper.
+pauli_nested_commutator_bounds.cache_clear = _clear_pauli_nested_commutator_cache  # type: ignore[attr-defined]
 
 
 def _validate_order(order: int) -> None:
@@ -529,10 +587,11 @@ def _extend_word_polynomial(
     return dict(extended)
 
 
+@lru_cache(maxsize=None)
 def _theorem_word_weights(
     factors: tuple[tuple[int, float], ...],
     order: int,
-) -> list[tuple[tuple[float, ...], dict[tuple[int, ...], float]]]:
+) -> tuple[tuple[tuple[float, ...], dict[tuple[int, ...], float]], ...]:
     """Collapse Schubert--Mendl weak compositions into repeated group words."""
     factor_count = len(factors)
     center = math.ceil(factor_count / 2)
@@ -599,25 +658,26 @@ def _theorem_word_weights(
             order,
             minimum_power=0,
         )
-    return entries
+    return tuple(entries)
 
 
 def _nested_commutator_basis(
     groups: tuple[SparsePauliOp, ...],
     order: int,
 ) -> dict[tuple[tuple[int, ...], int], SparsePauliOp]:
-    """Precompute ad-word(H_base) for all group words through ``order``."""
-    basis = {((), base): group for base, group in enumerate(groups)}
+    """Return the nonzero depth-``order`` ad-word frontier."""
+    frontier = {((), base): group for base, group in enumerate(groups)}
     for depth in range(1, order + 1):
-        previous = [
-            (word, base, operator)
-            for (word, base), operator in basis.items()
-            if len(word) == depth - 1
-        ]
-        for word, base, operator in previous:
+        following: dict[tuple[tuple[int, ...], int], SparsePauliOp] = {}
+        for (word, base), operator in frontier.items():
             for outer, group in enumerate(groups):
-                basis[(word + (outer,), base)] = _commutator(group, operator)
-    return basis
+                commutator = _commutator(group, operator)
+                if np.any(commutator.coeffs != 0):
+                    following[(word + (outer,), base)] = commutator
+        frontier = following
+        if not frontier:
+            break
+    return frontier
 
 
 def _higher_order_commutator_prefactor(
@@ -643,7 +703,10 @@ def _higher_order_commutator_prefactor(
     for word, weighted_prefixes in contributions.items():
         coefficient_rows: dict[str, np.ndarray] = {}
         for base in range(group_count):
-            for label, coefficient in basis[(word, base)].to_list():
+            operator = basis.get((word, base))
+            if operator is None:
+                continue
+            for label, coefficient in operator.to_list():
                 if coefficient == 0:
                     continue
                 row = coefficient_rows.setdefault(

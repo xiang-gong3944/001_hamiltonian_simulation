@@ -430,6 +430,42 @@ def test_pauli_nested_commutators_vanish_for_commuting_decomposition():
     assert not bounds.used_locality_fallback
 
 
+def test_pauli_commutator_recurrence_reuses_exact_prefixes():
+    hamiltonian = transverse_field_ising(4, field=0.7)
+    pauli_nested_commutator_bounds.cache_clear()
+
+    through_five = pauli_nested_commutator_bounds(hamiltonian, 5)
+    through_three = pauli_nested_commutator_bounds(hamiltonian, 3)
+    through_seven = pauli_nested_commutator_bounds(hamiltonian, 7)
+
+    assert through_three.values == through_five.values[:2]
+    assert through_seven.values[:4] == through_five.values
+    assert through_three.state_counts == through_five.state_counts[:2]
+    assert through_seven.state_counts[:4] == through_five.state_counts
+
+
+def test_duplicate_pauli_terms_preserve_nested_commutator_sums():
+    duplicated = PauliHamiltonian(
+        1,
+        (("X", 0.2), ("X", -0.1), ("Y", 0.4), ("Z", -0.3)),
+    )
+    combined_weights = PauliHamiltonian(
+        1,
+        (("X", 0.3), ("Y", 0.4), ("Z", 0.3)),
+    )
+    pauli_nested_commutator_bounds.cache_clear()
+
+    duplicated_bounds = pauli_nested_commutator_bounds(duplicated, 6)
+    combined_bounds = pauli_nested_commutator_bounds(combined_weights, 6)
+
+    assert duplicated_bounds.values == pytest.approx(
+        combined_bounds.values,
+        rel=1e-12,
+        abs=1e-14,
+    )
+    assert duplicated_bounds.state_counts == combined_bounds.state_counts
+
+
 def test_exact_pauli_commutator_sums_agree_with_dense_tiny_validation():
     hamiltonian = PauliHamiltonian.from_terms(
         1,

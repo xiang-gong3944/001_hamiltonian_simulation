@@ -19,6 +19,7 @@ from hamiltonian_resources import (
 )
 from hamiltonian_resources.benchmark import _EvaluationConfig, choose_parameters
 from hamiltonian_resources.trotter import (
+    _nested_commutator_basis,
     _resolve_suzuki_specification,
     _suzuki_group_factors,
     _suzuki_term_occurrences,
@@ -137,6 +138,15 @@ def test_commuting_higher_order_formula_has_zero_bound(order):
     assert estimate.rigorous
     assert estimate.method == "commuting-exact"
     assert _operator_error(hamiltonian, 0.5, 1, order) < 1e-12
+
+
+def test_nested_commutator_basis_keeps_only_nonzero_final_frontier():
+    groups = (
+        SparsePauliOp.from_list([("X", 1.0)]),
+        SparsePauliOp.from_list([("X", 0.5)]),
+    )
+
+    assert _nested_commutator_basis(groups, 4) == {}
 
 
 @pytest.mark.parametrize("order", [4, 6])
