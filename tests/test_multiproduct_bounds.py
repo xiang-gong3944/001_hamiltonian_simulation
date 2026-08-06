@@ -276,7 +276,7 @@ def test_repeated_shared_ancilla_claim_bounds_the_actual_projected_block():
     hamiltonian = transverse_field_ising(2, field=0.7)
     plan = plan_simulation(
         hamiltonian,
-        MultiproductMethod(2),
+        MultiproductMethod(2, error_method="low2019-l1-ideal-rigorous"),
         0.5,
         1e-2,
     )
