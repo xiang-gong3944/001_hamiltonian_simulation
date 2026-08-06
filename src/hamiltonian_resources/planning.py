@@ -8,6 +8,7 @@ from typing import TypeAlias
 
 import numpy as np
 
+from ._commutator_execution import CommutatorExecution, execution_scope
 from .error_models import (
     AssumptionRecord,
     ErrorAnalysis,
@@ -116,8 +117,7 @@ class TrotterPlan:
         if self.error_estimate.group_count != len(self.group_term_indices):
             raise ValueError("Trotter error estimate group count does not match the plan")
         if any(
-            group < 0 or group >= len(self.group_term_indices)
-            for group, _ in self.suzuki_factors
+            group < 0 or group >= len(self.group_term_indices) for group, _ in self.suzuki_factors
         ):
             raise ValueError("Suzuki factors must reference resolved Trotter groups")
 
@@ -136,9 +136,7 @@ class TrotterPlan:
 
     @property
     def logical_counts(self) -> LogicalOperationCounts:
-        per_step = sum(
-            len(self.group_term_indices[group]) for group, _ in self.suzuki_factors
-        )
+        per_step = sum(len(self.group_term_indices[group]) for group, _ in self.suzuki_factors)
         pauli_evolutions = self.repetitions * per_step
         return LogicalOperationCounts(
             totals=(
@@ -201,9 +199,7 @@ class TrotterPlan:
                 ),
             )
         support = EstimateSupport(
-            components=(
-                ErrorComponent("prefactor", error.prefactor, "operator-error prefactor"),
-            ),
+            components=(ErrorComponent("prefactor", error.prefactor, "operator-error prefactor"),),
             assumptions=(
                 AssumptionRecord(
                     "the resolved ordered Hamiltonian groups match the implemented formula",
@@ -278,8 +274,7 @@ class TrotterPlan:
                 for component in analysis.sizing_support.components
             ),
             "bound_assumptions": tuple(
-                assumption.description
-                for assumption in analysis.sizing_support.assumptions
+                assumption.description for assumption in analysis.sizing_support.assumptions
             ),
             "bound_fallback_reason": (
                 analysis.sizing_support.fallback.reason
@@ -426,9 +421,7 @@ class MPFPlan:
                     components=components,
                     references=(reference,),
                     assumptions=assumptions,
-                    warnings=(
-                        "this claim applies to the repeated ideal MPF operator",
-                    ),
+                    warnings=("this claim applies to the repeated ideal MPF operator",),
                 )
             )
 
@@ -573,9 +566,7 @@ class MPFPlan:
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
         analysis = self.error_analysis
-        circuit_entry = analysis.claim_for_scope(
-            "repeated-shared-ancilla-good-block"
-        )
+        circuit_entry = analysis.claim_for_scope("repeated-shared-ancilla-good-block")
         return {
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
@@ -790,8 +781,7 @@ class QSVTPlan:
                     ),
                     ErrorComponent(
                         "oaa-unitarity-defect-distortion",
-                        estimate.amplified_good_block_error
-                        - estimate.polynomial_error,
+                        estimate.amplified_good_block_error - estimate.polynomial_error,
                         "operator error",
                     ),
                 ),
@@ -868,7 +858,7 @@ def _canonical_hamiltonian(hamiltonian: PauliHamiltonian) -> PauliHamiltonian:
     )
 
 
-def plan_simulation(
+def _plan_simulation(
     hamiltonian: PauliHamiltonian,
     method: MethodSpec,
     time: float,
@@ -876,6 +866,7 @@ def plan_simulation(
     *,
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
+    execution: CommutatorExecution,
 ) -> SimulationPlan:
     """Select parameters once and return the complete logical algorithm plan."""
     if not np.isfinite(time) or float(time) <= 0:
@@ -895,6 +886,8 @@ def plan_simulation(
             reps=1,
             order=method.order,
             partition=trotter_partition,
+            workers=execution.workers,
+            _execution=execution,
         )
         repetitions = max(
             1,
@@ -906,6 +899,8 @@ def plan_simulation(
             reps=repetitions,
             order=method.order,
             partition=trotter_partition,
+            workers=execution.workers,
+            _execution=execution,
         )
         return TrotterPlan(
             hamiltonian=canonical,
@@ -928,6 +923,8 @@ def plan_simulation(
             method.term_count,
             schedule=method.schedule,
             method=method.error_method,
+            workers=execution.workers,
+            _execution=execution,
         )
         exponents = selected_error.exponents
         coefficients = tuple(
@@ -970,3 +967,27 @@ def plan_simulation(
         base_lcu_uses=3,
         oaa_rounds=1,
     )
+
+
+def plan_simulation(
+    hamiltonian: PauliHamiltonian,
+    method: MethodSpec,
+    time: float,
+    target_error: float,
+    *,
+    synthesis_error_fraction: float = 0.1,
+    trotter_partition: TrotterPartition = "auto",
+    workers: int = 1,
+    _execution: CommutatorExecution | None = None,
+) -> SimulationPlan:
+    """Select parameters once and return the complete logical algorithm plan."""
+    with execution_scope(workers, _execution) as execution:
+        return _plan_simulation(
+            hamiltonian,
+            method,
+            time,
+            target_error,
+            synthesis_error_fraction=synthesis_error_fraction,
+            trotter_partition=trotter_partition,
+            execution=execution,
+        )

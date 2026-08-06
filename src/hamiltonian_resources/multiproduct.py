@@ -18,6 +18,7 @@ import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
 
+from ._commutator_execution import CommutatorExecution, execution_scope, validate_workers
 from .circuit_utils import (
     build_three_step_oaa,
     index_state_phase_gate,
@@ -318,9 +319,7 @@ def _low_log_ideal_mpf_bound(
         + scaled_time
     )
     log_global_error = (
-        log_step_error
-        + math.log(segments)
-        + (segments - 1) * _log1p_exp(log_step_error)
+        log_step_error + math.log(segments) + (segments - 1) * _log1p_exp(log_step_error)
     )
     return log_global_error, prefactor_log
 
@@ -363,9 +362,7 @@ def _mizuta_mu_upper_bound(
     upper = lower + math.log(len(log_terms)) / min(order for order, _ in log_terms)
 
     def log_polynomial(log_mu: float) -> float:
-        return _logsumexp(
-            [log_value - order * log_mu for order, log_value in log_terms]
-        )
+        return _logsumexp([log_value - order * log_mu for order, log_value in log_terms])
 
     for _ in range(80):
         midpoint = (lower + upper) / 2
@@ -384,11 +381,7 @@ def _repeated_step_error(step_error: float, segments: int) -> float:
         return 0.0
     if not math.isfinite(step_error):
         return math.inf
-    log_error = (
-        math.log(step_error)
-        + math.log(segments)
-        + (segments - 1) * math.log1p(step_error)
-    )
+    log_error = math.log(step_error) + math.log(segments) + (segments - 1) * math.log1p(step_error)
     return math.exp(log_error) if log_error < 709 else math.inf
 
 
@@ -400,6 +393,7 @@ def _mizuta_ideal_mpf_bound(
     coefficient_l1_norm: float,
     exponents: tuple[int, ...],
     target_error: float,
+    execution: CommutatorExecution | None = None,
 ) -> tuple[
     float,
     float,
@@ -421,13 +415,13 @@ def _mizuta_ideal_mpf_bound(
     auxiliary_error = local_budget / (2 * coefficient_l1_norm * exponent_l1_norm)
     if auxiliary_error <= 0:
         raise OverflowError("Mizuta auxiliary error underflowed float range")
-    truncation_order = math.ceil(
-        math.log(3 * hamiltonian.num_qubits / auxiliary_error)
-    )
+    truncation_order = math.ceil(math.log(3 * hamiltonian.num_qubits / auxiliary_error))
     truncation_order = max(base_order + 1, truncation_order)
     commutators = pauli_nested_commutator_bounds(
         hamiltonian,
         truncation_order,
+        workers=execution.workers if execution is not None else 1,
+        _execution=execution,
     )
 
     if all(value == 0 for value in commutators.values):
@@ -464,13 +458,9 @@ def _mizuta_ideal_mpf_bound(
         if step_time == 0:
             local_commutator_error = 0.0
         else:
-            log_commutator_error = log_prefactor + (formal_order + 1) * math.log(
-                step_time
-            )
+            log_commutator_error = log_prefactor + (formal_order + 1) * math.log(step_time)
             local_commutator_error = (
-                math.exp(log_commutator_error)
-                if log_commutator_error < 709
-                else math.inf
+                math.exp(log_commutator_error) if log_commutator_error < 709 else math.inf
             )
     local_truncated_bch_error = coefficient_l1_norm * exponent_l1_norm * auxiliary_error
     local_step_error = local_commutator_error + local_truncated_bch_error
@@ -480,21 +470,9 @@ def _mizuta_ideal_mpf_bound(
     first_time_limit = (
         math.inf
         if k_value == 0 or g_value == 0
-        else 1
-        / (
-            8
-            * math.e**3
-            * base_repetitions
-            * truncation_order
-            * k_value
-            * g_value
-        )
+        else 1 / (8 * math.e**3 * base_repetitions * truncation_order * k_value * g_value)
     )
-    second_time_limit = (
-        math.inf
-        if mu_upper == 0
-        else 1 / (2 * base_repetitions * mu_upper)
-    )
+    second_time_limit = math.inf if mu_upper == 0 else 1 / (2 * base_repetitions * mu_upper)
     time_hypothesis_satisfied = step_time <= min(first_time_limit, second_time_limit)
     assumptions = (
         "individual Pauli summands define the ordered H_gamma decomposition",
@@ -520,9 +498,7 @@ def _mizuta_ideal_mpf_bound(
         ("extensiveness_g", g_value),
     )
     error = (
-        _repeated_step_error(local_step_error, segments)
-        if time_hypothesis_satisfied
-        else math.inf
+        _repeated_step_error(local_step_error, segments) if time_hypothesis_satisfied else math.inf
     )
     return (
         error,
@@ -550,8 +526,13 @@ def estimate_mpf_error(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     target_error: float | None = None,
+    workers: int = 1,
+    _execution: CommutatorExecution | None = None,
 ) -> MPFErrorEstimate:
     """Estimate ideal-MPF error while preserving certification provenance."""
+    validate_workers(workers)
+    if _execution is not None and workers != _execution.workers:
+        raise ValueError("workers must match the shared commutator execution")
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
     if segments < 1:
@@ -601,15 +582,11 @@ def estimate_mpf_error(
         reference = "historical repository W2 calibration; no MPF theorem"
         theorem_or_equations = "none (nonrigorous proxy)"
         bound_components = (("legacy_w2_prefactor", prefactor),)
-        assumptions = (
-            "alpha_eff=min(alpha,W2^(1/3)) is a heuristic MPF substitution",
-        )
+        assumptions = ("alpha_eff=min(alpha,W2^(1/3)) is a heuristic MPF substitution",)
         commutators = None
     elif method == "mizuta2026-commutator-ideal-rigorous":
         if target_error is None or not 0 < target_error <= 1:
-            raise ValueError(
-                "target_error in (0, 1] is required for the Mizuta estimator"
-            )
+            raise ValueError("target_error in (0, 1] is required for the Mizuta estimator")
         (
             error,
             prefactor,
@@ -625,13 +602,10 @@ def estimate_mpf_error(
             coefficient_l1_norm,
             exponents,
             target_error,
+            _execution,
         )
-        reference = (
-            "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
-        )
-        theorem_or_equations = (
-            "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
-        )
+        reference = "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
+        theorem_or_equations = "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
         local_error = dict(bound_components).get("local_step_error", 0.0)
         local_error_rigorous = rigorous
     else:
@@ -660,28 +634,21 @@ def estimate_mpf_error(
         local_step_size=abs(float(time)) / int(segments),
         bound_components=bound_components,
         assumptions=assumptions,
-        fallback_reason=(
-            commutators.fallback_reason if commutators is not None else None
-        ),
-        max_nested_commutator_order=(
-            commutators.max_order if commutators is not None else 0
-        ),
+        fallback_reason=(commutators.fallback_reason if commutators is not None else None),
+        max_nested_commutator_order=(commutators.max_order if commutators is not None else 0),
         max_exact_nested_commutator_order=(
             commutators.max_exact_order if commutators is not None else 0
         ),
         locality_compatible=commutators is not None,
         commutator_bounds=(
-            tuple(
-                (order, commutators.at(order))
-                for order in range(2, commutators.max_order + 1)
-            )
+            tuple((order, commutators.at(order)) for order in range(2, commutators.max_order + 1))
             if commutators is not None
             else ()
         ),
     )
 
 
-def select_mpf_segments(
+def _select_mpf_segments(
     hamiltonian: PauliHamiltonian,
     time: float,
     target_error: float,
@@ -689,6 +656,7 @@ def select_mpf_segments(
     *,
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
     """Select segments and return the resulting scoped MPF estimate.
 
@@ -770,6 +738,8 @@ def select_mpf_segments(
                     schedule=schedule,
                     method=method,
                     target_error=target_error,
+                    workers=execution.workers,
+                    _execution=execution,
                 )
                 estimates[candidate] = estimate
             return estimate
@@ -809,8 +779,34 @@ def select_mpf_segments(
             m,
             schedule=schedule,
             method=method,
+            workers=execution.workers,
+            _execution=execution,
         )
     return estimate
+
+
+def select_mpf_segments(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    target_error: float,
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    workers: int = 1,
+    _execution: CommutatorExecution | None = None,
+) -> MPFErrorEstimate:
+    """Select the smallest segment count satisfying the requested bound."""
+    with execution_scope(workers, _execution) as execution:
+        return _select_mpf_segments(
+            hamiltonian,
+            time,
+            target_error,
+            m,
+            schedule=schedule,
+            method=method,
+            execution=execution,
+        )
 
 
 def _multiproduct_select_gate(
@@ -897,9 +893,7 @@ def _build_multiproduct_step_from_components(
     coefficient_array = np.asarray(coefficients, dtype=float)
     coefficient_l1 = structure.coefficient_l1_norm
     padding_weight = structure.padding_weight
-    branch_weights = np.concatenate(
-        (coefficient_array, [padding_weight / 2, -padding_weight / 2])
-    )
+    branch_weights = np.concatenate((coefficient_array, [padding_weight / 2, -padding_weight / 2]))
     prepare = state_preparation(
         np.sqrt(np.abs(branch_weights) / _OAA_NORMALIZATION),
         name="PREPARE_MPF",
@@ -978,9 +972,7 @@ def build_multiproduct_circuit(
         raise ValueError("unamplified MPF is only supported for segments=1")
 
     exponents = optimal_mpf_exponents(m, schedule=schedule)
-    coefficients = tuple(
-        float(value) for value in multiproduct_coefficients(m, schedule=schedule)
-    )
+    coefficients = tuple(float(value) for value in multiproduct_coefficients(m, schedule=schedule))
     structure = mpf_lcu_structure(m, schedule=schedule)
     return _build_multiproduct_circuit_from_components(
         hamiltonian,
@@ -1049,8 +1041,7 @@ def _build_multiproduct_circuit_from_components(
         "base_lcu_uses_per_segment": oaa_factor,
         "logical_gate_counts_per_segment": logical_counts_per_segment,
         "logical_gate_counts": {
-            key: int(segments * value)
-            for key, value in logical_counts_per_segment.items()
+            key: int(segments * value) for key, value in logical_counts_per_segment.items()
         },
         "registers": {"branch": 0, "system": hamiltonian.num_qubits},
     }
@@ -1064,9 +1055,7 @@ def _build_multiproduct_circuit_from_components(
             postselection="none",
             trotter_step_queries_per_segment=0,
             trotter_step_queries=0,
-            logical_gate_counts_per_segment={
-                key: 0 for key in logical_counts_per_segment
-            },
+            logical_gate_counts_per_segment={key: 0 for key in logical_counts_per_segment},
             logical_gate_counts={key: 0 for key in logical_counts_per_segment},
         )
         circuit.metadata = metadata

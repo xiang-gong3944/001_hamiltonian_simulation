@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
+from ._commutator_execution import CommutatorExecution
 from .analytical import ResourceModelProvenance, compile_resources_analytically
 from .error_models import ErrorAnalysis, MetricObservation
 from .hamiltonians import PauliHamiltonian
@@ -87,6 +88,8 @@ def estimate_resources(
     *,
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
+    workers: int = 1,
+    _execution: CommutatorExecution | None = None,
 ) -> EvaluationReport:
     """Select one logical algorithm plan and estimate its analytical resources."""
     plan = plan_simulation(
@@ -96,6 +99,8 @@ def estimate_resources(
         target_error,
         synthesis_error_fraction=synthesis_error_fraction,
         trotter_partition=trotter_partition,
+        workers=workers,
+        _execution=_execution,
     )
     return estimate_plan_resources(plan)
 
@@ -136,13 +141,9 @@ def serialize_plan_metadata(plan: SimulationPlan) -> dict[str, object]:
         "certification_status": {
             "parameter_selection_succeeded": analysis.parameter_selection_succeeded,
             "ideal_algorithm_target": analysis.ideal_algorithm_target.outcome,
-            "ideal_algorithm_target_certified": (
-                analysis.ideal_algorithm_target_certified
-            ),
+            "ideal_algorithm_target_certified": (analysis.ideal_algorithm_target_certified),
             "implemented_circuit_target": analysis.implemented_circuit_target.outcome,
-            "implemented_circuit_target_certified": (
-                analysis.implemented_circuit_target_certified
-            ),
+            "implemented_circuit_target_certified": (analysis.implemented_circuit_target_certified),
         },
     }
 

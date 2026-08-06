@@ -17,6 +17,7 @@ from typing import Any, Callable, Literal, Mapping, Sequence, TypeAlias
 import numpy as np
 import pandas as pd
 
+from ._commutator_execution import CommutatorExecution
 from .evaluation import EvaluationReport, estimate_resources
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .method_specs import (
@@ -167,9 +168,7 @@ class HamiltonianSpec:
 
     model: str = "transverse_field_ising"
     parameters: Mapping[str, Any] = field(default_factory=dict)
-    factory: Callable[..., PauliHamiltonian] | None = field(
-        default=None, repr=False, compare=False
-    )
+    factory: Callable[..., PauliHamiltonian] | None = field(default=None, repr=False, compare=False)
 
     def validate(self) -> None:
         self.parameters = dict(self.parameters)
@@ -239,9 +238,7 @@ class BenchmarkConfig:
         )
     )
     system_sizes: Sequence[int] = field(default_factory=lambda: [2, 4, 6, 8, 10, 12])
-    target_errors: Sequence[float] = field(
-        default_factory=lambda: [0.1, 0.03, 0.01, 0.003, 0.001]
-    )
+    target_errors: Sequence[float] = field(default_factory=lambda: [0.1, 0.03, 0.01, 0.003, 0.001])
     time: TimeScaling = field(default_factory=TimeScaling)
     fixed_system_size: int = 8
     fixed_target_error: float = 1e-3
@@ -275,9 +272,7 @@ class BenchmarkConfig:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
         self.synthesis_error_fraction = float(self.synthesis_error_fraction)
         if self.trotter_partition not in {"auto", "individual", "commuting"}:
-            raise ValueError(
-                "trotter_partition must be 'auto', 'individual', or 'commuting'"
-            )
+            raise ValueError("trotter_partition must be 'auto', 'individual', or 'commuting'")
         self.methods = list(self.methods)
         if not self.methods:
             raise ValueError("methods must not be empty")
@@ -305,9 +300,7 @@ class BenchmarkConfig:
 
     @property
     def digest(self) -> str:
-        payload = json.dumps(
-            self.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False
-        )
+        payload = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -408,6 +401,7 @@ def _evaluate_method(
     evolution_time: float,
     target_error: float,
     method: MethodSpec,
+    execution: CommutatorExecution,
 ) -> EvaluationReport:
     return estimate_resources(
         hamiltonian,
@@ -416,6 +410,8 @@ def _evaluate_method(
         target_error,
         synthesis_error_fraction=config.synthesis_error_fraction,
         trotter_partition=config.trotter_partition,
+        workers=execution.workers,
+        _execution=execution,
     )
 
 
@@ -471,9 +467,7 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         )
     elif isinstance(plan, QSVTPlan):
         result.update(
-            query_count=plan.logical_counts.as_dict()["totals"][
-                "block_encoding_query_slot"
-            ],
+            query_count=plan.logical_counts.as_dict()["totals"]["block_encoding_query_slot"],
             qsvt_degree=plan.degree,
             lcu_normalization=2.0,
             amplitude_amplification="one robust OAA round",
@@ -575,9 +569,7 @@ def _base_record(
         method_family=method.family,
         method_label=method.label,
         trotter_order=method.order if isinstance(method, TrotterMethod) else None,
-        mpf_term_count=(
-            method.term_count if isinstance(method, MultiproductMethod) else None
-        ),
+        mpf_term_count=(method.term_count if isinstance(method, MultiproductMethod) else None),
         mpf_formal_order=(
             2 * method.term_count if isinstance(method, MultiproductMethod) else None
         ),
@@ -587,13 +579,15 @@ def _base_record(
     return record
 
 
-def run_benchmark(
+def _run_benchmark(
     config: BenchmarkConfig,
     sweeps: Sequence[BenchmarkSweep] | BenchmarkSweep = (
         "system-size",
         "target-error",
     ),
     progress: ProgressCallback | None = None,
+    *,
+    execution: CommutatorExecution,
 ) -> pd.DataFrame:
     """Run analytical sweeps in memory without writing files."""
     if not isinstance(config, BenchmarkConfig):
@@ -644,6 +638,7 @@ def run_benchmark(
                     evolution_time,
                     target_error,
                     method,
+                    execution,
                 )
                 record.update(_report_metadata(report))
             except Exception as exc:
@@ -669,6 +664,26 @@ def run_benchmark(
     frame = pd.DataFrame.from_records(records, columns=BENCHMARK_COLUMNS)
     validate_benchmark_frame(frame)
     return frame
+
+
+def run_benchmark(
+    config: BenchmarkConfig,
+    sweeps: Sequence[BenchmarkSweep] | BenchmarkSweep = (
+        "system-size",
+        "target-error",
+    ),
+    progress: ProgressCallback | None = None,
+    *,
+    workers: int = 1,
+) -> pd.DataFrame:
+    """Run analytical sweeps in memory without writing files."""
+    with CommutatorExecution(workers) as execution:
+        return _run_benchmark(
+            config,
+            sweeps=sweeps,
+            progress=progress,
+            execution=execution,
+        )
 
 
 def validate_benchmark_frame(frame: pd.DataFrame) -> None:
@@ -847,9 +862,8 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
         is_mpf = frame["method_family"] == "multiproduct"
         is_qsvt = frame["method_family"] == "qsvt"
         rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
-        within_bound = (
-            pd.to_numeric(frame["bound_value"], errors="coerce")
-            <= pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
+        within_bound = pd.to_numeric(frame["bound_value"], errors="coerce") <= pd.to_numeric(
+            frame["algorithm_error_budget"], errors="coerce"
         )
         frame["bound_scope"] = np.select(
             [is_mpf, is_qsvt],
@@ -866,9 +880,7 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
             default="implemented-product-formula",
         )
         frame["circuit_bound_rigorous"] = rigorous & ~is_mpf & ~is_qsvt
-        frame["circuit_target_satisfied"] = (
-            rigorous & within_bound & ~is_mpf & ~is_qsvt
-        )
+        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf & ~is_qsvt
         for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
             frame[column] = None
     legacy_qsvt_claim = (frame["method_family"] == "qsvt") & (
@@ -902,8 +914,7 @@ def save_benchmark(
         raise ValueError("save_benchmark requires exactly one generated run")
     timestamp = datetime.fromisoformat(generated[0]).astimezone(timezone.utc)
     directory_name = (
-        f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{digests[0][:8]}_"
-        f"{run_ids[0].replace('-', '')[:8]}"
+        f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{digests[0][:8]}_{run_ids[0].replace('-', '')[:8]}"
     )
     run_directory = Path(output_root).resolve() / directory_name
     run_directory.mkdir(parents=True, exist_ok=False)
