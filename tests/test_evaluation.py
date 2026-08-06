@@ -1,12 +1,16 @@
 import pytest
 
 from hamiltonian_resources import (
+    BenchmarkConfig,
+    HamiltonianSpec,
     MultiproductMethod,
     QSVTMethod,
+    TimeScaling,
     TrotterMethod,
     estimate_plan_resources,
     estimate_resources,
     plan_simulation,
+    run_benchmark,
     transverse_field_ising,
 )
 from hamiltonian_resources.benchmark import (
@@ -115,3 +119,52 @@ def test_resource_provenance_is_backend_specific_not_part_of_plan():
     assert report.resource_provenance.model == "structured-analytical-v1"
     assert any("multiplex" in assumption for assumption in report.resource_provenance.assumptions)
     assert not hasattr(plan, "resource_provenance")
+
+
+@pytest.mark.parametrize("method", [TrotterMethod(2), MultiproductMethod(3), QSVTMethod()])
+def test_single_point_report_agrees_with_corresponding_benchmark_row(method):
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    report = estimate_resources(hamiltonian, method, 0.1, 1e-2)
+    config = BenchmarkConfig(
+        hamiltonian=HamiltonianSpec("point-test", factory=lambda size: hamiltonian),
+        system_sizes=[2],
+        target_errors=[1e-2],
+        time=TimeScaling("fixed", 0.1),
+        fixed_target_error=1e-2,
+        methods=[method],
+    )
+    row = run_benchmark(config, sweeps="system-size").iloc[0]
+
+    assert row["bound_method"] == report.error_metadata["bound_method"]
+    assert row["total_qubits"] == report.resources.num_qubits
+    assert row["rotation_count"] == report.resources.rotation_count
+    assert row["toffoli_count"] == report.resources.toffoli_count
+    assert row["t_count"] == report.resources.t_count
+    assert row["cnot_count"] == report.resources.cnot_count
+    if method.family == "trotter":
+        assert row["segment_count"] == report.selected_parameters["trotter_reps"]
+    elif method.family == "multiproduct":
+        assert row["segment_count"] == report.selected_parameters["mpf_segments"]
+    else:
+        assert row["qsvt_degree"] == report.selected_parameters["qsvt_degree"]
+
+
+def test_benchmark_calls_single_point_evaluation_once_per_row(monkeypatch):
+    import hamiltonian_resources.benchmark_suite as benchmark_suite
+
+    calls = 0
+    original = benchmark_suite.estimate_resources
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(benchmark_suite, "estimate_resources", counted)
+    frame = benchmark_suite.run_benchmark(
+        BenchmarkConfig(system_sizes=[2], methods=[QSVTMethod()]),
+        sweeps="system-size",
+    )
+
+    assert frame.iloc[0]["status"] == "ok"
+    assert calls == 1
