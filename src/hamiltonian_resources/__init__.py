@@ -63,7 +63,7 @@ from .qsvt import (
     synthesize_hamsim_phases,
 )
 from .resources import ResourceEstimate, count_circuit_resources
-from .simulation import compare_with_exact
+from .simulation import compare_plan_with_exact, compare_with_exact
 from .trotter import (
     PauliNestedCommutatorBounds,
     SuzukiErrorEstimate,
@@ -114,6 +114,7 @@ __all__ = [
     "build_simulation_circuit",
     "build_trotter_circuit",
     "compare_with_exact",
+    "compare_plan_with_exact",
     "count_circuit_resources",
     "default_methods",
     "estimate_qsvt_degree",

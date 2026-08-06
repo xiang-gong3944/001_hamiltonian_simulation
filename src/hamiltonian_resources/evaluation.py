@@ -77,9 +77,55 @@ def estimate_resources(
 def build_simulation_circuit(plan: SimulationPlan):
     """Compile a selected plan with the reference Qiskit backend."""
     if isinstance(plan, TrotterPlan):
-        return build_trotter_circuit_from_plan(plan)
-    if isinstance(plan, MPFPlan):
-        return build_multiproduct_circuit_from_plan(plan)
-    if isinstance(plan, QSVTPlan):
-        return build_hamiltonian_qsvt_circuit_from_plan(plan)
-    raise TypeError("plan must be a supported simulation plan")
+        circuit = build_trotter_circuit_from_plan(plan)
+    elif isinstance(plan, MPFPlan):
+        circuit = build_multiproduct_circuit_from_plan(plan)
+    elif isinstance(plan, QSVTPlan):
+        circuit = build_hamiltonian_qsvt_circuit_from_plan(plan)
+    else:
+        raise TypeError("plan must be a supported simulation plan")
+    metadata = dict(circuit.metadata or {})
+    metadata.update(serialize_plan_metadata(plan))
+    metadata["resource_provenance"] = _qiskit_provenance(plan).as_dict()
+    circuit.metadata = metadata
+    return circuit
+
+
+def serialize_plan_metadata(plan: SimulationPlan) -> dict[str, object]:
+    """Return a derived metadata view without introducing another data owner."""
+    return {
+        "method_id": plan.method.method_id,
+        "method_family": plan.family,
+        "evolution_time": plan.time,
+        "selected_parameters": plan.selected_parameters,
+        "logical_operation_counts": plan.logical_counts.as_dict(),
+        "error_budget": {
+            "target_error": plan.error_budget.target_error,
+            "synthesis_fraction": plan.error_budget.synthesis_fraction,
+            "algorithm_error": plan.error_budget.algorithm_error,
+            "synthesis_error": plan.error_budget.synthesis_error,
+        },
+        "error_metadata": plan.error_metadata,
+    }
+
+
+def _qiskit_provenance(plan: SimulationPlan) -> ResourceModelProvenance:
+    if isinstance(plan, TrotterPlan):
+        model = "qiskit-pauli-evolution-reference"
+        assumptions = (
+            "Qiskit PauliEvolutionGate preserves the plan's group order",
+            "the circuit is a reference construction rather than a routed implementation",
+        )
+    elif isinstance(plan, MPFPlan):
+        model = "qiskit-generic-controlled-mpf-reference"
+        assumptions = (
+            "MPF branches use Qiskit generic controlled product-formula gates",
+            "no reusable equality-flag structured compilation is imposed",
+        )
+    else:
+        model = "qiskit-generic-controlled-qsvt-reference"
+        assumptions = (
+            "QSVT response extraction uses generic controlled V and V-dagger gates",
+            "the generic reference circuit does not impose analytical query sharing",
+        )
+    return ResourceModelProvenance("qiskit-reference", model, assumptions)
