@@ -1,5 +1,6 @@
 """Hamiltonian-simulation circuit and resource-comparison toolkit."""
 
+from .analytical import ResourceModelProvenance
 from .benchmark_plotting import (
     CertificationPolicy,
     FAMILY_COLORS,
@@ -26,6 +27,7 @@ from .benchmark_suite import (
     validate_benchmark_frame,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
+from .evaluation import EvaluationReport, estimate_plan_resources, estimate_resources
 from .multiproduct import (
     MPFErrorEstimate,
     MPFErrorMethod,
@@ -75,6 +77,7 @@ __all__ = [
     "BenchmarkProgress",
     "CertificationPolicy",
     "ErrorBudget",
+    "EvaluationReport",
     "FAMILY_COLORS",
     "HamiltonianSimulationPhases",
     "HamiltonianSpec",
@@ -92,6 +95,7 @@ __all__ = [
     "QSVTPlan",
     "QSVTResponse",
     "ResourceEstimate",
+    "ResourceModelProvenance",
     "SCHEMA_VERSION",
     "SimulationPlan",
     "SuzukiErrorEstimate",
@@ -107,6 +111,8 @@ __all__ = [
     "count_circuit_resources",
     "default_methods",
     "estimate_qsvt_degree",
+    "estimate_plan_resources",
+    "estimate_resources",
     "estimate_mpf_error",
     "estimate_suzuki_error",
     "heisenberg_chain",
