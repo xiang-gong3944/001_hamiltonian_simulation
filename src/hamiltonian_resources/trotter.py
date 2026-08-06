@@ -100,6 +100,29 @@ class _SuzukiSpecification:
         return tuple(int(group.size) for group in self.groups)
 
 
+@dataclass(frozen=True)
+class TrotterStructure:
+    """Resolved ordered Hamiltonian-term groups for one Suzuki formula.
+
+    Groups refer to positions in ``PauliHamiltonian.terms``.  This lightweight
+    representation is immutable, serializable, and independent of Qiskit.
+    """
+
+    partition: _ResolvedTrotterPartition
+    group_term_indices: tuple[tuple[int, ...], ...]
+
+    def __post_init__(self) -> None:
+        if not self.group_term_indices or any(not group for group in self.group_term_indices):
+            raise ValueError("Trotter groups must be nonempty")
+        flattened = tuple(index for group in self.group_term_indices for index in group)
+        if len(flattened) != len(set(flattened)) or any(index < 0 for index in flattened):
+            raise ValueError("Trotter term indices must be unique and nonnegative")
+
+    @property
+    def group_sizes(self) -> tuple[int, ...]:
+        return tuple(len(group) for group in self.group_term_indices)
+
+
 def _simplify(operator: SparsePauliOp) -> SparsePauliOp:
     """Combine equal Paulis without discarding small nonzero coefficients."""
     return operator.simplify(atol=0.0, rtol=0.0)
@@ -315,6 +338,35 @@ def _commuting_groups(operator: SparsePauliOp) -> tuple[SparsePauliOp, ...]:
     return tuple(_simplify(sum(group[1:], start=group[0])) for group in grouped_terms)
 
 
+def _groups_from_term_indices(
+    hamiltonian: PauliHamiltonian,
+    group_term_indices: tuple[tuple[int, ...], ...],
+) -> tuple[SparsePauliOp, ...]:
+    terms = _individual_terms(hamiltonian.to_sparse_pauli_op())
+    return tuple(
+        _simplify(sum((terms[index] for index in indices[1:]), start=terms[indices[0]]))
+        for indices in group_term_indices
+    )
+
+
+def _commuting_group_term_indices(
+    hamiltonian: PauliHamiltonian,
+) -> tuple[tuple[int, ...], ...]:
+    operator = hamiltonian.to_sparse_pauli_op()
+    grouped_indices: list[list[int]] = []
+    grouped_paulis: list[list] = []
+    for index, pauli in enumerate(operator.paulis):
+        for indices, paulis in zip(grouped_indices, grouped_paulis, strict=True):
+            if all(pauli.commutes(other) for other in paulis):
+                indices.append(index)
+                paulis.append(pauli)
+                break
+        else:
+            grouped_indices.append([index])
+            grouped_paulis.append([pauli])
+    return tuple(tuple(indices) for indices in grouped_indices)
+
+
 def _commutator_prefactors(groups: tuple[SparsePauliOp, ...]) -> tuple[float, float]:
     """Evaluate the Childs et al. order-1/order-2 prefactors for given summands."""
     if len(groups) == 1:
@@ -349,11 +401,12 @@ def _order_commuting_groups(
 
 
 @lru_cache(maxsize=None)
-def _resolve_suzuki_specification(
+def resolve_trotter_structure(
     hamiltonian: PauliHamiltonian,
     order: int,
     partition: TrotterPartition = "auto",
-) -> _SuzukiSpecification:
+) -> TrotterStructure:
+    """Resolve the exact ordered grouping shared by all plan consumers."""
     _validate_order(order)
     _validate_partition(partition)
     resolved: _ResolvedTrotterPartition
@@ -361,12 +414,26 @@ def _resolve_suzuki_specification(
     if partition == "auto" and order >= 4:
         resolved = "commuting"
 
-    operator = hamiltonian.to_sparse_pauli_op()
     if resolved == "individual":
-        groups = _individual_terms(operator)
+        indices = tuple((index,) for index in range(hamiltonian.term_count))
     else:
-        groups = _order_commuting_groups(_commuting_groups(operator))
-    return _SuzukiSpecification(resolved, groups)
+        indices = _commuting_group_term_indices(hamiltonian)
+        groups = _groups_from_term_indices(hamiltonian, indices)
+        ordered_groups = _order_commuting_groups(groups)
+        order_by_identity = {id(group): index for index, group in enumerate(groups)}
+        indices = tuple(indices[order_by_identity[id(group)]] for group in ordered_groups)
+    return TrotterStructure(resolved, indices)
+
+
+@lru_cache(maxsize=None)
+def _resolve_suzuki_specification(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> _SuzukiSpecification:
+    structure = resolve_trotter_structure(hamiltonian, order, partition)
+    groups = _groups_from_term_indices(hamiltonian, structure.group_term_indices)
+    return _SuzukiSpecification(structure.partition, groups)
 
 
 @lru_cache(maxsize=None)
@@ -415,12 +482,31 @@ def _suzuki_term_occurrences(
     """Count Pauli rotations in the exact partitioned Qiskit expansion."""
     if reps < 1:
         raise ValueError("reps must be positive")
-    specification = _resolve_suzuki_specification(hamiltonian, order, partition)
-    sizes = specification.group_sizes
+    structure = resolve_trotter_structure(hamiltonian, order, partition)
+    return count_suzuki_term_occurrences(structure, reps, order)
+
+
+def count_suzuki_term_occurrences(
+    structure: TrotterStructure,
+    reps: int,
+    order: int,
+) -> int:
+    """Count logical Pauli evolutions for a resolved Trotter structure."""
+    if reps < 1:
+        raise ValueError("reps must be positive")
+    sizes = structure.group_sizes
     per_step = sum(
         sizes[group] for group, _ in _suzuki_group_factors(len(sizes), order)
     )
     return reps * per_step
+
+
+def suzuki_group_factors(
+    group_count: int,
+    order: int,
+) -> tuple[tuple[int, float], ...]:
+    """Return the backend-independent ordered factors of one Suzuki step."""
+    return _suzuki_group_factors(group_count, order)
 
 
 def _extend_word_polynomial(
