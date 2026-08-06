@@ -39,7 +39,7 @@ class TrotterMethod:
 class MultiproductMethod:
     term_count: int
     schedule: MPFSchedule = "new"
-    error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
+    error_method: MPFErrorMethod = "mizuta2026-commutator-ideal-rigorous"
 
     @property
     def family(self) -> str:
