@@ -106,7 +106,7 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     )
     row = frame.iloc[0]
 
-    assert row["bound_method"] == "low2019-l1-ideal-rigorous"
+    assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
     assert bool(row["bound_rigorous"])
     assert row["bound_scope"] == "ideal-mpf"
     assert bool(row["bound_target_satisfied"])

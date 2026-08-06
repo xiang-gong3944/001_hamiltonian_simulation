@@ -75,8 +75,10 @@ figure = plot_benchmark(data, sweep="system-size", metric="t_count")
 ```
 
 `MultiproductMethod(m)` uses
-`error_method="low2019-l1-ideal-rigorous"` by default. The historical
-`low-rigorous` spelling remains an input alias. To
+`error_method="mizuta2026-commutator-ideal-rigorous"` by default. The
+Hamiltonian-1-norm baseline remains available as
+`error_method="low2019-l1-ideal-rigorous"`; the historical `low-rigorous`
+spelling remains an input alias. To
 reproduce historical W2-calibrated projections, request
 `MultiproductMethod(m, error_method="legacy-w2-proxy")`. Such rows remain
 available in full plots but are explicitly styled as heuristic. The preferred
@@ -174,15 +176,12 @@ alias. Plot titles record the selected policy, and summaries retain
 2. Trotter orders 1 and 2 use rigorous commutator bounds. Higher supported
    orders use the Schubert--Mendl bound within the practical group cap and
    report an explicit nonrigorous fallback otherwise.
-3. MPF segment selection defaults to the direct bound of
-   [Low--Kliuchnikov--Wiebe](https://arxiv.org/abs/1907.11679) Eqs. (14)--(15), with
-   `lambda=sum_j ||h_j||=hamiltonian.alpha` for the individual Pauli
-   decomposition and the registered schedule's coefficient 1-norm. Eq. (16)
-   supplies only the upper search bracket; binary search returns the smallest
-   satisfying integer. This is a rigorous operator-norm bound for the ideal
-   repeated MPF `M(t/r)^r`. The Mizuta method instead uses Theorem 4,
+3. MPF segment selection defaults to the Mizuta method using Theorem 4,
    Eqs. (61)--(63), with exact finite-order Pauli commutators and a proven
-   locality fallback.
+   locality fallback. The selectable Low--Kliuchnikov--Wiebe baseline uses
+   Eqs. (14)--(15), with `lambda=sum_j ||h_j||=hamiltonian.alpha` for the
+   individual Pauli decomposition and the registered schedule's coefficient
+   1-norm; Eq. (16) supplies only its upper search bracket.
 4. QSVT degree selection uses rigorous Jacobi--Anger parity-tail bounds. The
    exact scaled polynomial and ideal cubic-OAA block have separate derived
    claims; floating `pyqsp` phase residuals remain finite-grid observations,
