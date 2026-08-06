@@ -57,9 +57,13 @@ src/hamiltonian_resources/
   circuit_utils.py   # PREPARE / SELECT / block encoding / robust OAA
   qsvt.py            # Jacobi--Anger 位相合成、QSVT、LCU、robust OAA
   multiproduct.py    # MPF 係数、segment LCU、robust OAA
+  method_specs.py    # backend 非依存の手法指定
+  planning.py        # 単一回のparameter選択とimmutable algorithm plan
+  analytical.py      # planを消費する構造化解析resource backend
+  evaluation.py      # 単一点API、report、reference Qiskit dispatch
   simulation.py      # 小規模な厳密解との比較
   resources.py       # transpile 後の CX と T 見積り
-  benchmark.py       # 固定誤差のパラメータ選択とスケーリング
+  benchmark.py       # 旧parameter/resource APIの互換wrapper
   benchmark_suite.py # 8構成の解析スイープ、CSV、再現性metadata
   benchmark_plotting.py # 保存済みCSVから一貫した図を生成
 notebooks/
@@ -80,7 +84,7 @@ MPF `m=3,5,7`、QSVTを独立に評価します。system-size sweepでは局所�
 厳密な推定ではなく、明記された無次元の比較規約です。
 
 `notebooks/resource_comparison.ipynb`では、NumPy配列を含むパラメータセルを変更し、
-計算とlog10サイズ軸での描画までnotebook内で完結できます。Python APIは結果を
+計算とlog10サイズ軸での描画までnotebook内で完結できます。benchmark APIは結果を
 メモリ上のDataFrameとして返し、自動保存しません。
 
 ```powershell
@@ -103,7 +107,38 @@ hamiltonian-benchmark plot --data benchmark_outputs/<run>/benchmark.csv --summar
 設定、schema、failure row、解析上の仮定は
 [`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)に記載しています。
 
-## 最小例
+## 単一点resource API
+
+1つのHamiltonian・手法・時刻・目標誤差を評価するためにsweepやDataFrameは不要です。
+`estimate_resources`はparameterを1回だけ選択し、immutable planと構造化解析backendの
+resource結果を返します。同じplanをreference Qiskit回路と小規模検証へ渡せます。
+
+```python
+from hamiltonian_resources import (
+    MultiproductMethod,
+    build_simulation_circuit,
+    compare_plan_with_exact,
+    estimate_resources,
+    transverse_field_ising,
+)
+
+H = transverse_field_ising(2, field=0.7)
+report = estimate_resources(H, MultiproductMethod(3), time=0.2, target_error=1e-3)
+
+print(report.selected_parameters)
+print(report.logical_counts.as_dict())
+print(report.resources.t_count, report.resources.cnot_count)
+print(report.resource_provenance.as_dict())
+
+circuit = build_simulation_circuit(report.plan)  # 小規模なreference構成向け
+check = compare_plan_with_exact(report.plan)
+```
+
+planは論理構造だけを保持します。temporary-AND、分解後の回転/CNOT、backend work qubitは
+解析結果またはQiskit metadata側に属します。MPF/QSVTの構造化解析backendとgeneric
+Qiskit `.control()` 回路は同じplanを使いますが、異なるcompilation仮定を明記します。
+
+## benchmark最小例
 
 ```python
 import numpy as np
@@ -182,7 +217,7 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 
 1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
 2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。解析モデルでは多重制御ゲートの Toffoli 相当コストも temporary-AND（1 対あたり 4 T）で `t_count` に計上し、`toffoli_count` 列に対数を保存します。
-3. **固定誤差の次数選択**: `choose_parameters` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。MPFは既定で`low2019-l1-ideal-rigorous`を使い、Low–Kliuchnikov–Wiebe Eq. (16)を上側bracketとしてEq. (14)–(15)を満たす最小segment数を二分探索します。`mizuta2026-commutator-ideal-rigorous`はMizuta Theorem 4の有限次数交換子上界をexact Pauli algebraで評価します。Aftab 2024の任意次数条件を有限打切りで厳密と呼ばない理由を含む詳細は[`docs/mpf_error_bounds.md`](docs/mpf_error_bounds.md)に記載しています。以前の`alpha_eff = min(alpha, W2^(1/3))`規則はopt-inの`legacy-w2-proxy`としてのみ残り、常に非厳密と表示されます。
+3. **固定誤差の次数選択**: `plan_simulation` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。互換用の`choose_parameters`も同じplanning pathを使用します。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。MPFは既定で`low2019-l1-ideal-rigorous`を使い、Low–Kliuchnikov–Wiebe Eq. (16)を上側bracketとしてEq. (14)–(15)を満たす最小segment数を二分探索します。`mizuta2026-commutator-ideal-rigorous`はMizuta Theorem 4の有限次数交換子上界をexact Pauli algebraで評価します。Aftab 2024の任意次数条件を有限打切りで厳密と呼ばない理由を含む詳細は[`docs/mpf_error_bounds.md`](docs/mpf_error_bounds.md)に記載しています。以前の`alpha_eff = min(alpha, W2^(1/3))`規則はopt-inの`legacy-w2-proxy`としてのみ残り、常に非厳密と表示されます。
 4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。その後cos/sinを結合し、all-zero ancilla subspaceに対する3-step robust OAAを行います。生の位相配列を受け取る公開APIはありません。
 5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。これは`M`がunitaryに近い範囲で`M`へ近づきます。同じbranch register上で増幅step unitaryを反復するため、複数segmentの最終blockを単純な`M**segments`と同一視はしません。このためLow/Mizutaの厳密性scopeは`ideal-mpf`であり、`amplified-shared-ancilla`回路の保証は未実装です。summaryの既定policyは`implemented-circuit`なので現行MPFを除外し、`declared-bound-scope`を明示した場合だけideal保証付きとして含めます。metadataにはphysical/padding/unused branch数、負係数数、PREPARE/SELECT/reflection数も保存します。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
