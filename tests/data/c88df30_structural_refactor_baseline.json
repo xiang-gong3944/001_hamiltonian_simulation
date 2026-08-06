@@ -1,0 +1,157 @@
+{
+  "baseline_commit": "c88df30ebd2190c1c358c473aae209bdfecd2eb2",
+  "purpose": "Preserve c88df30 behavior during the structural refactor; these values are not a claim of permanent mathematical correctness.",
+  "cases": [
+    {
+      "method": {"family": "trotter", "order": 2},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "trotter-p2",
+        "segment_count": 1,
+        "trotter_partition": "individual",
+        "trotter_group_count": 3,
+        "bound_value": 0.0008866666666666668,
+        "bound_method": "childs-commutator",
+        "bound_rigorous": true,
+        "bound_scope": "implemented-product-formula",
+        "circuit_bound_rigorous": true,
+        "total_qubits": 2,
+        "rotation_count": 5,
+        "toffoli_count": 0,
+        "t_count": 205,
+        "cnot_count": 4
+      }
+    },
+    {
+      "method": {"family": "trotter", "order": 4},
+      "system_qubits": 3,
+      "evolution_time": 0.2,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "trotter-p4",
+        "segment_count": 1,
+        "trotter_partition": "commuting",
+        "trotter_group_count": 2,
+        "bound_value": 0.0027002362527721907,
+        "bound_method": "schubert-mendl-commutator",
+        "bound_rigorous": true,
+        "bound_scope": "implemented-product-formula",
+        "circuit_bound_rigorous": true,
+        "total_qubits": 3,
+        "rotation_count": 35,
+        "toffoli_count": 0,
+        "t_count": 1750,
+        "cnot_count": 28
+      }
+    },
+    {
+      "method": {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "low2019-l1-ideal-rigorous"},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "mpf-m3",
+        "segment_count": 1,
+        "query_count": 21,
+        "bound_value": 4.370340137234034e-08,
+        "bound_method": "low2019-l1-ideal-rigorous",
+        "bound_rigorous": true,
+        "bound_scope": "ideal-mpf",
+        "circuit_bound_rigorous": false,
+        "mpf_schedule": "new",
+        "mpf_exponents_json": "[1,2,4]",
+        "total_qubits": 7,
+        "rotation_count": 252,
+        "toffoli_count": 26,
+        "t_count": 14720,
+        "cnot_count": 480
+      }
+    },
+    {
+      "method": {"family": "multiproduct", "term_count": 3, "schedule": "legacy", "error_method": "low2019-l1-ideal-rigorous"},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "mpf-m3-legacy",
+        "segment_count": 1,
+        "query_count": 27,
+        "bound_method": "low2019-l1-ideal-rigorous",
+        "bound_rigorous": true,
+        "bound_scope": "ideal-mpf",
+        "circuit_bound_rigorous": false,
+        "mpf_schedule": "legacy",
+        "mpf_exponents_json": "[1,2,6]",
+        "total_qubits": 7,
+        "rotation_count": 312,
+        "toffoli_count": 26,
+        "t_count": 18512,
+        "cnot_count": 560
+      }
+    },
+    {
+      "method": {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "mizuta2026-commutator-ideal-rigorous"},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "mpf-m3-mizuta2026-commutator-ideal-rigorous",
+        "segment_count": 1967,
+        "query_count": 41307,
+        "bound_value": 0.0044999849710530455,
+        "bound_method": "mizuta2026-commutator-ideal-rigorous",
+        "bound_rigorous": true,
+        "bound_scope": "ideal-mpf",
+        "circuit_bound_rigorous": false,
+        "total_qubits": 7,
+        "rotation_count": 495684,
+        "toffoli_count": 51142,
+        "t_count": 45807496,
+        "cnot_count": 944160
+      }
+    },
+    {
+      "method": {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "legacy-w2-proxy"},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "mpf-m3-legacy-w2-proxy",
+        "segment_count": 1,
+        "query_count": 21,
+        "bound_method": "legacy-w2-proxy",
+        "bound_rigorous": false,
+        "bound_scope": "ideal-mpf",
+        "circuit_bound_rigorous": false,
+        "total_qubits": 7,
+        "rotation_count": 252,
+        "toffoli_count": 26,
+        "t_count": 14720,
+        "cnot_count": 480
+      }
+    },
+    {
+      "method": {"family": "qsvt"},
+      "system_qubits": 2,
+      "evolution_time": 0.1,
+      "target_error": 0.01,
+      "expected": {
+        "method_id": "qsvt",
+        "query_count": 15,
+        "qsvt_degree": 3,
+        "bound_value": 0.009000000000000001,
+        "bound_method": "jacobi-anger-truncation",
+        "bound_rigorous": true,
+        "bound_scope": "implemented-algorithm",
+        "circuit_bound_rigorous": true,
+        "total_qubits": 8,
+        "rotation_count": 132,
+        "toffoli_count": 222,
+        "t_count": 8280,
+        "cnot_count": 1452
+      }
+    }
+  ]
+}
