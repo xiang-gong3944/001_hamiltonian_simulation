@@ -1,5 +1,6 @@
 """Hamiltonian-simulation circuit and resource-comparison toolkit."""
 
+from .analytical import ResourceModelProvenance
 from .benchmark_plotting import (
     CertificationPolicy,
     FAMILY_COLORS,
@@ -26,6 +27,12 @@ from .benchmark_suite import (
     validate_benchmark_frame,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
+from .evaluation import (
+    EvaluationReport,
+    build_simulation_circuit,
+    estimate_plan_resources,
+    estimate_resources,
+)
 from .multiproduct import (
     MPFErrorEstimate,
     MPFErrorMethod,
@@ -39,6 +46,16 @@ from .multiproduct import (
     optimal_mpf_exponents,
     select_mpf_segments,
 )
+from .planning import (
+    ErrorBudget,
+    LogicalOperationCounts,
+    MPFPlan,
+    QSVTPlan,
+    QSVTResponse,
+    SimulationPlan,
+    TrotterPlan,
+    plan_simulation,
+)
 from .qsvt import (
     HamiltonianSimulationPhases,
     build_hamiltonian_qsvt_circuit,
@@ -46,10 +63,11 @@ from .qsvt import (
     synthesize_hamsim_phases,
 )
 from .resources import ResourceEstimate, count_circuit_resources
-from .simulation import compare_with_exact
+from .simulation import compare_plan_with_exact, compare_with_exact
 from .trotter import (
     PauliNestedCommutatorBounds,
     SuzukiErrorEstimate,
+    TrotterStructure,
     TrotterPartition,
     build_trotter_circuit,
     estimate_suzuki_error,
@@ -63,31 +81,45 @@ __all__ = [
     "BenchmarkJob",
     "BenchmarkProgress",
     "CertificationPolicy",
+    "ErrorBudget",
+    "EvaluationReport",
     "FAMILY_COLORS",
     "HamiltonianSimulationPhases",
     "HamiltonianSpec",
+    "LogicalOperationCounts",
     "MPFErrorEstimate",
     "MPFErrorMethod",
     "MPFErrorScope",
     "MPFLCUStructure",
+    "MPFPlan",
     "MPFSchedule",
     "MultiproductMethod",
     "PauliNestedCommutatorBounds",
     "PauliHamiltonian",
     "QSVTMethod",
+    "QSVTPlan",
+    "QSVTResponse",
     "ResourceEstimate",
+    "ResourceModelProvenance",
     "SCHEMA_VERSION",
+    "SimulationPlan",
     "SuzukiErrorEstimate",
     "TimeScaling",
     "TrotterMethod",
+    "TrotterPlan",
     "TrotterPartition",
+    "TrotterStructure",
     "build_hamiltonian_qsvt_circuit",
     "build_multiproduct_circuit",
+    "build_simulation_circuit",
     "build_trotter_circuit",
     "compare_with_exact",
+    "compare_plan_with_exact",
     "count_circuit_resources",
     "default_methods",
     "estimate_qsvt_degree",
+    "estimate_plan_resources",
+    "estimate_resources",
     "estimate_mpf_error",
     "estimate_suzuki_error",
     "heisenberg_chain",
@@ -97,6 +129,7 @@ __all__ = [
     "mpf_lcu_structure",
     "optimal_mpf_exponents",
     "pauli_nested_commutator_bounds",
+    "plan_simulation",
     "plot_benchmark",
     "run_benchmark",
     "save_benchmark",

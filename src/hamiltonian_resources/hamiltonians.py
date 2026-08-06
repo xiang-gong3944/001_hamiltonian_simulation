@@ -22,6 +22,11 @@ class PauliHamiltonian:
     name: str = "H"
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "terms",
+            tuple((str(label), float(coefficient)) for label, coefficient in self.terms),
+        )
         if self.num_qubits < 1:
             raise ValueError("num_qubits must be positive")
         if not self.terms:

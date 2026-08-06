@@ -50,8 +50,6 @@ def compare_with_exact(
     psi = zero_state(hamiltonian.num_qubits) if initial_state is None else np.asarray(initial_state)
     if psi.shape != (2**hamiltonian.num_qubits,) or not np.isclose(np.linalg.norm(psi), 1):
         raise ValueError("initial_state must be a normalized 2**num_qubits vector")
-    exact = expm(-1j * float(time) * hamiltonian.matrix()) @ psi
-
     if method == "trotter":
         circuit = build_trotter_circuit(
             hamiltonian,
@@ -60,8 +58,6 @@ def compare_with_exact(
             trotter_order,
             partition=trotter_partition,
         )
-        actual = np.asarray(Statevector(psi).evolve(circuit).data)
-        success_probability = 1.0
     elif method == "multiproduct":
         circuit = build_multiproduct_circuit(
             hamiltonian,
@@ -71,21 +67,6 @@ def compare_with_exact(
             schedule=mpf_schedule,
             amplitude_amplification=amplitude_amplification,
         )
-        ancillas = circuit.num_qubits - hamiltonian.num_qubits
-        if ancillas == 0:
-            actual = np.asarray(Statevector(psi).evolve(circuit).data)
-            success_probability = 1.0
-        else:
-            joint = np.zeros(2**circuit.num_qubits, dtype=complex)
-            joint[:: 2**ancillas] = psi
-            output = np.asarray(Statevector(joint).evolve(circuit).data)
-            postselected = output[:: 2**ancillas]
-            success_probability = float(np.vdot(postselected, postselected).real)
-            if success_probability <= np.finfo(float).eps:
-                raise RuntimeError(
-                    "MPF all-zero postselection probability is numerically zero"
-                )
-            actual = postselected / np.sqrt(success_probability)
     elif method == "qsvt":
         circuit = build_hamiltonian_qsvt_circuit(
             hamiltonian,
@@ -93,21 +74,33 @@ def compare_with_exact(
             qsvt_epsilon,
             amplitude_amplification=amplitude_amplification,
         )
-        ancillas = circuit.num_qubits - hamiltonian.num_qubits
-        if ancillas == 0:
-            actual = np.asarray(Statevector(psi).evolve(circuit).data)
-            success_probability = 1.0
-        else:
-            joint = np.zeros(2**circuit.num_qubits, dtype=complex)
-            joint[:: 2**ancillas] = psi
-            output = np.asarray(Statevector(joint).evolve(circuit).data)
-            postselected = output[:: 2**ancillas]
-            success_probability = float(np.vdot(postselected, postselected).real)
-            if success_probability <= np.finfo(float).eps:
-                raise RuntimeError("QSVT all-zero postselection probability is numerically zero")
-            actual = postselected / np.sqrt(success_probability)
     else:
         raise ValueError(f"unknown method: {method}")
+
+    return _compare_circuit_with_exact(hamiltonian, float(time), circuit, method, psi)
+
+
+def _compare_circuit_with_exact(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    circuit,
+    method: str,
+    psi: np.ndarray,
+) -> dict[str, float | str]:
+    exact = expm(-1j * time * hamiltonian.matrix()) @ psi
+    ancillas = circuit.num_qubits - hamiltonian.num_qubits
+    if ancillas == 0:
+        actual = np.asarray(Statevector(psi).evolve(circuit).data)
+        success_probability = 1.0
+    else:
+        joint = np.zeros(2**circuit.num_qubits, dtype=complex)
+        joint[:: 2**ancillas] = psi
+        output = np.asarray(Statevector(joint).evolve(circuit).data)
+        postselected = output[:: 2**ancillas]
+        success_probability = float(np.vdot(postselected, postselected).real)
+        if success_probability <= np.finfo(float).eps:
+            raise RuntimeError(f"{method.upper()} all-zero postselection probability is zero")
+        actual = postselected / np.sqrt(success_probability)
 
     fidelity = float(abs(np.vdot(exact, actual)) ** 2)
     return {
@@ -116,3 +109,33 @@ def compare_with_exact(
         "fidelity": fidelity,
         "success_probability": success_probability,
     }
+
+
+def compare_plan_with_exact(
+    plan,
+    *,
+    initial_state: np.ndarray | None = None,
+) -> dict[str, float | str]:
+    """Validate a selected plan with its reference Qiskit circuit."""
+    from .evaluation import build_simulation_circuit
+    from .planning import MPFPlan, QSVTPlan, TrotterPlan
+
+    if not isinstance(plan, (TrotterPlan, MPFPlan, QSVTPlan)):
+        raise TypeError("plan must be a supported simulation plan")
+    psi = (
+        zero_state(plan.hamiltonian.num_qubits)
+        if initial_state is None
+        else np.asarray(initial_state)
+    )
+    if psi.shape != (2**plan.hamiltonian.num_qubits,) or not np.isclose(
+        np.linalg.norm(psi), 1
+    ):
+        raise ValueError("initial_state must be a normalized 2**num_qubits vector")
+    circuit = build_simulation_circuit(plan)
+    return _compare_circuit_with_exact(
+        plan.hamiltonian,
+        plan.time,
+        circuit,
+        plan.family,
+        psi,
+    )

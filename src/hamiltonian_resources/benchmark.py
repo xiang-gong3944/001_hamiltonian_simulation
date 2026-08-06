@@ -2,29 +2,16 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
+from .evaluation import estimate_plan_resources
 from .hamiltonians import PauliHamiltonian
-from .multiproduct import (
-    MPFErrorMethod,
-    MPFSchedule,
-    mpf_lcu_structure,
-    optimal_mpf_exponents,
-    select_mpf_segments,
-)
-from .qsvt import estimate_qsvt_degree
-from .resources import (
-    T_PER_AND,
-    ResourceEstimate,
-    multicontrol_and_pairs,
-    t_cost_for_z_rotation,
-)
-from .trotter import (
-    TrotterPartition,
-    _suzuki_term_occurrences,
-    estimate_suzuki_error,
-)
+from .method_specs import MultiproductMethod, QSVTMethod, TrotterMethod
+from .multiproduct import MPFErrorMethod, MPFSchedule, optimal_mpf_exponents
+from .planning import plan_simulation
+from .qsvt import estimate_qsvt_degree  # noqa: F401 - compatibility monkeypatch target
+from .resources import ResourceEstimate
+from .trotter import TrotterPartition
 
 
 @dataclass(frozen=True)
@@ -90,37 +77,44 @@ def choose_parameters(
     """
     if algorithm not in (None, "trotter", "multiproduct", "qsvt"):
         raise ValueError(f"unknown algorithm: {algorithm}")
-    budget = config.target_error * (1 - config.synthesis_error_fraction)
-    time = config.time
-    alpha_time = hamiltonian.alpha * time
+    families = ("trotter", "multiproduct", "qsvt") if algorithm is None else (algorithm,)
     parameters: dict[str, int] = {}
-    if algorithm in (None, "trotter"):
-        p = config.trotter_order
-        one_step_error = estimate_suzuki_error(
-            hamiltonian,
-            time,
-            reps=1,
-            order=p,
-            partition=config.trotter_partition,
-        ).error
-        trotter_reps = math.ceil((one_step_error / budget) ** (1 / p))
-        parameters["trotter_reps"] = max(1, trotter_reps)
-    if algorithm in (None, "multiproduct"):
-        parameters["mpf_segments"] = select_mpf_segments(
-            hamiltonian,
-            time,
-            budget,
-            config.mpf_m,
-            schedule=config.mpf_schedule,
-            method=config.mpf_error_method,
-        ).segments
-    if algorithm in (None, "qsvt"):
-        parameters["qsvt_degree"] = estimate_qsvt_degree(alpha_time, budget)
+    for family in families:
+        plan = _plan_for_algorithm(hamiltonian, config, family)
+        if family == "trotter":
+            parameters["trotter_reps"] = plan.repetitions  # type: ignore[union-attr]
+        elif family == "multiproduct":
+            parameters["mpf_segments"] = plan.segments  # type: ignore[union-attr]
+        else:
+            parameters["qsvt_degree"] = plan.degree  # type: ignore[union-attr]
     return parameters
 
 
-#: CX cost charged per temporary-AND compute/uncompute pair.
-_CX_PER_AND = 6
+def _plan_for_algorithm(
+    hamiltonian: PauliHamiltonian,
+    config: _EvaluationConfig,
+    algorithm: str,
+):
+    if algorithm == "trotter":
+        method = TrotterMethod(config.trotter_order)
+    elif algorithm == "multiproduct":
+        method = MultiproductMethod(
+            config.mpf_m,
+            schedule=config.mpf_schedule,
+            error_method=config.mpf_error_method,
+        )
+    elif algorithm == "qsvt":
+        method = QSVTMethod()
+    else:
+        raise ValueError(f"unknown algorithm: {algorithm}")
+    return plan_simulation(
+        hamiltonian,
+        method,
+        config.time,
+        config.target_error,
+        synthesis_error_fraction=config.synthesis_error_fraction,
+        trotter_partition=config.trotter_partition,
+    )
 
 
 def estimate_resources_analytically(
@@ -141,112 +135,5 @@ def estimate_resources_analytically(
     on the quadrature/component qubits; the Qiskit ``.control()`` construction
     used by ``transpile_circuits=True`` is substantially more expensive.
     """
-    params = choose_parameters(hamiltonian, config, algorithm)
-    mpf_exponents = optimal_mpf_exponents(
-        config.mpf_m,
-        schedule=config.mpf_schedule,
-    )
-    weights = [sum(ch != "I" for ch in label) for label, _ in hamiltonian.terms]
-    mean_ladder_cx = sum(2 * max(0, w - 1) for w in weights) / len(weights)
-    synth_error = config.target_error * config.synthesis_error_fraction
-    term_count = hamiltonian.term_count
-
-    if algorithm == "trotter":
-        rotations = _suzuki_term_occurrences(
-            hamiltonian,
-            params["trotter_reps"],
-            config.trotter_order,
-            config.trotter_partition,
-        )
-        and_pairs = 0
-        cnots = math.ceil(rotations * mean_ladder_cx)
-        qubits = hamiltonian.num_qubits
-    elif algorithm == "multiproduct":
-        segments = params["mpf_segments"]
-        structure = mpf_lcu_structure(
-            config.mpf_m,
-            schedule=config.mpf_schedule,
-        )
-        branch_bits = structure.branch_bits
-        branch_flag_pairs = multicontrol_and_pairs(branch_bits)
-        phase_pairs = multicontrol_and_pairs(branch_bits - 1)
-        # One robust-OAA round per segment: 3 SELECT, 6 PREPARE, 2 reflections.
-        select_rotations = sum(
-            _suzuki_term_occurrences(hamiltonian, k, 2, "individual")
-            for k in mpf_exponents
-        )
-        prepare_rotations = 2**branch_bits - 1
-        # One reusable equality flag is computed only for each physical MPF
-        # branch. It reduces every S2 rotation to one singly-controlled Rz
-        # (two rotations). Multi-controlled pi phases are charged only to
-        # negative coefficients, the negative padding branch, and reflections.
-        rotations = segments * (3 * 2 * select_rotations + 6 * prepare_rotations)
-        and_pairs = segments * (
-            3
-            * structure.physical_branch_count
-            * branch_flag_pairs  # equality flag only for physical SELECT branches
-            + 3
-            * structure.sign_branch_count
-            * phase_pairs  # negative coefficients plus negative identity padding
-            + 2 * phase_pairs  # good-subspace reflections
-        )
-        cnots = math.ceil(
-            segments
-            * (
-                3 * select_rotations * (mean_ladder_cx + 2)
-                + 6 * max(0, 2**branch_bits - 2)
-                # One terminal CZ/CX remains after each sign/reflection
-                # multi-control has been reduced by its temporary-AND ladder.
-                + (3 * structure.sign_branch_count + 2)
-            )
-            + and_pairs * _CX_PER_AND
-        )
-        qubits = (
-            hamiltonian.num_qubits
-            + branch_bits
-            + max(branch_flag_pairs, phase_pairs)
-        )
-    elif algorithm == "qsvt":
-        index_bits = max(1, math.ceil(math.log2(term_count)))
-        sine_degree = params["qsvt_degree"]
-        cosine_degree = sine_degree - 1
-        # Robust OAA applies the cosine/sine LCU three times.  Within each
-        # component the controlled V/V^dagger pair shares its block-encoding
-        # queries, so queries = 3 * (d_cos + d_sin).
-        queries = 3 * (cosine_degree + sine_degree)
-        prepare_calls = 2 * queries
-        prepare_rotations = max(1, 2**index_bits - 1)
-        phase_slots = 3 * ((cosine_degree + 1) + (sine_degree + 1))
-        # Each slot selects between phi_i and -phi_(d-i) on the quadrature
-        # qubit: two controlled projector phases.
-        rotations = prepare_calls * prepare_rotations + 2 * phase_slots
-        select_pairs = multicontrol_and_pairs(index_bits + 1)  # + component ctrl
-        phase_pairs = multicontrol_and_pairs(index_bits + 2)
-        and_pairs = (
-            queries * term_count * select_pairs
-            + 2 * phase_slots * phase_pairs
-            + 2 * phase_pairs  # OAA reflections
-        )
-        cnots = (
-            prepare_calls * max(0, 2**index_bits - 2)
-            + queries * sum(weights)  # flag-controlled Pauli applications
-            + and_pairs * _CX_PER_AND
-        )
-        qubits = hamiltonian.num_qubits + index_bits + 2 + select_pairs
-    else:
-        raise ValueError(f"unknown algorithm: {algorithm}")
-
-    per_rotation = synth_error / max(1, rotations)
-    t_count = rotations * t_cost_for_z_rotation(0.17320508075688773, per_rotation)
-    t_count += and_pairs * T_PER_AND
-    return ResourceEstimate(
-        algorithm=algorithm,
-        num_qubits=qubits,
-        cnot_count=int(cnots),
-        t_count=int(t_count),
-        rotation_count=int(rotations),
-        depth=-1,
-        counting_mode="analytical-model",
-        rotation_synthesis_error=synth_error,
-        toffoli_count=int(and_pairs),
-    )
+    plan = _plan_for_algorithm(hamiltonian, config, algorithm)
+    return estimate_plan_resources(plan).resources

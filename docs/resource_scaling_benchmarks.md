@@ -5,6 +5,45 @@ The schema-2 benchmark API is designed for interactive use. A mutable
 evaluates only the requested method specifications, and returns one in-memory
 DataFrame containing the requested sweeps. It never writes files implicitly.
 
+## Single-point evaluation
+
+Use the plan/report API when a sweep and DataFrame are unnecessary:
+
+```python
+from hamiltonian_resources import (
+    MultiproductMethod,
+    build_simulation_circuit,
+    compare_plan_with_exact,
+    estimate_resources,
+    transverse_field_ising,
+)
+
+hamiltonian = transverse_field_ising(2, field=0.7)
+report = estimate_resources(
+    hamiltonian,
+    MultiproductMethod(3),
+    time=0.2,
+    target_error=1e-3,
+)
+
+print(report.selected_parameters)
+print(report.logical_counts.as_dict())
+print(report.resources.as_dict())
+
+reference = build_simulation_circuit(report.plan)
+validation = compare_plan_with_exact(report.plan)
+```
+
+`report.plan` is backend-independent and owns the selected parameters, error
+metadata, and logical operation schedule. `report.resources` and
+`report.resource_provenance` describe the structured analytical compilation.
+Reference Qiskit circuit metadata serializes the same plan and separately names
+its generic-control compilation assumptions. Temporary-AND counts, decomposed
+rotations/CNOTs, and backend work qubits are never stored in the plan.
+
+Resource planning requires positive time. The direct circuit builders retain
+their existing support for finite zero and negative times.
+
 ## Python and notebook workflow
 
 ```python

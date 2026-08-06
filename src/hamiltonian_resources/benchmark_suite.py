@@ -17,20 +17,16 @@ from typing import Any, Callable, Literal, Mapping, Sequence, TypeAlias
 import numpy as np
 import pandas as pd
 
-from .benchmark import (
-    _EvaluationConfig,
-    choose_parameters,
-    estimate_resources_analytically,
-)
+from .evaluation import EvaluationReport, estimate_resources
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
-from .multiproduct import (
-    MPFErrorMethod,
-    estimate_mpf_error,
-    mpf_lcu_structure,
-    multiproduct_coefficients,
-    optimal_mpf_exponents,
+from .method_specs import (
+    MethodSpec,
+    MultiproductMethod,
+    QSVTMethod,
+    TrotterMethod,
+    default_methods,
 )
-from .trotter import estimate_suzuki_error
+from .planning import MPFPlan, QSVTPlan, TrotterPlan
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
@@ -233,118 +229,6 @@ class TimeScaling:
         return {"mode": self.mode, "coefficient": self.coefficient}
 
 
-@dataclass(frozen=True)
-class TrotterMethod:
-    order: int
-
-    @property
-    def family(self) -> str:
-        return "trotter"
-
-    @property
-    def method_id(self) -> str:
-        return f"trotter-p{self.order}"
-
-    @property
-    def label(self) -> str:
-        return f"Trotter p={self.order}"
-
-    def validate(self) -> None:
-        if isinstance(self.order, bool) or not isinstance(self.order, Integral):
-            raise ValueError("Trotter order must be 1 or a positive even integer")
-        if self.order != 1 and (self.order < 2 or self.order % 2):
-            raise ValueError("Trotter order must be 1 or a positive even integer")
-
-    def as_dict(self) -> dict[str, Any]:
-        return {"family": self.family, "order": int(self.order)}
-
-
-@dataclass(frozen=True)
-class MultiproductMethod:
-    term_count: int
-    schedule: Literal["new", "legacy"] = "new"
-    error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
-
-    @property
-    def family(self) -> str:
-        return "multiproduct"
-
-    @property
-    def method_id(self) -> str:
-        suffix = "" if self.schedule == "new" else f"-{self.schedule}"
-        if self.error_method not in (
-            "low2019-l1-ideal-rigorous",
-            "low-rigorous",
-        ):
-            suffix += f"-{self.error_method}"
-        return f"mpf-m{self.term_count}{suffix}"
-
-    @property
-    def label(self) -> str:
-        suffix = "" if self.schedule == "new" else f" ({self.schedule})"
-        if self.error_method == "legacy-w2-proxy":
-            suffix += " [legacy W2 heuristic]"
-        elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
-            suffix += " [Mizuta 2026 commutator]"
-        return f"MPF m={self.term_count}{suffix}"
-
-    def validate(self) -> None:
-        if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
-            raise ValueError("MPF term count must be an integer")
-        optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
-        if self.error_method not in (
-            "low2019-l1-ideal-rigorous",
-            "mizuta2026-commutator-ideal-rigorous",
-            "low-rigorous",
-            "legacy-w2-proxy",
-        ):
-            raise ValueError(
-                "MPF error method must be 'low2019-l1-ideal-rigorous' "
-                "(historical alias 'low-rigorous'), "
-                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
-            )
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "family": self.family,
-            "term_count": int(self.term_count),
-            "schedule": self.schedule,
-            "error_method": self.error_method,
-        }
-
-
-@dataclass(frozen=True)
-class QSVTMethod:
-    @property
-    def family(self) -> str:
-        return "qsvt"
-
-    @property
-    def method_id(self) -> str:
-        return "qsvt"
-
-    @property
-    def label(self) -> str:
-        return "QSVT"
-
-    def validate(self) -> None:
-        return None
-
-    def as_dict(self) -> dict[str, Any]:
-        return {"family": self.family}
-
-
-MethodSpec: TypeAlias = TrotterMethod | MultiproductMethod | QSVTMethod
-
-
-def default_methods() -> list[MethodSpec]:
-    return [
-        *(TrotterMethod(order) for order in (1, 2, 4, 6)),
-        *(MultiproductMethod(term_count) for term_count in (3, 5, 7)),
-        QSVTMethod(),
-    ]
-
-
 @dataclass
 class BenchmarkConfig:
     """Mutable, notebook-friendly configuration for analytical sweeps."""
@@ -518,179 +402,86 @@ def _software_metadata() -> dict[str, Any]:
     }
 
 
-def _evaluation_config(
-    config: BenchmarkConfig,
-    evolution_time: float,
-    target_error: float,
-    method: MethodSpec,
-) -> _EvaluationConfig:
-    return _EvaluationConfig(
-        time=evolution_time,
-        target_error=target_error,
-        synthesis_error_fraction=config.synthesis_error_fraction,
-        trotter_order=method.order if isinstance(method, TrotterMethod) else 2,
-        trotter_partition=config.trotter_partition,
-        mpf_m=method.term_count if isinstance(method, MultiproductMethod) else 3,
-        mpf_schedule=method.schedule if isinstance(method, MultiproductMethod) else "new",
-        mpf_error_method=(
-            method.error_method
-            if isinstance(method, MultiproductMethod)
-            else "low2019-l1-ideal-rigorous"
-        ),
-    )
-
-
-def _method_metadata(
-    hamiltonian: PauliHamiltonian,
-    evaluation: _EvaluationConfig,
-    method: MethodSpec,
-    parameters: Mapping[str, int],
-) -> dict[str, Any]:
-    if isinstance(method, TrotterMethod):
-        reps = parameters["trotter_reps"]
-        error = estimate_suzuki_error(
-            hamiltonian,
-            evaluation.time,
-            reps,
-            evaluation.trotter_order,
-            partition=evaluation.trotter_partition,
-        )
-        return {
-            "segment_count": reps,
-            "trotter_partition": error.partition,
-            "trotter_group_count": error.group_count,
-            "bound_value": error.error,
-            "bound_prefactor": error.prefactor,
-            "bound_method": error.method,
-            "bound_rigorous": error.rigorous,
-            "bound_scope": "implemented-product-formula",
-            "bound_target_satisfied": error.rigorous
-            and error.error
-            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
-            "circuit_bound_scope": "implemented-product-formula",
-            "circuit_bound_rigorous": error.rigorous,
-            "circuit_target_satisfied": error.rigorous
-            and error.error
-            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
-            "lcu_normalization": 1.0,
-            "amplitude_amplification": "none",
-            "amplitude_amplification_rounds": 0,
-            "good_subspace": "system register",
-            "nominal_success_probability": 1.0,
-        }
-    if isinstance(method, MultiproductMethod):
-        segments = parameters["mpf_segments"]
-        exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
-        coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
-        structure = mpf_lcu_structure(method.term_count, schedule=method.schedule)
-        coefficient_norm = float(np.sum(np.abs(coefficients)))
-        error = estimate_mpf_error(
-            hamiltonian,
-            evaluation.time,
-            segments,
-            method.term_count,
-            schedule=method.schedule,
-            method=method.error_method,
-            target_error=(
-                evaluation.target_error * (1 - evaluation.synthesis_error_fraction)
-                if method.error_method
-                == "mizuta2026-commutator-ideal-rigorous"
-                else None
-            ),
-        )
-        algorithm_budget = evaluation.target_error * (
-            1 - evaluation.synthesis_error_fraction
-        )
-        return {
-            "segment_count": segments,
-            "query_count": 3 * segments * sum(exponents),
-            "bound_value": error.error,
-            "bound_prefactor": error.prefactor,
-            "bound_method": error.method,
-            "bound_reference": error.reference,
-            "bound_theorem_or_equations": error.theorem_or_equations,
-            "bound_components_json": json.dumps(
-                dict(error.bound_components), sort_keys=True, separators=(",", ":")
-            ),
-            "bound_rigorous": error.rigorous,
-            "bound_scope": error.scope,
-            "bound_target_satisfied": error.rigorous
-            and error.error <= algorithm_budget,
-            "circuit_bound_scope": error.circuit_scope,
-            "circuit_bound_rigorous": error.circuit_rigorous,
-            "circuit_target_satisfied": False,
-            "hamiltonian_decomposition": error.hamiltonian_decomposition,
-            "bound_assumptions_json": json.dumps(
-                error.assumptions, separators=(",", ":")
-            ),
-            "bound_fallback_reason": error.fallback_reason,
-            "max_nested_commutator_order": error.max_nested_commutator_order,
-            "max_exact_nested_commutator_order": (
-                error.max_exact_nested_commutator_order
-            ),
-            "locality_compatible": error.locality_compatible,
-            "commutator_cap_fallback": error.fallback_reason is not None,
-            "commutator_bounds_json": json.dumps(
-                dict(error.commutator_bounds),
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            "mpf_schedule": method.schedule,
-            "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),
-            "mpf_coefficients_json": json.dumps(
-                coefficients.tolist(), separators=(",", ":")
-            ),
-            "mpf_coefficient_l1_norm": coefficient_norm,
-            "mpf_padding_weight": 2.0 - coefficient_norm,
-            "mpf_physical_branch_count": structure.physical_branch_count,
-            "mpf_negative_coefficient_count": structure.negative_coefficient_count,
-            "mpf_padding_branch_count": structure.padding_branch_count,
-            "mpf_sign_branch_count": structure.sign_branch_count,
-            "mpf_active_branch_count": structure.active_branch_count,
-            "mpf_unused_branch_state_count": structure.unused_branch_state_count,
-            "mpf_prepare_calls_per_segment": 6,
-            "mpf_select_calls_per_segment": 3,
-            "mpf_good_reflections_per_segment": 2,
-            "mpf_base_lcu_uses_per_segment": 3,
-            "lcu_normalization": 2.0,
-            "amplitude_amplification": "one robust OAA round per segment",
-            "amplitude_amplification_rounds": segments,
-            "good_subspace": "branch register all-zero",
-            "nominal_success_probability": None,
-        }
-    degree = parameters["qsvt_degree"]
-    queries = 0 if degree == 0 else 3 * ((degree - 1) + degree)
-    return {
-        "query_count": queries,
-        "qsvt_degree": degree,
-        "bound_value": evaluation.target_error
-        * (1 - evaluation.synthesis_error_fraction),
-        "bound_method": "jacobi-anger-truncation",
-        "bound_rigorous": True,
-        "bound_scope": "implemented-algorithm",
-        "bound_target_satisfied": True,
-        "circuit_bound_scope": "implemented-algorithm",
-        "circuit_bound_rigorous": True,
-        "circuit_target_satisfied": True,
-        "lcu_normalization": 2.0,
-        "amplitude_amplification": "one robust OAA round",
-        "amplitude_amplification_rounds": 1,
-        "good_subspace": "component, quadrature, and index registers all-zero",
-        "nominal_success_probability": 1.0,
-    }
-
-
 def _evaluate_method(
     hamiltonian: PauliHamiltonian,
     config: BenchmarkConfig,
     evolution_time: float,
     target_error: float,
     method: MethodSpec,
-) -> dict[str, Any]:
-    evaluation = _evaluation_config(config, evolution_time, target_error, method)
-    parameters = choose_parameters(hamiltonian, evaluation, method.family)
-    resource = estimate_resources_analytically(hamiltonian, evaluation, method.family)
-    result = _method_metadata(hamiltonian, evaluation, method, parameters)
+) -> EvaluationReport:
+    return estimate_resources(
+        hamiltonian,
+        method,
+        evolution_time,
+        target_error,
+        synthesis_error_fraction=config.synthesis_error_fraction,
+        trotter_partition=config.trotter_partition,
+    )
+
+
+def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
+    plan = report.plan
+    result = dict(report.error_metadata)
+    if isinstance(plan, TrotterPlan):
+        result.update(
+            segment_count=plan.repetitions,
+            trotter_partition=plan.resolved_partition,
+            trotter_group_count=len(plan.group_term_indices),
+            lcu_normalization=1.0,
+            amplitude_amplification="none",
+            amplitude_amplification_rounds=0,
+            good_subspace="system register",
+            nominal_success_probability=1.0,
+        )
+    elif isinstance(plan, MPFPlan):
+        error = plan.error_estimate
+        structure = plan.lcu_structure
+        per_segment = plan.logical_counts.as_dict()["per_segment"]
+        result.update(
+            segment_count=plan.segments,
+            query_count=plan.logical_counts.as_dict()["totals"]["controlled_s2"],
+            bound_components_json=json.dumps(
+                dict(error.bound_components), sort_keys=True, separators=(",", ":")
+            ),
+            bound_assumptions_json=json.dumps(error.assumptions, separators=(",", ":")),
+            commutator_cap_fallback=error.fallback_reason is not None,
+            commutator_bounds_json=json.dumps(
+                dict(error.commutator_bounds), sort_keys=True, separators=(",", ":")
+            ),
+            mpf_schedule=plan.method.schedule,
+            mpf_exponents_json=json.dumps(plan.exponents, separators=(",", ":")),
+            mpf_coefficients_json=json.dumps(plan.coefficients, separators=(",", ":")),
+            mpf_coefficient_l1_norm=structure.coefficient_l1_norm,
+            mpf_padding_weight=structure.padding_weight,
+            mpf_physical_branch_count=structure.physical_branch_count,
+            mpf_negative_coefficient_count=structure.negative_coefficient_count,
+            mpf_padding_branch_count=structure.padding_branch_count,
+            mpf_sign_branch_count=structure.sign_branch_count,
+            mpf_active_branch_count=structure.active_branch_count,
+            mpf_unused_branch_state_count=structure.unused_branch_state_count,
+            mpf_prepare_calls_per_segment=per_segment["prepare"],
+            mpf_select_calls_per_segment=per_segment["select"],
+            mpf_good_reflections_per_segment=per_segment["good_reflection"],
+            mpf_base_lcu_uses_per_segment=per_segment["select"],
+            lcu_normalization=2.0,
+            amplitude_amplification="one robust OAA round per segment",
+            amplitude_amplification_rounds=plan.segments,
+            good_subspace="branch register all-zero",
+            nominal_success_probability=None,
+        )
+    elif isinstance(plan, QSVTPlan):
+        result.update(
+            query_count=plan.logical_counts.as_dict()["totals"][
+                "block_encoding_query_slot"
+            ],
+            qsvt_degree=plan.degree,
+            lcu_normalization=2.0,
+            amplitude_amplification="one robust OAA round",
+            amplitude_amplification_rounds=plan.oaa_rounds,
+            good_subspace="component, quadrature, and index registers all-zero",
+            nominal_success_probability=1.0,
+        )
+    resource = report.resources
     result.update(
         total_qubits=resource.num_qubits,
         rotation_count=resource.rotation_count,
@@ -827,15 +618,14 @@ def run_benchmark(
                     hamiltonian_alpha=hamiltonian.alpha,
                     hamiltonian_term_count=hamiltonian.term_count,
                 )
-                record.update(
-                    _evaluate_method(
-                        hamiltonian,
-                        config,
-                        evolution_time,
-                        target_error,
-                        method,
-                    )
+                report = _evaluate_method(
+                    hamiltonian,
+                    config,
+                    evolution_time,
+                    target_error,
+                    method,
                 )
+                record.update(_report_metadata(report))
             except Exception as exc:
                 record.update(
                     status="error",

@@ -80,19 +80,31 @@ def _bessel_parity_tail_bound(abs_time: float, first_omitted_degree: int) -> flo
 
 
 def _jacobi_anger_polynomials(
-    alpha_time: float, tail_budget: float, scale: float
+    alpha_time: float,
+    tail_budget: float,
+    scale: float,
+    *,
+    truncation_order: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     """Return equally scaled Chebyshev coefficients for cosine and sine."""
     abs_time = abs(alpha_time)
-    truncation_order = 1
-    while True:
+    if truncation_order is None:
+        truncation_order = 1
+        while True:
+            cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
+            sine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
+            if cosine_bound <= tail_budget and sine_bound <= tail_budget:
+                break
+            truncation_order += 1
+            if truncation_order > 100_000:
+                raise RuntimeError("failed to find a Jacobi-Anger truncation order")
+    else:
+        if truncation_order < 1:
+            raise ValueError("truncation_order must be positive")
         cosine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 2)
         sine_bound = _bessel_parity_tail_bound(abs_time, 2 * truncation_order + 3)
-        if cosine_bound <= tail_budget and sine_bound <= tail_budget:
-            break
-        truncation_order += 1
-        if truncation_order > 100_000:
-            raise RuntimeError("failed to find a Jacobi-Anger truncation order")
+        if cosine_bound > tail_budget or sine_bound > tail_budget:
+            raise ValueError("fixed truncation_order does not meet the QSVT tail budget")
 
     cosine = np.zeros(2 * truncation_order + 1)
     cosine[0] = jv(0, alpha_time)
@@ -184,6 +196,8 @@ def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
 def synthesize_hamsim_phases(
     alpha_time: float,
     epsilon: float,
+    *,
+    truncation_order: int | None = None,
 ) -> HamiltonianSimulationPhases:
     """Synthesize a common-scale cosine/sine phase pair.
 
@@ -199,7 +213,10 @@ def synthesize_hamsim_phases(
     source_budget = epsilon / 18
     scale = 1.0 - source_budget
     cosine_poly, sine_poly, cosine_tail, sine_tail = _jacobi_anger_polynomials(
-        alpha_time, source_budget, scale
+        alpha_time,
+        source_budget,
+        scale,
+        truncation_order=truncation_order,
     )
     cosine, cosine_residual = _solve_symmetric_phases(cosine_poly, source_budget)
     sine, sine_residual = _solve_symmetric_phases(sine_poly, source_budget)
@@ -410,3 +427,20 @@ def build_hamiltonian_qsvt_circuit(
     if not amplitude_amplification:
         return base
     return _apply_three_step_oaa(base, hamiltonian.num_qubits)
+
+
+def build_hamiltonian_qsvt_circuit_from_plan(plan) -> QuantumCircuit:
+    """Compile QSVT phases at the fixed degree stored in a QSVT plan."""
+    from .planning import QSVTPlan
+
+    if not isinstance(plan, QSVTPlan):
+        raise TypeError("plan must be a QSVTPlan")
+    phases = synthesize_hamsim_phases(
+        plan.hamiltonian.alpha * plan.time,
+        plan.error_budget.algorithm_error,
+        truncation_order=plan.truncation_order,
+    )
+    if phases.cosine_degree != plan.cosine_degree or phases.sine_degree != plan.sine_degree:
+        raise RuntimeError("fixed-degree QSVT phase synthesis disagrees with the plan")
+    base = _build_hamiltonian_lcu_circuit(plan.hamiltonian, phases)
+    return _apply_three_step_oaa(base, plan.hamiltonian.num_qubits)

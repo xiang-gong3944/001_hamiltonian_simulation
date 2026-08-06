@@ -138,14 +138,14 @@ def test_cli_creates_a_new_run_directory_and_reports_failures(
         ),
         encoding="utf-8",
     )
-    original = suite.estimate_resources_analytically
+    original = suite.estimate_resources
 
-    def fail_qsvt(hamiltonian, evaluation, algorithm):
-        if algorithm == "qsvt":
+    def fail_qsvt(hamiltonian, method, time, target_error, **kwargs):
+        if method.family == "qsvt":
             raise RuntimeError("QSVT unavailable")
-        return original(hamiltonian, evaluation, algorithm)
+        return original(hamiltonian, method, time, target_error, **kwargs)
 
-    monkeypatch.setattr(suite, "estimate_resources_analytically", fail_qsvt)
+    monkeypatch.setattr(suite, "estimate_resources", fail_qsvt)
     status = benchmark_main(
         ["generate", "--config", str(job_path), "--sweep", "system-size"]
     )
