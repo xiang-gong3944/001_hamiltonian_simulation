@@ -4,12 +4,32 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
-from typing import Callable, Hashable, Iterator, Sequence, TypeVar
+from dataclasses import dataclass
+from typing import Callable, Hashable, Iterator, Literal, Sequence, TypeAlias, TypeVar
 
 
 _PARALLEL_WORK_THRESHOLD = 50_000
 _T = TypeVar("_T")
 _R = TypeVar("_R")
+
+
+@dataclass(frozen=True)
+class CommutatorProgress:
+    """One parent-process progress update from a commutator calculation."""
+
+    family: Literal["trotter", "multiproduct"]
+    phase: str
+    completed: int
+    total: int | None
+    commutator_order: int | None
+    max_commutator_order: int | None
+    formula_order: int
+    system_qubits: int
+    segment_candidate: int | None = None
+    target_error: float | None = None
+
+
+CommutatorProgressCallback: TypeAlias = Callable[[CommutatorProgress], None]
 
 
 def validate_workers(workers: int) -> int:
@@ -50,8 +70,13 @@ def cost_balanced_chunks(
 class CommutatorExecution:
     """Own one lazy process pool and computation-local result cache."""
 
-    def __init__(self, workers: int = 1) -> None:
+    def __init__(
+        self,
+        workers: int = 1,
+        progress: CommutatorProgressCallback | None = None,
+    ) -> None:
         self.workers = validate_workers(workers)
+        self.progress = progress
         self._pool: ProcessPoolExecutor | None = None
         self._cache: dict[Hashable, object] = {}
 
@@ -80,6 +105,10 @@ class CommutatorExecution:
             self._cache[key] = factory()
         return self._cache[key]  # type: ignore[return-value]
 
+    def report(self, event: CommutatorProgress) -> None:
+        if self.progress is not None:
+            self.progress(event)
+
     def map_chunks(
         self,
         function: Callable[[_T], _R],
@@ -103,6 +132,7 @@ class CommutatorExecution:
 def execution_scope(
     workers: int,
     execution: CommutatorExecution | None,
+    progress: CommutatorProgressCallback | None = None,
 ) -> Iterator[CommutatorExecution]:
     validate_workers(workers)
     if execution is not None:
@@ -110,5 +140,5 @@ def execution_scope(
             raise ValueError("workers must match the shared commutator execution")
         yield execution
         return
-    with CommutatorExecution(workers) as owned:
+    with CommutatorExecution(workers, progress) as owned:
         yield owned

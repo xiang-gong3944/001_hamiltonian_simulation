@@ -1,5 +1,6 @@
 """Hamiltonian-simulation circuit and resource-comparison toolkit."""
 
+from ._commutator_execution import CommutatorProgress
 from .analytical import ResourceModelProvenance
 from .benchmark_plotting import (
     CertificationPolicy,
@@ -101,6 +102,7 @@ __all__ = [
     "BenchmarkConfig",
     "BenchmarkJob",
     "BenchmarkProgress",
+    "CommutatorProgress",
     "CertificationPolicy",
     "CalibrationMetadata",
     "AssumptionRecord",

@@ -144,6 +144,12 @@ by the resulting binary-symplectic Pauli word. This computes the sum over
 ordered term sequences exactly up to upward floating-point rounding, without
 forming a dense Hamiltonian matrix.
 
+The recurrence is extended incrementally across the adaptive segment search,
+so nearby truncation orders reuse their exact prefix. Large state frontiers may
+be chunked across worker processes. Progress for this adaptive search reports
+the current segment candidate and completed orders or chunks without presenting
+an unknown final workload as a percentage.
+
 If the explicit transition cap is reached, remaining orders use the proven
 locality bound in Mizuta Eq. (8),
 

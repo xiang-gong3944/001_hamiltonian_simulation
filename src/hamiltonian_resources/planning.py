@@ -8,7 +8,11 @@ from typing import TypeAlias
 
 import numpy as np
 
-from ._commutator_execution import CommutatorExecution, execution_scope
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgressCallback,
+    execution_scope,
+)
 from .error_models import (
     AssumptionRecord,
     ErrorAnalysis,
@@ -978,10 +982,11 @@ def plan_simulation(
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
     workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
 ) -> SimulationPlan:
     """Select parameters once and return the complete logical algorithm plan."""
-    with execution_scope(workers, _execution) as execution:
+    with execution_scope(workers, _execution, progress) as execution:
         return _plan_simulation(
             hamiltonian,
             method,

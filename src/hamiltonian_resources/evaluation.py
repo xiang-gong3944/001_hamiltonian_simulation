@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
-from ._commutator_execution import CommutatorExecution
+from ._commutator_execution import CommutatorExecution, CommutatorProgressCallback
+from ._progress import TqdmProgressRenderer, combine_callbacks
 from .analytical import ResourceModelProvenance, compile_resources_analytically
 from .error_models import ErrorAnalysis, MetricObservation
 from .hamiltonians import PauliHamiltonian
@@ -89,19 +90,31 @@ def estimate_resources(
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
     workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    show_progress: bool = False,
     _execution: CommutatorExecution | None = None,
 ) -> EvaluationReport:
     """Select one logical algorithm plan and estimate its analytical resources."""
-    plan = plan_simulation(
-        hamiltonian,
-        method,
-        time,
-        target_error,
-        synthesis_error_fraction=synthesis_error_fraction,
-        trotter_partition=trotter_partition,
-        workers=workers,
-        _execution=_execution,
-    )
+    renderer = TqdmProgressRenderer() if show_progress else None
+    try:
+        callback = combine_callbacks(
+            progress,
+            renderer.commutator if renderer is not None else None,
+        )
+        plan = plan_simulation(
+            hamiltonian,
+            method,
+            time,
+            target_error,
+            synthesis_error_fraction=synthesis_error_fraction,
+            trotter_partition=trotter_partition,
+            workers=workers,
+            progress=callback,
+            _execution=_execution,
+        )
+    finally:
+        if renderer is not None:
+            renderer.close()
     return estimate_plan_resources(plan)
 
 

@@ -90,7 +90,7 @@ MPF `m=3,5,7`、QSVTを独立に評価します。system-size sweepでは局所�
 メモリ上のDataFrameとして返し、自動保存しません。
 
 ```powershell
-hamiltonian-benchmark generate --config benchmark_config.json --sweep all
+hamiltonian-benchmark generate --config benchmark_config.json --sweep all --progress
 ```
 
 生成とplotを続けて行う場合:
@@ -155,7 +155,7 @@ config = BenchmarkConfig(
     target_errors=np.logspace(-1, -3, 5),
     methods=[QSVTMethod()],
 )
-table = run_benchmark(config)
+table = run_benchmark(config, workers=1, show_progress=True)
 print(table[["sweep", "system_qubits", "evolution_time", "method_label", "t_count"]])
 ```
 

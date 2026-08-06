@@ -70,9 +70,17 @@ config = BenchmarkConfig(
     ],
 )
 
-data = run_benchmark(config)
+data = run_benchmark(config, workers=1, show_progress=True)
 figure = plot_benchmark(data, sweep="system-size", metric="t_count")
 ```
+
+Python and notebook calls remain serial unless `workers` is greater than one.
+`show_progress=True` displays a benchmark-point bar and reuses a transient inner
+display for expensive commutator work. Trotter stages have known chunk totals;
+adaptive Mizuta searches instead show completed updates and the current segment
+candidate without claiming a final percentage. Structured integrations can use
+the existing `progress` callback for benchmark rows and `commutator_progress`
+for `CommutatorProgress` events.
 
 `MultiproductMethod(m)` uses
 `error_method="mizuta2026-commutator-ideal-rigorous"` by default. The
@@ -113,10 +121,16 @@ stable model name. JSON jobs accept only the registered
 - `output`: CLI-only root directory, formats, and summary-plot default.
 
 ```powershell
-hamiltonian-benchmark generate --config benchmark_config.json --sweep all
+hamiltonian-benchmark generate --config benchmark_config.json --sweep all --progress
 hamiltonian-benchmark run --config benchmark_config.json --summary
 hamiltonian-benchmark plot --data benchmark_outputs/<run>/benchmark.csv --summary
 ```
+
+`generate` and `run` choose up to four commutator worker processes automatically.
+Use `--workers 1` for serial execution or `--workers N` for an explicit count.
+Progress is automatic on an interactive stderr stream and can be forced or
+disabled with `--progress` or `--no-progress`. Progress never uses stdout, so it
+does not contaminate machine-readable output.
 
 `generate` and `run` create
 `<UTC timestamp>_<config digest>_<run id>/benchmark.csv` and `metadata.json`

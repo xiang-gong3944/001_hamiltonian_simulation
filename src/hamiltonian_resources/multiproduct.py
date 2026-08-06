@@ -18,7 +18,12 @@ import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
 
-from ._commutator_execution import CommutatorExecution, execution_scope, validate_workers
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgress,
+    CommutatorProgressCallback,
+    execution_scope,
+)
 from .circuit_utils import (
     build_three_step_oaa,
     index_state_phase_gate,
@@ -417,11 +422,29 @@ def _mizuta_ideal_mpf_bound(
         raise OverflowError("Mizuta auxiliary error underflowed float range")
     truncation_order = math.ceil(math.log(3 * hamiltonian.num_qubits / auxiliary_error))
     truncation_order = max(base_order + 1, truncation_order)
+    if execution is not None:
+        execution.report(
+            CommutatorProgress(
+                family="multiproduct",
+                phase="segment-candidate",
+                completed=0,
+                total=None,
+                commutator_order=truncation_order,
+                max_commutator_order=truncation_order,
+                formula_order=formal_order,
+                system_qubits=hamiltonian.num_qubits,
+                segment_candidate=segments,
+                target_error=target_error,
+            )
+        )
     commutators = pauli_nested_commutator_bounds(
         hamiltonian,
         truncation_order,
         workers=execution.workers if execution is not None else 1,
         _execution=execution,
+        _formula_order=formal_order,
+        _segment_candidate=segments,
+        _target_error=target_error,
     )
 
     if all(value == 0 for value in commutators.values):
@@ -517,7 +540,7 @@ def _normalize_mpf_error_method(method: MPFErrorMethod) -> MPFErrorMethod:
     return method
 
 
-def estimate_mpf_error(
+def _estimate_mpf_error(
     hamiltonian: PauliHamiltonian,
     time: float,
     segments: int,
@@ -526,13 +549,9 @@ def estimate_mpf_error(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     target_error: float | None = None,
-    workers: int = 1,
-    _execution: CommutatorExecution | None = None,
+    execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
     """Estimate ideal-MPF error while preserving certification provenance."""
-    validate_workers(workers)
-    if _execution is not None and workers != _execution.workers:
-        raise ValueError("workers must match the shared commutator execution")
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
     if segments < 1:
@@ -602,7 +621,7 @@ def estimate_mpf_error(
             coefficient_l1_norm,
             exponents,
             target_error,
-            _execution,
+            execution,
         )
         reference = "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
         theorem_or_equations = "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
@@ -646,6 +665,33 @@ def estimate_mpf_error(
             else ()
         ),
     )
+
+
+def estimate_mpf_error(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    segments: int,
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    target_error: float | None = None,
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
+) -> MPFErrorEstimate:
+    """Estimate ideal-MPF error while preserving certification provenance."""
+    with execution_scope(workers, _execution, progress) as execution:
+        return _estimate_mpf_error(
+            hamiltonian,
+            time,
+            segments,
+            m,
+            schedule=schedule,
+            method=method,
+            target_error=target_error,
+            execution=execution,
+        )
 
 
 def _select_mpf_segments(
@@ -794,10 +840,11 @@ def select_mpf_segments(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
 ) -> MPFErrorEstimate:
     """Select the smallest segment count satisfying the requested bound."""
-    with execution_scope(workers, _execution) as execution:
+    with execution_scope(workers, _execution, progress) as execution:
         return _select_mpf_segments(
             hamiltonian,
             time,

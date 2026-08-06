@@ -17,7 +17,11 @@ from typing import Any, Callable, Literal, Mapping, Sequence, TypeAlias
 import numpy as np
 import pandas as pd
 
-from ._commutator_execution import CommutatorExecution
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgressCallback,
+)
+from ._progress import TqdmProgressRenderer, combine_callbacks
 from .evaluation import EvaluationReport, estimate_resources
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .method_specs import (
@@ -675,15 +679,30 @@ def run_benchmark(
     progress: ProgressCallback | None = None,
     *,
     workers: int = 1,
+    commutator_progress: CommutatorProgressCallback | None = None,
+    show_progress: bool = False,
 ) -> pd.DataFrame:
     """Run analytical sweeps in memory without writing files."""
-    with CommutatorExecution(workers) as execution:
-        return _run_benchmark(
-            config,
-            sweeps=sweeps,
-            progress=progress,
-            execution=execution,
+    renderer = TqdmProgressRenderer() if show_progress else None
+    try:
+        outer_callback = combine_callbacks(
+            progress,
+            renderer.benchmark if renderer is not None else None,
         )
+        inner_callback = combine_callbacks(
+            commutator_progress,
+            renderer.commutator if renderer is not None else None,
+        )
+        with CommutatorExecution(workers, inner_callback) as execution:
+            return _run_benchmark(
+                config,
+                sweeps=sweeps,
+                progress=outer_callback,
+                execution=execution,
+            )
+    finally:
+        if renderer is not None:
+            renderer.close()
 
 
 def validate_benchmark_frame(frame: pd.DataFrame) -> None:

@@ -17,6 +17,7 @@ from hamiltonian_resources import (
     save_benchmark_plots,
 )
 from hamiltonian_resources.benchmark_cli import main as benchmark_main
+from hamiltonian_resources.benchmark_cli import _worker_count
 
 
 @pytest.fixture
@@ -48,6 +49,15 @@ def test_default_job_uses_proportional_time_and_resolves_output_root():
     assert job.benchmark.system_sizes == [2, 4, 6, 8, 10, 12]
     assert job.output_root == path.parent / "benchmark_outputs"
     assert job.output_formats == ["png", "pdf"]
+
+
+def test_cli_worker_selection_is_capped_and_validated(monkeypatch):
+    monkeypatch.setattr("hamiltonian_resources.benchmark_cli.os.cpu_count", lambda: 20)
+
+    assert _worker_count(0) == 4
+    assert _worker_count(2) == 2
+    with pytest.raises(ValueError, match="workers"):
+        _worker_count(-1)
 
 
 def test_python_run_is_in_memory_and_explicit_save_is_collision_free(

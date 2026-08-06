@@ -17,6 +17,8 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit.synthesis import LieTrotter, SuzukiTrotter
 
 from ._commutator_execution import (
+    CommutatorProgress,
+    CommutatorProgressCallback,
     CommutatorExecution,
     cost_balanced_chunks,
     execution_scope,
@@ -233,6 +235,10 @@ class _PauliCommutatorRecurrence:
         self,
         max_order: int,
         execution: CommutatorExecution,
+        *,
+        formula_order: int,
+        segment_candidate: int | None,
+        target_error: float | None,
     ) -> PauliNestedCommutatorBounds:
         with self._lock:
             while len(self.values) < max_order - 1:
@@ -241,6 +247,20 @@ class _PauliCommutatorRecurrence:
                     self.values.append(0.0)
                     self.state_counts.append(0)
                     self.max_exact_order = order
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="exact-zero",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
                     continue
 
                 transition_count = len(self.current) * len(self.encoded_terms)
@@ -260,6 +280,20 @@ class _PauliCommutatorRecurrence:
                         )
                     )
                     self.state_counts.append(len(self.current))
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="locality-fallback",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
                     continue
 
                 following: dict[tuple[int, int], float] = {}
@@ -274,7 +308,7 @@ class _PauliCommutatorRecurrence:
                         execution.workers,
                     )
                     partials = execution.map_chunks(_pauli_recurrence_chunk, chunks)
-                    for partial in partials:
+                    for completed, partial in enumerate(partials, start=1):
                         for result, contribution in partial.items():
                             following[result] = float(
                                 np.nextafter(
@@ -282,8 +316,36 @@ class _PauliCommutatorRecurrence:
                                     np.inf,
                                 )
                             )
+                        execution.report(
+                            CommutatorProgress(
+                                family="multiproduct",
+                                phase="recurrence-chunk",
+                                completed=completed,
+                                total=None,
+                                commutator_order=order,
+                                max_commutator_order=max_order,
+                                formula_order=formula_order,
+                                system_qubits=self.hamiltonian.num_qubits,
+                                segment_candidate=segment_candidate,
+                                target_error=target_error,
+                            )
+                        )
                 else:
                     following = _pauli_recurrence_chunk(items)
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="recurrence-order",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
                 self.current = following
                 value = math.fsum(following.values())
                 self.values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
@@ -367,7 +429,11 @@ def pauli_nested_commutator_bounds(
     *,
     transition_cap: int = _MAX_EXACT_PAULI_COMMUTATOR_TRANSITIONS,
     workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
+    _formula_order: int = 0,
+    _segment_candidate: int | None = None,
+    _target_error: float | None = None,
 ) -> PauliNestedCommutatorBounds:
     """Return rigorous ``alpha_com,q`` bounds through ``max_order``.
 
@@ -383,10 +449,13 @@ def pauli_nested_commutator_bounds(
         raise TypeError("transition_cap must be an integer")
     if transition_cap < 1:
         raise ValueError("transition_cap must be positive")
-    with execution_scope(workers, _execution) as execution:
+    with execution_scope(workers, _execution, progress) as execution:
         return _pauli_commutator_recurrence(hamiltonian, transition_cap).through(
             max_order,
             execution,
+            formula_order=_formula_order,
+            segment_candidate=_segment_candidate,
+            target_error=_target_error,
         )
 
 
@@ -703,6 +772,7 @@ def _nested_commutator_basis(
     groups: tuple[SparsePauliOp, ...],
     order: int,
     execution: CommutatorExecution | None = None,
+    system_qubits: int = 0,
 ) -> dict[tuple[tuple[int, ...], int], SparsePauliOp]:
     """Return the nonzero depth-``order`` ad-word frontier."""
     frontier = {((), base): group for base, group in enumerate(groups)}
@@ -714,18 +784,30 @@ def _nested_commutator_basis(
             for outer, group in enumerate(groups)
         )
         work = sum(int(operator.size) * int(group.size) for _, _, operator, _, group in items)
-        if execution is not None and execution.should_parallelize(
-            work,
-            len(items),
-            threshold=_TROTTER_PARALLEL_WORK_THRESHOLD,
-        ):
+        expensive = work >= _TROTTER_PARALLEL_WORK_THRESHOLD
+        if execution is not None and expensive:
             chunks = cost_balanced_chunks(
                 items,
                 [int(operator.size) * int(group.size) for _, _, operator, _, group in items],
                 execution.workers,
             )
-            for partial in execution.map_chunks(_trotter_frontier_chunk, chunks):
+            for completed, partial in enumerate(
+                execution.map_chunks(_trotter_frontier_chunk, chunks),
+                start=1,
+            ):
                 following.update(partial)
+                execution.report(
+                    CommutatorProgress(
+                        family="trotter",
+                        phase="basis-frontier",
+                        completed=completed,
+                        total=len(chunks),
+                        commutator_order=depth,
+                        max_commutator_order=order,
+                        formula_order=order,
+                        system_qubits=system_qubits,
+                    )
+                )
         else:
             following.update(_trotter_frontier_chunk(items))
         frontier = following
@@ -795,13 +877,19 @@ def _higher_order_commutator_prefactor(
     groups: tuple[SparsePauliOp, ...],
     order: Literal[4, 6],
     execution: CommutatorExecution | None = None,
+    system_qubits: int = 0,
 ) -> float:
     """Evaluate Schubert--Mendl Theorem 1 using Pauli 1-norms."""
     factors = _suzuki_group_factors(len(groups), order, merge_adjacent=True)
     if len(factors) == 1:
         return 0.0
     entries = _theorem_word_weights(factors, order)
-    basis = _nested_commutator_basis(groups, order, execution)
+    basis = _nested_commutator_basis(
+        groups,
+        order,
+        execution,
+        system_qubits,
+    )
 
     contributions: defaultdict[tuple[int, ...], list[tuple[tuple[float, ...], float]]] = (
         defaultdict(list)
@@ -824,11 +912,8 @@ def _higher_order_commutator_prefactor(
         * max(1, len(weighted_prefixes))
         for _, weighted_prefixes, operators in items
     )
-    if execution is not None and execution.should_parallelize(
-        work,
-        len(items),
-        threshold=_TROTTER_PARALLEL_WORK_THRESHOLD,
-    ):
+    expensive = work >= _TROTTER_PARALLEL_WORK_THRESHOLD
+    if execution is not None and expensive:
         chunks = cost_balanced_chunks(
             items,
             [
@@ -839,7 +924,21 @@ def _higher_order_commutator_prefactor(
             execution.workers,
         )
         partials = execution.map_chunks(_trotter_contribution_chunk, chunks)
-        ordered = [value for partial in partials for _, value in partial]
+        ordered = []
+        for completed, partial in enumerate(partials, start=1):
+            ordered.extend(value for _, value in partial)
+            execution.report(
+                CommutatorProgress(
+                    family="trotter",
+                    phase="theorem-reduction",
+                    completed=completed,
+                    total=len(chunks),
+                    commutator_order=order,
+                    max_commutator_order=order,
+                    formula_order=order,
+                    system_qubits=system_qubits,
+                )
+            )
     else:
         ordered = [value for _, value in _trotter_contribution_chunk(items)]
     total = math.fsum(ordered)
@@ -878,6 +977,7 @@ def _compute_suzuki_error_prefactor(
             specification.groups,
             order,
             execution,
+            hamiltonian.num_qubits,
         )
         return _SuzukiPrefactor(
             value,
@@ -910,7 +1010,7 @@ def _suzuki_error_prefactor(
     partition: TrotterPartition = "auto",
     execution: CommutatorExecution | None = None,
 ) -> _SuzukiPrefactor:
-    if execution is None or execution.workers == 1:
+    if execution is None or (execution.workers == 1 and execution.progress is None):
         return _serial_suzuki_error_prefactor(hamiltonian, order, partition)
     return execution.cached(
         ("suzuki-prefactor", hamiltonian, order, partition),
@@ -931,6 +1031,7 @@ def estimate_suzuki_error(
     *,
     partition: TrotterPartition = "auto",
     workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
 ) -> SuzukiErrorEstimate:
     """Estimate the operator-norm error of a partitioned Suzuki formula.
@@ -944,7 +1045,7 @@ def estimate_suzuki_error(
         raise ValueError("reps must be positive")
     if not np.isfinite(time):
         raise ValueError("time must be finite")
-    with execution_scope(workers, _execution) as execution:
+    with execution_scope(workers, _execution, progress) as execution:
         prefactor = _suzuki_error_prefactor(
             hamiltonian,
             order,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -10,7 +11,6 @@ from typing import Sequence
 from .benchmark_plotting import save_benchmark_plots
 from .benchmark_suite import (
     BenchmarkJob,
-    BenchmarkProgress,
     BenchmarkSweep,
     load_benchmark,
     load_benchmark_job,
@@ -41,6 +41,19 @@ def _add_plot_options(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(summary=None)
 
 
+def _add_execution_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="commutator worker processes; 0 selects up to four automatically",
+    )
+    progress = parser.add_mutually_exclusive_group()
+    progress.add_argument("--progress", action="store_true", dest="show_progress")
+    progress.add_argument("--no-progress", action="store_false", dest="show_progress")
+    parser.set_defaults(show_progress=None)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="hamiltonian-benchmark",
@@ -52,6 +65,7 @@ def _build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--config", default="benchmark_config.json")
     generate.add_argument("--output-root", type=Path)
     _add_sweep_argument(generate)
+    _add_execution_options(generate)
 
     plot = subparsers.add_parser("plot", help="plot a schema-2 benchmark CSV")
     plot.add_argument("--data", type=Path, required=True)
@@ -63,14 +77,16 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output-root", type=Path)
     _add_sweep_argument(run)
     _add_plot_options(run)
+    _add_execution_options(run)
     return parser
 
 
-def _print_progress(event: BenchmarkProgress) -> None:
-    print(
-        f"[{event.completed}/{event.total}] {event.sweep} n={event.system_qubits} "
-        f"epsilon={event.target_error:g} {event.method_id}: {event.status}"
-    )
+def _worker_count(requested: int) -> int:
+    if requested < 0:
+        raise ValueError("workers must be nonnegative; use 0 for automatic selection")
+    if requested:
+        return requested
+    return min(4, max(1, (os.cpu_count() or 1) - 1))
 
 
 def _run_and_save(
@@ -78,12 +94,17 @@ def _run_and_save(
     *,
     sweeps: tuple[BenchmarkSweep, ...],
     output_root: Path | None,
+    workers: int,
+    show_progress: bool,
 ):
-    frame = run_benchmark(job.benchmark, sweeps=sweeps, progress=_print_progress)
-    root = output_root.resolve() if output_root is not None else job.output_root
-    run_directory, csv_path, metadata_path = save_benchmark(
-        frame, job.benchmark, output_root=root
+    frame = run_benchmark(
+        job.benchmark,
+        sweeps=sweeps,
+        workers=workers,
+        show_progress=show_progress,
     )
+    root = output_root.resolve() if output_root is not None else job.output_root
+    run_directory, csv_path, metadata_path = save_benchmark(frame, job.benchmark, output_root=root)
     print(f"wrote {csv_path}")
     print(f"wrote {metadata_path}")
     failures = int((frame["status"] == "error").sum())
@@ -112,12 +133,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             job,
             sweeps=_sweeps(args.sweep),
             output_root=args.output_root,
+            workers=_worker_count(args.workers),
+            show_progress=(
+                sys.stderr.isatty() if args.show_progress is None else args.show_progress
+            ),
         )
         if args.command == "run":
             formats = args.formats or job.output_formats
-            summary = (
-                job.generate_summary_plots if args.summary is None else args.summary
-            )
+            summary = job.generate_summary_plots if args.summary is None else args.summary
             outputs = save_benchmark_plots(
                 frame,
                 output_directory=run_directory,

@@ -20,6 +20,7 @@ dependencies = [
   "ipykernel>=6.29,<7",
   "nbconvert>=7.16,<8",
   "nbformat>=5.10,<6",
+  "tqdm>=4.66,<5",
 ]
 
 [project.optional-dependencies]

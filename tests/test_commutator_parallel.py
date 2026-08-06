@@ -7,6 +7,7 @@ from hamiltonian_resources import (
     estimate_suzuki_error,
     pauli_nested_commutator_bounds,
     run_benchmark,
+    select_mpf_segments,
     transverse_field_ising,
 )
 
@@ -79,3 +80,61 @@ def test_parallel_benchmark_preserves_row_and_callback_order():
 
     assert frame["method_id"].tolist() == ["qsvt", "trotter-p4"]
     assert [event.method_id for event in events] == ["qsvt", "trotter-p4"]
+
+
+def test_trotter_progress_reports_known_chunk_totals(monkeypatch):
+    import hamiltonian_resources.trotter as trotter
+
+    monkeypatch.setattr(trotter, "_TROTTER_PARALLEL_WORK_THRESHOLD", 1)
+    events = []
+
+    estimate_suzuki_error(
+        transverse_field_ising(4, field=0.7),
+        0.2,
+        order=6,
+        progress=events.append,
+    )
+
+    assert events
+    assert all(event.family == "trotter" for event in events)
+    assert all(event.total is not None for event in events)
+    for key in {(event.phase, event.commutator_order) for event in events}:
+        completed = [
+            event.completed for event in events if (event.phase, event.commutator_order) == key
+        ]
+        assert completed == sorted(completed)
+
+
+def test_adaptive_mpf_progress_never_invents_a_total():
+    events = []
+    target_error = 1e-3
+
+    select_mpf_segments(
+        transverse_field_ising(3, field=0.7),
+        0.01,
+        target_error,
+        2,
+        method="mizuta2026-commutator-ideal-rigorous",
+        progress=events.append,
+    )
+
+    assert events
+    assert all(event.family == "multiproduct" for event in events)
+    assert all(event.total is None for event in events)
+    assert all(event.system_qubits == 3 for event in events)
+    assert all(event.target_error == target_error for event in events)
+    candidates = [event.segment_candidate for event in events if event.phase == "segment-candidate"]
+    assert candidates
+    assert all(candidate is not None and candidate > 0 for candidate in candidates)
+
+
+def test_tqdm_progress_is_rendered_to_stderr_only(capsys):
+    run_benchmark(
+        BenchmarkConfig(system_sizes=[2], methods=[QSVTMethod()]),
+        sweeps="system-size",
+        show_progress=True,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "benchmark" in captured.err
