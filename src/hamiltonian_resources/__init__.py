@@ -1,6 +1,7 @@
 """Hamiltonian-simulation circuit and resource-comparison toolkit."""
 
 from .benchmark_plotting import (
+    CertificationPolicy,
     FAMILY_COLORS,
     plot_benchmark,
     save_benchmark_plots,
@@ -26,10 +27,17 @@ from .benchmark_suite import (
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .multiproduct import (
+    MPFErrorEstimate,
+    MPFErrorMethod,
+    MPFErrorScope,
+    MPFLCUStructure,
     MPFSchedule,
     build_multiproduct_circuit,
+    estimate_mpf_error,
+    mpf_lcu_structure,
     multiproduct_coefficients,
     optimal_mpf_exponents,
+    select_mpf_segments,
 )
 from .qsvt import (
     HamiltonianSimulationPhases,
@@ -40,10 +48,12 @@ from .qsvt import (
 from .resources import ResourceEstimate, count_circuit_resources
 from .simulation import compare_with_exact
 from .trotter import (
+    PauliNestedCommutatorBounds,
     SuzukiErrorEstimate,
     TrotterPartition,
     build_trotter_circuit,
     estimate_suzuki_error,
+    pauli_nested_commutator_bounds,
     suzuki_commutator_bounds,
 )
 
@@ -52,11 +62,17 @@ __all__ = [
     "BenchmarkConfig",
     "BenchmarkJob",
     "BenchmarkProgress",
+    "CertificationPolicy",
     "FAMILY_COLORS",
     "HamiltonianSimulationPhases",
     "HamiltonianSpec",
+    "MPFErrorEstimate",
+    "MPFErrorMethod",
+    "MPFErrorScope",
+    "MPFLCUStructure",
     "MPFSchedule",
     "MultiproductMethod",
+    "PauliNestedCommutatorBounds",
     "PauliHamiltonian",
     "QSVTMethod",
     "ResourceEstimate",
@@ -72,16 +88,20 @@ __all__ = [
     "count_circuit_resources",
     "default_methods",
     "estimate_qsvt_degree",
+    "estimate_mpf_error",
     "estimate_suzuki_error",
     "heisenberg_chain",
     "load_benchmark",
     "load_benchmark_job",
     "multiproduct_coefficients",
+    "mpf_lcu_structure",
     "optimal_mpf_exponents",
+    "pauli_nested_commutator_bounds",
     "plot_benchmark",
     "run_benchmark",
     "save_benchmark",
     "save_benchmark_plots",
+    "select_mpf_segments",
     "select_best_by_family",
     "suzuki_commutator_bounds",
     "synthesize_hamsim_phases",

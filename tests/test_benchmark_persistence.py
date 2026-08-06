@@ -64,7 +64,22 @@ def test_python_run_is_in_memory_and_explicit_save_is_collision_free(
     assert first_directory != second_directory
     assert first_csv.name == "benchmark.csv"
     assert first_metadata.name == "metadata.json"
-    assert load_benchmark(first_csv)["method_id"].tolist() == first["method_id"].tolist()
+    loaded = load_benchmark(first_csv)
+    metadata = json.loads(first_metadata.read_text(encoding="utf-8"))
+    mpf_config = next(
+        method
+        for method in metadata["configuration"]["methods"]
+        if method["family"] == "multiproduct"
+    )
+
+    assert loaded["method_id"].tolist() == first["method_id"].tolist()
+    assert {
+        "bound_method",
+        "bound_rigorous",
+        "bound_scope",
+        "circuit_bound_rigorous",
+    } <= set(metadata["columns"])
+    assert mpf_config["error_method"] == "low2019-l1-ideal-rigorous"
 
 
 def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):
@@ -72,6 +87,29 @@ def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):
     benchmark_frame.to_csv(csv_path, index=False)
     loaded = load_benchmark(csv_path)
     assert len(loaded) == len(benchmark_frame)
+
+
+def test_load_benchmark_upgrades_early_schema2_scope_columns(
+    tmp_path, benchmark_frame
+):
+    extension_columns = [
+        "bound_scope",
+        "bound_target_satisfied",
+        "circuit_bound_scope",
+        "circuit_bound_rigorous",
+        "circuit_target_satisfied",
+    ]
+    legacy = benchmark_frame.drop(columns=extension_columns)
+    csv_path = tmp_path / "early-schema2.csv"
+    legacy.to_csv(csv_path, index=False)
+
+    loaded = load_benchmark(csv_path)
+    mpf = loaded[loaded["method_family"] == "multiproduct"].iloc[0]
+
+    assert set(extension_columns) <= set(loaded.columns)
+    assert mpf["bound_scope"] == "ideal-mpf"
+    assert mpf["circuit_bound_scope"] == "amplified-shared-ancilla"
+    assert not bool(mpf["circuit_bound_rigorous"])
 
 
 def test_save_standard_plots(tmp_path, benchmark_frame):

@@ -23,8 +23,14 @@ from .benchmark import (
     estimate_resources_analytically,
 )
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
-from .multiproduct import multiproduct_coefficients, optimal_mpf_exponents
-from .trotter import estimate_suzuki_error, suzuki_commutator_bounds
+from .multiproduct import (
+    MPFErrorMethod,
+    estimate_mpf_error,
+    mpf_lcu_structure,
+    multiproduct_coefficients,
+    optimal_mpf_exponents,
+)
+from .trotter import estimate_suzuki_error
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
@@ -61,13 +67,39 @@ BENCHMARK_COLUMNS = (
     "bound_value",
     "bound_prefactor",
     "bound_method",
+    "bound_reference",
+    "bound_theorem_or_equations",
+    "bound_components_json",
     "bound_rigorous",
+    "bound_scope",
+    "bound_target_satisfied",
+    "hamiltonian_decomposition",
+    "bound_assumptions_json",
+    "bound_fallback_reason",
+    "max_nested_commutator_order",
+    "max_exact_nested_commutator_order",
+    "locality_compatible",
+    "commutator_cap_fallback",
+    "commutator_bounds_json",
+    "circuit_bound_scope",
+    "circuit_bound_rigorous",
+    "circuit_target_satisfied",
     "algorithm_error_budget",
     "mpf_schedule",
     "mpf_exponents_json",
     "mpf_coefficients_json",
     "mpf_coefficient_l1_norm",
     "mpf_padding_weight",
+    "mpf_physical_branch_count",
+    "mpf_negative_coefficient_count",
+    "mpf_padding_branch_count",
+    "mpf_sign_branch_count",
+    "mpf_active_branch_count",
+    "mpf_unused_branch_state_count",
+    "mpf_prepare_calls_per_segment",
+    "mpf_select_calls_per_segment",
+    "mpf_good_reflections_per_segment",
+    "mpf_base_lcu_uses_per_segment",
     "lcu_normalization",
     "amplitude_amplification",
     "amplitude_amplification_rounds",
@@ -89,6 +121,38 @@ BENCHMARK_COLUMNS = (
     "status",
     "error_type",
     "error_message",
+)
+
+_SCHEMA2_EXTENSION_COLUMNS = {
+    "bound_reference",
+    "bound_theorem_or_equations",
+    "bound_components_json",
+    "bound_scope",
+    "bound_target_satisfied",
+    "hamiltonian_decomposition",
+    "bound_assumptions_json",
+    "bound_fallback_reason",
+    "max_nested_commutator_order",
+    "max_exact_nested_commutator_order",
+    "locality_compatible",
+    "commutator_cap_fallback",
+    "commutator_bounds_json",
+    "mpf_physical_branch_count",
+    "mpf_negative_coefficient_count",
+    "mpf_padding_branch_count",
+    "mpf_sign_branch_count",
+    "mpf_active_branch_count",
+    "mpf_unused_branch_state_count",
+    "mpf_prepare_calls_per_segment",
+    "mpf_select_calls_per_segment",
+    "mpf_good_reflections_per_segment",
+    "mpf_base_lcu_uses_per_segment",
+    "circuit_bound_scope",
+    "circuit_bound_rigorous",
+    "circuit_target_satisfied",
+}
+_SCHEMA2_REQUIRED_COLUMNS = tuple(
+    column for column in BENCHMARK_COLUMNS if column not in _SCHEMA2_EXTENSION_COLUMNS
 )
 
 _MODEL_PARAMETERS = {
@@ -199,6 +263,7 @@ class TrotterMethod:
 class MultiproductMethod:
     term_count: int
     schedule: Literal["new", "legacy"] = "new"
+    error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
 
     @property
     def family(self) -> str:
@@ -207,23 +272,44 @@ class MultiproductMethod:
     @property
     def method_id(self) -> str:
         suffix = "" if self.schedule == "new" else f"-{self.schedule}"
+        if self.error_method not in (
+            "low2019-l1-ideal-rigorous",
+            "low-rigorous",
+        ):
+            suffix += f"-{self.error_method}"
         return f"mpf-m{self.term_count}{suffix}"
 
     @property
     def label(self) -> str:
         suffix = "" if self.schedule == "new" else f" ({self.schedule})"
+        if self.error_method == "legacy-w2-proxy":
+            suffix += " [legacy W2 heuristic]"
+        elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
+            suffix += " [Mizuta 2026 commutator]"
         return f"MPF m={self.term_count}{suffix}"
 
     def validate(self) -> None:
         if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
             raise ValueError("MPF term count must be an integer")
         optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+        if self.error_method not in (
+            "low2019-l1-ideal-rigorous",
+            "mizuta2026-commutator-ideal-rigorous",
+            "low-rigorous",
+            "legacy-w2-proxy",
+        ):
+            raise ValueError(
+                "MPF error method must be 'low2019-l1-ideal-rigorous' "
+                "(historical alias 'low-rigorous'), "
+                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+            )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "family": self.family,
             "term_count": int(self.term_count),
             "schedule": self.schedule,
+            "error_method": self.error_method,
         }
 
 
@@ -446,6 +532,11 @@ def _evaluation_config(
         trotter_partition=config.trotter_partition,
         mpf_m=method.term_count if isinstance(method, MultiproductMethod) else 3,
         mpf_schedule=method.schedule if isinstance(method, MultiproductMethod) else "new",
+        mpf_error_method=(
+            method.error_method
+            if isinstance(method, MultiproductMethod)
+            else "low2019-l1-ideal-rigorous"
+        ),
     )
 
 
@@ -472,6 +563,15 @@ def _method_metadata(
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
             "bound_rigorous": error.rigorous,
+            "bound_scope": "implemented-product-formula",
+            "bound_target_satisfied": error.rigorous
+            and error.error
+            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
+            "circuit_bound_scope": "implemented-product-formula",
+            "circuit_bound_rigorous": error.rigorous,
+            "circuit_target_satisfied": error.rigorous
+            and error.error
+            <= evaluation.target_error * (1 - evaluation.synthesis_error_fraction),
             "lcu_normalization": 1.0,
             "amplitude_amplification": "none",
             "amplitude_amplification_rounds": 0,
@@ -482,21 +582,59 @@ def _method_metadata(
         segments = parameters["mpf_segments"]
         exponents = optimal_mpf_exponents(method.term_count, schedule=method.schedule)
         coefficients = multiproduct_coefficients(method.term_count, schedule=method.schedule)
+        structure = mpf_lcu_structure(method.term_count, schedule=method.schedule)
         coefficient_norm = float(np.sum(np.abs(coefficients)))
-        _, w2 = suzuki_commutator_bounds(hamiltonian)
-        alpha_effective = min(hamiltonian.alpha, w2 ** (1 / 3))
-        formal_order = 2 * method.term_count
-        proxy = (
-            (alpha_effective * evaluation.time) ** (formal_order + 1)
-            / segments**formal_order
+        error = estimate_mpf_error(
+            hamiltonian,
+            evaluation.time,
+            segments,
+            method.term_count,
+            schedule=method.schedule,
+            method=method.error_method,
+            target_error=(
+                evaluation.target_error * (1 - evaluation.synthesis_error_fraction)
+                if method.error_method
+                == "mizuta2026-commutator-ideal-rigorous"
+                else None
+            ),
+        )
+        algorithm_budget = evaluation.target_error * (
+            1 - evaluation.synthesis_error_fraction
         )
         return {
             "segment_count": segments,
             "query_count": 3 * segments * sum(exponents),
-            "bound_value": proxy,
-            "bound_prefactor": alpha_effective ** (formal_order + 1),
-            "bound_method": "commutator-calibrated-mpf-proxy",
-            "bound_rigorous": False,
+            "bound_value": error.error,
+            "bound_prefactor": error.prefactor,
+            "bound_method": error.method,
+            "bound_reference": error.reference,
+            "bound_theorem_or_equations": error.theorem_or_equations,
+            "bound_components_json": json.dumps(
+                dict(error.bound_components), sort_keys=True, separators=(",", ":")
+            ),
+            "bound_rigorous": error.rigorous,
+            "bound_scope": error.scope,
+            "bound_target_satisfied": error.rigorous
+            and error.error <= algorithm_budget,
+            "circuit_bound_scope": error.circuit_scope,
+            "circuit_bound_rigorous": error.circuit_rigorous,
+            "circuit_target_satisfied": False,
+            "hamiltonian_decomposition": error.hamiltonian_decomposition,
+            "bound_assumptions_json": json.dumps(
+                error.assumptions, separators=(",", ":")
+            ),
+            "bound_fallback_reason": error.fallback_reason,
+            "max_nested_commutator_order": error.max_nested_commutator_order,
+            "max_exact_nested_commutator_order": (
+                error.max_exact_nested_commutator_order
+            ),
+            "locality_compatible": error.locality_compatible,
+            "commutator_cap_fallback": error.fallback_reason is not None,
+            "commutator_bounds_json": json.dumps(
+                dict(error.commutator_bounds),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
             "mpf_schedule": method.schedule,
             "mpf_exponents_json": json.dumps(exponents, separators=(",", ":")),
             "mpf_coefficients_json": json.dumps(
@@ -504,11 +642,21 @@ def _method_metadata(
             ),
             "mpf_coefficient_l1_norm": coefficient_norm,
             "mpf_padding_weight": 2.0 - coefficient_norm,
+            "mpf_physical_branch_count": structure.physical_branch_count,
+            "mpf_negative_coefficient_count": structure.negative_coefficient_count,
+            "mpf_padding_branch_count": structure.padding_branch_count,
+            "mpf_sign_branch_count": structure.sign_branch_count,
+            "mpf_active_branch_count": structure.active_branch_count,
+            "mpf_unused_branch_state_count": structure.unused_branch_state_count,
+            "mpf_prepare_calls_per_segment": 6,
+            "mpf_select_calls_per_segment": 3,
+            "mpf_good_reflections_per_segment": 2,
+            "mpf_base_lcu_uses_per_segment": 3,
             "lcu_normalization": 2.0,
             "amplitude_amplification": "one robust OAA round per segment",
             "amplitude_amplification_rounds": segments,
             "good_subspace": "branch register all-zero",
-            "nominal_success_probability": 1.0,
+            "nominal_success_probability": None,
         }
     degree = parameters["qsvt_degree"]
     queries = 0 if degree == 0 else 3 * ((degree - 1) + degree)
@@ -519,6 +667,11 @@ def _method_metadata(
         * (1 - evaluation.synthesis_error_fraction),
         "bound_method": "jacobi-anger-truncation",
         "bound_rigorous": True,
+        "bound_scope": "implemented-algorithm",
+        "bound_target_satisfied": True,
+        "circuit_bound_scope": "implemented-algorithm",
+        "circuit_bound_rigorous": True,
+        "circuit_target_satisfied": True,
         "lcu_normalization": 2.0,
         "amplitude_amplification": "one robust OAA round",
         "amplitude_amplification_rounds": 1,
@@ -709,8 +862,8 @@ def run_benchmark(
 
 
 def validate_benchmark_frame(frame: pd.DataFrame) -> None:
-    """Validate required schema-2 columns while allowing derived columns and reordering."""
-    missing = set(BENCHMARK_COLUMNS) - set(frame.columns)
+    """Validate schema-2 data, including files predating scoped MPF metadata."""
+    missing = set(_SCHEMA2_REQUIRED_COLUMNS) - set(frame.columns)
     if missing:
         names = ", ".join(sorted(missing))
         raise ValueError(f"benchmark data is missing required columns: {names}")
@@ -771,12 +924,17 @@ def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
             raise ValueError("Trotter method requires only family and order")
         return TrotterMethod(raw["order"])
     if family == "multiproduct":
-        unknown = set(raw) - {"family", "term_count", "schedule"}
+        unknown = set(raw) - {"family", "term_count", "schedule", "error_method"}
         if unknown or "term_count" not in raw:
             raise ValueError(
-                "multiproduct method requires family, term_count, and optional schedule"
+                "multiproduct method requires family, term_count, and optional "
+                "schedule/error_method"
             )
-        return MultiproductMethod(raw["term_count"], raw.get("schedule", "new"))
+        return MultiproductMethod(
+            raw["term_count"],
+            raw.get("schedule", "new"),
+            raw.get("error_method", "low2019-l1-ideal-rigorous"),
+        )
     if family == "qsvt":
         if set(raw) != {"family"}:
             raise ValueError("QSVT method accepts only the family field")
@@ -875,6 +1033,24 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
     """Load a benchmark CSV; a metadata sidecar is not required."""
     frame = pd.read_csv(path, keep_default_na=True)
     validate_benchmark_frame(frame)
+    if _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
+        is_mpf = frame["method_family"] == "multiproduct"
+        rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
+        within_bound = (
+            pd.to_numeric(frame["bound_value"], errors="coerce")
+            <= pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
+        )
+        frame["bound_scope"] = np.where(
+            is_mpf, "ideal-mpf", "implemented-algorithm"
+        )
+        frame["bound_target_satisfied"] = rigorous & within_bound
+        frame["circuit_bound_scope"] = np.where(
+            is_mpf, "amplified-shared-ancilla", "implemented-algorithm"
+        )
+        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf
+        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf
+        for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
+            frame[column] = None
     return frame
 
 
