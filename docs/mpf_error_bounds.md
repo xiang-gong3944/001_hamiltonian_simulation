@@ -35,23 +35,24 @@ S_2(\tau)=
 \prod_{\gamma=1}^{\Gamma}e^{-i\tau H_\gamma/2}.
 \]
 
-For an `m`-term repository schedule, the ideal MPF step is
+For a \(J\)-branch repository schedule (the backward-compatible public argument
+is named `m`), the ideal MPF step is
 
 \[
-M(\tau)=\sum_{j=1}^{m} a_j
+M(\tau)=\sum_{j=1}^{J} a_j
 \left[S_2(\tau/k_j)\right]^{k_j},
 \]
 
-where `optimal_mpf_exponents(m)` gives the positive integers \(k_j\) and
-`multiproduct_coefficients(m)` gives \(a_j\). The cancellation conditions are
+where `optimal_mpf_exponents(J)` gives the positive integers \(k_j\) and
+`multiproduct_coefficients(J)` gives \(a_j\). The cancellation conditions are
 
 \[
 \sum_j a_j=1,\qquad
-\sum_j a_j/k_j^{2q}=0\quad(1\le q<m),
+\sum_j a_j/k_j^{2q}=0\quad(1\le q<J),
 \]
 
-so the repository formal order is \(2m\) and the leading local error order is
-\(2m+1\). The coefficient norm is
+so the repository formal order is \(2J\) and the leading local error order is
+\(2J+1\). The coefficient norm is
 \(\lVert a\rVert_1=\sum_j|a_j|\), the local time is \(\tau=t/r\), and `r` is
 the positive integer segment count.
 
@@ -64,7 +65,8 @@ the positive integer segment count.
 | MPF | \(U_{\vec k}(\Delta)\) | Eq. (114), \(U_{\rm MP}(\Delta)\) | Eq. (9), \(M_{pmJ}(\tau)\) | \(M(\tau)=\sum_j a_jS_2(\tau/k_j)^{k_j}\) |
 | Exponents | \(k_j\) | \(k_l\) | \(k_j\) | `exponents` |
 | Coefficients | \(a_j\) | \(a_l\) | \(c_j\) | `coefficients` \(a_j\) |
-| Formal order | \(2m\) | \(2m\) | paper parameter \(m\) | `formal_order=2*m`; this equals Mizuta's \(m\) |
+| Branch count | implicit in the schedule | \(J\) | \(J\) | `term_count=J`; legacy APIs call this `m` |
+| Formal order | \(2m\) | \(2m\) | paper parameter \(m\) | `formal_order=2*J`; this equals Mizuta's \(m\) |
 | Coefficient norm | \(\lVert\vec a\rVert_1\) | \(\lVert\vec a\rVert_1\) | \(\lVert c\rVert_1\) | `coefficient_l1_norm` |
 | Exponent norm | \(\lVert\vec k\rVert_1\) | \(\lVert\vec k\rVert_1\) | \(\lVert k\rVert_1\) | `sum(exponents)` |
 | Local time | \(\Delta=t/r\) | \(\Delta=T/r\) | \(\tau=t/r\) | `local_step_size` |
@@ -116,7 +118,7 @@ the robust-OAA shared-ancilla circuit.
 
 The method identifier is `mizuta2026-commutator-ideal-rigorous`. Mizuta's
 Theorem 4 is used with base order \(p=2\), paper formal order equal to the
-repository's \(2m\), and \(c_p=c_2=2\).
+repository's \(2J\), and \(c_p=c_2=2\).
 
 ### Locality data and exact Pauli commutators
 
@@ -162,42 +164,75 @@ The estimate stays rigorous under this replacement, but records the fallback
 reason, the maximum exact order, and the maximum order used. It never falls
 back to the W2 heuristic.
 
-### Finite truncation and computable upper bound on \(\mu\)
+### Finite truncation and the sharp polynomial-root bound on \(\mu\)
 
-For a chosen auxiliary \(\eta\in(0,1)\), Mizuta Eq. (47) sets
+For a chosen auxiliary \(\eta\in(0,1)\), Mizuta Eq. (33) sets
 
 \[
 p_0=\left\lceil\log(3N/\eta)\right\rceil.
 \]
 
-Theorem 4/Eq. (61) defines \(\mu_{p,m}[p_0]\) using only
-\(p+1\le q_i\le p_0\), but its repetition index is unbounded. The repository
-uses the following finite, rigorous upper bound. Define
+Theorem 4/Eq. (47) defines \(\mu_{p,m}[p_0]\) using
+\(q\ge m+1\), \(n\le\lfloor(q-1)/p\rfloor\), and
+\(p+1\le q_i\le p_0\), with \(\sum_iq_i=q+n-1\). Its repetition index \(n\)
+is unbounded. Define
 
 \[
 A(x)=\sum_{s=p+1}^{p_0}\alpha_{\mathrm{com},s}x^s
 \]
 
 and let \(x_*>0\) solve \(A(x_*)=1\). For fixed repetition count \(n\), the
-sum in Eq. (61) with total degree \(D=q+n-1\) is a coefficient of
+sum in Eq. (47) with total degree \(D=q+n-1\) is a coefficient of
 \(A(x)^n\). Since all coefficients are nonnegative,
 
 \[
 [x^D]A(x)^n\,x_*^D\le A(x_*)^n=1.
 \]
 
-Therefore every candidate in Eq. (61) is at most \(1/x_*\), and
+Therefore every candidate in Eq. (47) is at most \(1/x_*\), and
 
 \[
-\mu_{p,m}[p_0]\le\mu_{\rm upper}=1/x_*.
+\mu_{p,m}[p_0]\le\mu_*=1/x_*.
 \]
 
-The root is solved in the log domain. This upper bound may be looser than the
-exact supremum, but it matches all hypotheses of Theorem 4.
+The formal-order condition does not make this bound loose. Let
+\(\pi_s=\alpha_{\mathrm{com},s}x_*^s\), so that \(\sum_s\pi_s=1\). Then
+
+\[
+[x^D]A(x)^n x_*^D=\Pr(S_n=D),
+\]
+
+where \(S_n\) is a sum of \(n\) independent variables with probabilities
+\(\pi_s\). There are at most \(n(p_0-p-1)+1\) possible values of \(S_n\), so
+one has probability at least the reciprocal of this quantity. Its paper index
+satisfies \(q=D-n+1\ge np+1\), and therefore obeys \(q\ge m+1\) for every
+sufficiently large \(n\). Since \(D\) grows linearly in \(n\), the degree root
+of this coefficient converges to \(1/x_*\). Thus
+
+\[
+\mu_{p,m}[p_0]=\mu_*
+\]
+
+for nonzero supplied nonnegative commutator data, independently of every fixed
+formal-order cutoff \(m\). The all-zero case has \(\mu=0\). Removing low-order
+candidates is real, but the unbounded repetition index makes the same supremum
+sharp at higher orders.
+
+The implementation retains the name `mu_upper` because the exact Pauli prefix
+is rounded upward and any locality-fallback entries are upper bounds on the
+true \(\alpha_{\mathrm{com},q}\). The log-domain root is sharp for those
+supplied bounds; remaining looseness comes from the supplied commutator bounds,
+not from ignoring the MPF order condition.
+
+At fixed \(p_0\) and fixed supplied commutator data, this root is independent
+of \(J\). Across complete resource estimates, `mu_upper` can still vary with
+\(J\) because the coefficient and exponent norms change the allocated
+auxiliary error, which can change \(p_0\). That is a finite-truncation input
+effect, not a benefit or penalty from the formal-order cutoff in Eq. (47).
 
 ### Error and time hypotheses
 
-Mizuta Eq. (62) requires
+Mizuta Eq. (48) requires
 
 \[
 |\tau|\le\min\left\{
@@ -206,12 +241,12 @@ Mizuta Eq. (62) requires
 \right\}.
 \]
 
-When it holds, Eq. (63), with the upper bound on \(\mu\), gives
+When it holds, Eq. (49), with the upper bound on \(\mu\), gives
 
 \[
 \delta_r\le
 2e^{1/2}\lVert a\rVert_1
-(c_p\mu_{\rm upper}|\tau|)^{2m+1}
+(c_p\mu_{\rm upper}|\tau|)^{2J+1}
 +\lVert a\rVert_1\lVert k\rVert_1\eta.
 \]
 
@@ -237,7 +272,7 @@ repeated ideal operator explicitly: if \(U=e^{-iH\tau}\) and
 \le r\delta_r(1+\delta_r)^{r-1}.
 \]
 
-The selected row is rigorous only when Eq. (62) and this repeated bound both
+The selected row is rigorous only when Eq. (48) and this repeated bound both
 meet the requested budget. Mutually commuting Pauli decompositions are
 recognized separately: the symmetric product formula and MPF are then exact,
 so the reported error is zero.
@@ -276,7 +311,7 @@ analysis; it is not silently combined with Mizuta's finite-truncation theorem.
 \[
 \alpha_{\rm eff}=\min\{\alpha,W_2^{1/3}\},
 \qquad
-E_r=\alpha_{\rm eff}^{2m+1}|t|^{2m+1}/r^{2m}.
+E_r=\alpha_{\rm eff}^{2J+1}|t|^{2J+1}/r^{2J}.
 \]
 
 No cited MPF theorem proves this substitution. Its rows always carry
@@ -366,7 +401,7 @@ Benchmark summaries use one of three explicit policies:
 `mpf_lcu_structure` is shared by the circuit metadata and analytical counter.
 For each segment with robust OAA, the counter uses:
 
-- \(m\) physical branches with controlled second-order product formulas;
+- \(J\) physical branches with controlled second-order product formulas;
 - two cancelling identity-padding branches with no product formula;
 - any remaining computational basis states as unused identity branches;
 - sign phases only for negative MPF coefficients and the negative padding

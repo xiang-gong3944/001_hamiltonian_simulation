@@ -53,6 +53,10 @@ MPFErrorScope: TypeAlias = Literal["ideal-mpf", "amplified-shared-ancilla"]
 class MPFErrorEstimate:
     """Compatibility view of one family-specific MPF sizing estimate.
 
+    ``m`` is the repository's backward-compatible name for the MPF branch
+    count ``J``; ``formal_order`` is the paper's MPF order and equals ``2J``
+    for the implemented symmetric second-order schedules.
+
     ``rigorous`` certifies ``error`` only for ``scope``.  In particular, the
     Low--Kliuchnikov--Wiebe bound implemented here applies to the ideal MPF
     operator. The plan's canonical ``ErrorAnalysis`` derives one-segment and
@@ -356,8 +360,8 @@ def _mizuta_mu_upper_bound(
     distribution.  A largest coefficient of its ``n``-fold convolution loses
     only a polynomial factor in ``n``, while its degree grows linearly and is
     eventually above every fixed formal-order cutoff.  Its degree root thus
-    converges to ``1/x_*``.  The root is consequently sharp for the supplied
-    nonnegative data and remains a rigorous upper bound when some supplied
+    converges to ``1/x_*``.  The root is consequently sharp for nonzero
+    supplied nonnegative data and remains a rigorous upper bound when some
     ``alpha_com,q`` values are themselves upper bounds.
     """
     log_terms = [
@@ -402,7 +406,7 @@ def _repeated_step_error(step_error: float, segments: int) -> float:
 def _mizuta_ideal_mpf_bound(
     hamiltonian: PauliHamiltonian,
     time: float,
-    m: int,
+    term_count: int,
     segments: int,
     coefficient_l1_norm: float,
     exponents: tuple[int, ...],
@@ -416,8 +420,8 @@ def _mizuta_ideal_mpf_bound(
     tuple[str, ...],
     bool,
 ]:
-    """Evaluate Mizuta 2026 Theorem 4/Eqs. (61)--(63) for ``p=2``."""
-    formal_order = 2 * m
+    """Evaluate Mizuta 2026 Theorem 4/Eqs. (47)--(49) for ``p=2``."""
+    mizuta_formal_order = 2 * term_count
     base_order = 2
     base_repetitions = 2  # c_p for the ordered Strang formula, paper Eq. (6)
     exponent_l1_norm = float(sum(exponents))
@@ -440,7 +444,7 @@ def _mizuta_ideal_mpf_bound(
                 total=None,
                 commutator_order=truncation_order,
                 max_commutator_order=truncation_order,
-                formula_order=formal_order,
+                formula_order=mizuta_formal_order,
                 system_qubits=hamiltonian.num_qubits,
                 segment_candidate=segments,
                 target_error=target_error,
@@ -451,7 +455,7 @@ def _mizuta_ideal_mpf_bound(
         truncation_order,
         workers=execution.workers if execution is not None else 1,
         _execution=execution,
-        _formula_order=formal_order,
+        _formula_order=mizuta_formal_order,
         _segment_candidate=segments,
         _target_error=target_error,
     )
@@ -484,13 +488,15 @@ def _mizuta_ideal_mpf_bound(
             math.log(2)
             + 0.5
             + math.log(coefficient_l1_norm)
-            + (formal_order + 1) * math.log(base_repetitions * mu_upper)
+            + (mizuta_formal_order + 1) * math.log(base_repetitions * mu_upper)
         )
         prefactor = math.exp(log_prefactor) if log_prefactor < 709 else math.inf
         if step_time == 0:
             local_commutator_error = 0.0
         else:
-            log_commutator_error = log_prefactor + (formal_order + 1) * math.log(step_time)
+            log_commutator_error = log_prefactor + (mizuta_formal_order + 1) * math.log(
+                step_time
+            )
             local_commutator_error = (
                 math.exp(log_commutator_error) if log_commutator_error < 709 else math.inf
             )
@@ -511,9 +517,9 @@ def _mizuta_ideal_mpf_bound(
         "Pauli support gives k-locality and per-site coefficient sums give g-extensiveness",
         "base formula is the symmetric second-order formula with c_p=2",
         (
-            "Theorem 4 time hypothesis Eq. (62) is satisfied"
+            "Theorem 4 time hypothesis Eq. (48) is satisfied"
             if time_hypothesis_satisfied
-            else "Theorem 4 time hypothesis Eq. (62) is not satisfied"
+            else "Theorem 4 time hypothesis Eq. (48) is not satisfied"
         ),
         "the repeated ideal MPF is composed with the Eq. (15) telescoping argument",
     )
@@ -633,7 +639,9 @@ def _estimate_mpf_error(
             execution,
         )
         reference = "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
-        theorem_or_equations = "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
+        theorem_or_equations = (
+            "Theorem 4, Eqs. (47)--(49), with Theorem 3, Eqs. (33)--(35)"
+        )
         local_error = dict(bound_components).get("local_step_error", 0.0)
         local_error_rigorous = rigorous
     else:

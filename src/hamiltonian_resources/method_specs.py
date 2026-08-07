@@ -62,7 +62,7 @@ class MultiproductMethod:
             suffix += " [legacy W2 heuristic]"
         elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
             suffix += " [Mizuta 2026 commutator]"
-        return f"MPF m={self.term_count}{suffix}"
+        return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
 
     def validate(self) -> None:
         if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):

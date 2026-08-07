@@ -218,7 +218,9 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert row["status"] == "ok"
     assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
     assert "Mizuta" in row["bound_reference"]
-    assert row["bound_theorem_or_equations"].startswith("Theorem 4")
+    assert row["bound_theorem_or_equations"] == (
+        "Theorem 4, Eqs. (47)--(49), with Theorem 3, Eqs. (33)--(35)"
+    )
     assert row["hamiltonian_decomposition"] == "ordered individual Pauli terms"
     assert bool(row["bound_rigorous"])
     assert bool(row["locality_compatible"])
@@ -226,6 +228,26 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert json.loads(row["bound_components_json"])["mu_upper"] > 0
     assert json.loads(row["commutator_bounds_json"])
     assert bool(row["circuit_bound_rigorous"])
+
+
+def test_repository_branch_count_maps_to_mizuta_formal_order():
+    method = MultiproductMethod(7)
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("ZI", 0.7), ("IZ", -0.2)],
+    )
+    estimate = estimate_mpf_error(
+        hamiltonian,
+        0.01,
+        1,
+        method.term_count,
+        method="mizuta2026-commutator-ideal-rigorous",
+        target_error=1e-3,
+    )
+
+    assert method.label.startswith("MPF J=7, formal order=14")
+    assert estimate.m == 7
+    assert estimate.formal_order == 14
 
 
 def test_low_bound_depends_on_schedule_coefficient_norm():
@@ -649,6 +671,16 @@ def test_mizuta_bound_upper_bounds_small_system_ideal_mpf_error():
     assert estimate.rigorous
     assert estimate.theorem_or_equations.startswith("Theorem 4")
     assert estimate.max_exact_nested_commutator_order >= 3
+    if estimate.segments > 1:
+        previous = estimate_mpf_error(
+            hamiltonian,
+            0.01,
+            estimate.segments - 1,
+            2,
+            method="mizuta2026-commutator-ideal-rigorous",
+            target_error=1e-3,
+        )
+        assert not previous.rigorous or previous.error > 1e-3
 
 
 def test_mizuta_analytical_path_never_constructs_dense_hamiltonian(monkeypatch):
