@@ -99,6 +99,39 @@ def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):
     assert len(loaded) == len(benchmark_frame)
 
 
+def test_w2_triangle_provenance_round_trips_without_schema_relabeling(tmp_path):
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        time=TimeScaling("fixed", 0.2),
+        methods=[
+            MultiproductMethod(
+                3,
+                error_method="childs2021-w2-triangle-ideal-rigorous",
+            ),
+            MultiproductMethod(3, error_method="legacy-w2-proxy"),
+        ],
+    )
+    frame = run_benchmark(config, sweeps="system-size")
+    _, csv_path, _ = save_benchmark(frame, config, output_root=tmp_path)
+    loaded = load_benchmark(csv_path)
+    rigorous = loaded[
+        loaded["bound_method"] == "childs2021-w2-triangle-ideal-rigorous"
+    ].iloc[0]
+    historical = loaded[loaded["bound_method"] == "legacy-w2-proxy"].iloc[0]
+    components = json.loads(rigorous["bound_components_json"])
+
+    assert set(components) == {
+        "w2",
+        "b2",
+        "local_step_size",
+        "local_step_error",
+        "repeated_ideal_mpf_error",
+    }
+    assert bool(rigorous["bound_rigorous"])
+    assert not bool(historical["bound_rigorous"])
+    assert historical["method_id"] == "mpf-m3-legacy-w2-proxy"
+
+
 def test_load_benchmark_upgrades_early_schema2_scope_columns(
     tmp_path, benchmark_frame
 ):

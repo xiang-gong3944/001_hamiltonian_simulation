@@ -22,8 +22,8 @@
       {"family": "trotter", "order": 4},
       {"family": "trotter", "order": 6},
       {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "low2019-l1-ideal-rigorous"},
+      {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "childs2021-w2-triangle-ideal-rigorous"},
       {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "mizuta2026-commutator-ideal-rigorous"},
-      {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "legacy-w2-proxy"},
       {"family": "multiproduct", "term_count": 5, "schedule": "new", "error_method": "low2019-l1-ideal-rigorous"},
       {"family": "multiproduct", "term_count": 7, "schedule": "new", "error_method": "low2019-l1-ideal-rigorous"},
       {"family": "qsvt"}

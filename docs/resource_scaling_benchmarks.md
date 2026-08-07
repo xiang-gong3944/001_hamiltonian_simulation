@@ -85,20 +85,25 @@ for `CommutatorProgress` events.
 `MultiproductMethod(m)` uses the Hamiltonian-1-norm bound
 `error_method="low2019-l1-ideal-rigorous"` by default; the historical
 `low-rigorous` spelling remains an input alias. To
-reproduce historical W2-calibrated projections, request
-`MultiproductMethod(m, error_method="legacy-w2-proxy")`. Such rows remain
-available in full plots but are explicitly styled as heuristic. The preferred
-opt-in locality-compatible commutator method is
+use rigorous finite-size W2 information, request
+`MultiproductMethod(m,
+error_method="childs2021-w2-triangle-ideal-rigorous")`. This estimator applies
+triangle inequalities to the proven Strang W2 bound and deliberately discards
+formal-order MPF cancellation. The higher-order locality-compatible
+commutator alternative is
 `MultiproductMethod(m,
 error_method="mizuta2026-commutator-ideal-rigorous")`. Its theorem map and
 the reason that Aftab 2024 is not exposed as a finite rigorous estimator are
-documented in [MPF error bounds](mpf_error_bounds.md).
+documented in [MPF error bounds](mpf_error_bounds.md). To reproduce historical
+W2-calibrated projections only, request
+`MultiproductMethod(m, error_method="legacy-w2-proxy")`; such rows remain
+available in full plots but are explicitly styled as heuristic.
 
 `error_method="best-rigorous-ideal"` is an opt-in finite-resource policy for
-one fixed MPF schedule. It evaluates the rigorous Low and Mizuta estimators,
-selects the one requiring fewer segments, and records both candidate results
-alongside the selected bound provenance. It never considers the W2 proxy and
-does not optimize across different branch counts.
+one fixed MPF schedule. It evaluates the rigorous Low, W2 triangle, and Mizuta
+estimators, selects the one requiring fewer segments, and records all three
+candidate results alongside the selected bound provenance. It never considers
+the historical W2 proxy and does not optimize across different branch counts.
 
 `TimeScaling("proportional", tau)` means `t(n) = tau * n`; the checked-in
 default has `tau=1`. This gives each one-dimensional local Hamiltonian enough
