@@ -45,13 +45,15 @@ class _EvaluationConfig:
         if self.mpf_error_method not in (
             "low2019-l1-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
+            "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
         ):
             raise ValueError(
                 "mpf_error_method must be 'low2019-l1-ideal-rigorous' "
                 "(historical alias 'low-rigorous'), "
-                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+                "'mizuta2026-commutator-ideal-rigorous', "
+                "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )
 
 

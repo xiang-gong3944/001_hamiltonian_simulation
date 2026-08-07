@@ -489,8 +489,12 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
             mpf_local_truncated_bch_error=(
                 diagnostics.local_truncated_bch_error if diagnostics is not None else None
             ),
-            mpf_bound_policy=plan.method.error_method,
-            mpf_bound_candidates_json=json.dumps({}, separators=(",", ":")),
+            mpf_bound_policy=(error.requested_method or plan.method.error_method),
+            mpf_bound_candidates_json=json.dumps(
+                [candidate.as_dict() for candidate in error.bound_candidates],
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
             query_count=plan.logical_counts.as_dict()["totals"]["controlled_s2"],
             bound_components_json=json.dumps(
                 dict(error.bound_components), sort_keys=True, separators=(",", ":")

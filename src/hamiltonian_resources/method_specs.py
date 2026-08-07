@@ -62,6 +62,8 @@ class MultiproductMethod:
             suffix += " [legacy W2 heuristic]"
         elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
             suffix += " [Mizuta 2026 commutator]"
+        elif self.error_method == "best-rigorous-ideal":
+            suffix += " [best rigorous ideal bound]"
         return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
 
     def validate(self) -> None:
@@ -71,13 +73,15 @@ class MultiproductMethod:
         if self.error_method not in (
             "low2019-l1-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
+            "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
         ):
             raise ValueError(
                 "MPF error method must be 'low2019-l1-ideal-rigorous' "
                 "(historical alias 'low-rigorous'), "
-                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+                "'mizuta2026-commutator-ideal-rigorous', "
+                "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )
 
     def as_dict(self) -> dict[str, object]:

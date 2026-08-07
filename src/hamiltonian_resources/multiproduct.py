@@ -43,6 +43,7 @@ MPFSchedule = Literal["new", "legacy"]
 MPFErrorMethod: TypeAlias = Literal[
     "low2019-l1-ideal-rigorous",
     "mizuta2026-commutator-ideal-rigorous",
+    "best-rigorous-ideal",
     "low-rigorous",
     "legacy-w2-proxy",
 ]
@@ -92,6 +93,30 @@ class MPFErrorEstimate:
     locality_compatible: bool = False
     commutator_bounds: tuple[tuple[int, float], ...] = ()
     segment_diagnostics: MPFSegmentDiagnostics | None = None
+    requested_method: MPFErrorMethod | None = None
+    bound_candidates: tuple[MPFBoundCandidateSummary, ...] = ()
+
+
+@dataclass(frozen=True)
+class MPFBoundCandidateSummary:
+    """Compact provenance for one estimator considered by a bound policy."""
+
+    method: MPFErrorMethod
+    segments: int
+    error: float
+    rigorous: bool
+    fallback_reason: str | None = None
+    max_exact_nested_commutator_order: int = 0
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "method": self.method,
+            "segments": self.segments,
+            "error": self.error,
+            "rigorous": self.rigorous,
+            "fallback_reason": self.fallback_reason,
+            "max_exact_nested_commutator_order": self.max_exact_nested_commutator_order,
+        }
 
 
 @dataclass(frozen=True)
@@ -672,11 +697,17 @@ def _estimate_mpf_error(
         )
         local_error = dict(bound_components).get("local_step_error", 0.0)
         local_error_rigorous = rigorous
+    elif method == "best-rigorous-ideal":
+        raise ValueError(
+            "best-rigorous-ideal is a segment-selection policy; "
+            "use select_mpf_segments rather than estimate_mpf_error"
+        )
     else:
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
-            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+            "'mizuta2026-commutator-ideal-rigorous', "
+            "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
     return MPFErrorEstimate(
         error=error,
@@ -709,6 +740,7 @@ def _estimate_mpf_error(
             if commutators is not None
             else ()
         ),
+        requested_method=method,
     )
 
 
@@ -763,6 +795,46 @@ def _select_mpf_segments(
         raise ValueError("target_error must lie in (0, 1]")
     optimal_mpf_exponents(m, schedule=schedule)
     method = _normalize_mpf_error_method(method)
+    if method == "best-rigorous-ideal":
+        candidates = tuple(
+            _select_mpf_segments(
+                hamiltonian,
+                time,
+                target_error,
+                m,
+                schedule=schedule,
+                method=candidate_method,
+                execution=execution,
+            )
+            for candidate_method in (
+                "low2019-l1-ideal-rigorous",
+                "mizuta2026-commutator-ideal-rigorous",
+            )
+        )
+        chosen = min(
+            candidates,
+            key=lambda item: (
+                item.segments,
+                item.error,
+                0 if item.method == "low2019-l1-ideal-rigorous" else 1,
+            ),
+        )
+        summaries = tuple(
+            MPFBoundCandidateSummary(
+                method=item.method,
+                segments=item.segments,
+                error=item.error,
+                rigorous=item.rigorous,
+                fallback_reason=item.fallback_reason,
+                max_exact_nested_commutator_order=item.max_exact_nested_commutator_order,
+            )
+            for item in candidates
+        )
+        return replace(
+            chosen,
+            requested_method="best-rigorous-ideal",
+            bound_candidates=summaries,
+        )
     if method == "legacy-w2-proxy":
         segments = legacy_w2_proxy_segments(hamiltonian, time, target_error, m)
     elif method == "low2019-l1-ideal-rigorous":
@@ -858,7 +930,8 @@ def _select_mpf_segments(
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
-            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+            "'mizuta2026-commutator-ideal-rigorous', "
+            "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
     if method == "mizuta2026-commutator-ideal-rigorous":
         estimate = candidate_estimate(segments)

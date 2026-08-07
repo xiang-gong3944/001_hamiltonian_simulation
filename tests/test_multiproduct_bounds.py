@@ -247,7 +247,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert row["mpf_local_commutator_error"] >= 0
     assert row["mpf_local_truncated_bch_error"] > 0
     assert row["mpf_bound_policy"] == "mizuta2026-commutator-ideal-rigorous"
-    assert json.loads(row["mpf_bound_candidates_json"]) == {}
+    assert json.loads(row["mpf_bound_candidates_json"]) == []
 
 
 def test_mizuta_segment_diagnostics_recompute_each_candidate_predicate():
@@ -309,6 +309,76 @@ def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
     assert low.segment_diagnostics.r_time_1 is None
     assert low.segment_diagnostics.r_time_2 is None
     assert low.segment_diagnostics.active_constraints == ("error",)
+
+
+def test_best_rigorous_ideal_policy_selects_low_and_retains_candidates():
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0, periodic=False)
+
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-4,
+        3,
+        method="best-rigorous-ideal",
+    )
+
+    assert estimate.requested_method == "best-rigorous-ideal"
+    assert estimate.method == "low2019-l1-ideal-rigorous"
+    assert estimate.segments == 1
+    assert [(candidate.method, candidate.segments) for candidate in estimate.bound_candidates] == [
+        ("low2019-l1-ideal-rigorous", 1),
+        ("mizuta2026-commutator-ideal-rigorous", 708),
+    ]
+    assert all(candidate.rigorous for candidate in estimate.bound_candidates)
+
+
+def test_best_rigorous_ideal_policy_can_select_mizuta_and_break_ties_with_low():
+    identity_heavy = PauliHamiltonian.from_terms(
+        1,
+        [("I", 1000.0), ("X", 0.1), ("Z", 0.1)],
+    )
+    mizuta = select_mpf_segments(
+        identity_heavy,
+        0.01,
+        1e-3,
+        2,
+        method="best-rigorous-ideal",
+    )
+    tie = select_mpf_segments(
+        transverse_field_ising(2, field=0.7),
+        0.0,
+        1e-3,
+        2,
+        method="best-rigorous-ideal",
+    )
+
+    assert mizuta.method == "mizuta2026-commutator-ideal-rigorous"
+    assert mizuta.segments == 9
+    assert tie.method == "low2019-l1-ideal-rigorous"
+    assert tie.segments == 1
+
+
+def test_best_rigorous_ideal_policy_propagates_selected_bound_and_policy_to_benchmark():
+    from hamiltonian_resources import BenchmarkConfig, TimeScaling, run_benchmark
+
+    row = run_benchmark(
+        BenchmarkConfig(
+            system_sizes=[2],
+            time=TimeScaling("fixed", 0.01),
+            methods=[MultiproductMethod(2, error_method="best-rigorous-ideal")],
+        ),
+        sweeps="system-size",
+    ).iloc[0]
+    candidates = json.loads(row["mpf_bound_candidates_json"])
+
+    assert row["method_id"] == "mpf-m2-best-rigorous-ideal"
+    assert row["mpf_bound_policy"] == "best-rigorous-ideal"
+    assert row["bound_method"] == "low2019-l1-ideal-rigorous"
+    assert [candidate["method"] for candidate in candidates] == [
+        "low2019-l1-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+    ]
+    assert all(candidate["rigorous"] for candidate in candidates)
 
 
 def test_repository_branch_count_maps_to_mizuta_formal_order():

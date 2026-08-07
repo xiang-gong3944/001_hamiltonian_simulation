@@ -147,6 +147,13 @@ finite problem. Its principal advantage is the improved locality-aware
 asymptotic scaling. Both methods remain rigorous within their declared scopes;
 the observed finite-resource difference is therefore not a contradiction.
 
+The opt-in `best-rigorous-ideal` policy evaluates both bounds for the same
+branch count and exponent schedule. Because this fixes the implemented MPF
+circuit structure per segment, it selects the candidate with fewer segments,
+then the smaller certified error, with Low as the final deterministic
+tie-breaker. Metadata retains both candidates and the concrete selected bound.
+Low remains the default, and the nonrigorous W2 proxy is never a candidate.
+
 ## Mizuta 2026 finite-order commutator bound
 
 The method identifier is `mizuta2026-commutator-ideal-rigorous`. Mizuta's

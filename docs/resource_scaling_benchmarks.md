@@ -94,6 +94,12 @@ error_method="mizuta2026-commutator-ideal-rigorous")`. Its theorem map and
 the reason that Aftab 2024 is not exposed as a finite rigorous estimator are
 documented in [MPF error bounds](mpf_error_bounds.md).
 
+`error_method="best-rigorous-ideal"` is an opt-in finite-resource policy for
+one fixed MPF schedule. It evaluates the rigorous Low and Mizuta estimators,
+selects the one requiring fewer segments, and records both candidate results
+alongside the selected bound provenance. It never considers the W2 proxy and
+does not optimize across different branch counts.
+
 `TimeScaling("proportional", tau)` means `t(n) = tau * n`; the checked-in
 default has `tau=1`. This gives each one-dimensional local Hamiltonian enough
 simulated time to scale with the distance over which interactions spread. It is
