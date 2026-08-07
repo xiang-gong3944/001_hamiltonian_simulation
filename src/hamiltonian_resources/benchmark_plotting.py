@@ -343,14 +343,8 @@ def select_best_by_family(
     result["selected_method_id"] = result["method_id"]
     result["selected_method_label"] = result["method_label"]
     family_labels = {
-        "trotter": "Best evaluated Trotter",
-        "multiproduct": (
-            "Best repeated-good-block-certified MPF"
-            if certification_policy == "implemented-circuit"
-            else "Best ideal-operator-certified MPF"
-            if certification_policy == "declared-bound-scope"
-            else "Best unconstrained MPF"
-        ),
+        "trotter": "Trotter",
+        "multiproduct": "MPF",
         "qsvt": "QSVT",
     }
     result["summary_label"] = result["method_family"].map(family_labels).fillna(
@@ -415,17 +409,25 @@ def plot_benchmark(
     yscale: str = "log",
     ybase: float = 10,
     summary: bool = False,
+    selection_metric: str | None = None,
     certification_policy: CertificationPolicy = "implemented-circuit",
     series_by: str | Sequence[str] = "method_label",
     ax: Axes | None = None,
 ) -> Figure:
-    """Plot any positive numeric benchmark metric with configurable axes and grouping."""
+    """Plot a benchmark metric in detailed or best-by-family summary form.
+
+    When ``summary`` is true, ``selection_metric`` chooses the resource used
+    to select one method per family and x value. It defaults to ``metric`` for
+    backward compatibility, while allowing (for example) a CNOT plot to show
+    the same methods selected for a T-count summary.
+    """
     selected = _sweep_frame(frame, sweep)
     selected[metric] = _metric_values(selected, metric)
     if summary:
+        resolved_selection_metric = selection_metric or metric
         selected = select_best_by_family(
             selected,
-            metric,
+            resolved_selection_metric,
             sweep=sweep,
             certification_policy=certification_policy,
         )
@@ -460,9 +462,9 @@ def plot_benchmark(
         family_variant[family] = variant + 1
         label = _series_label(key, columns)
         heuristic = not bool(_bound_target_satisfied(values).all())
-        if heuristic and "heuristic" not in label.lower():
+        if not summary and heuristic and "heuristic" not in label.lower():
             label += " [heuristic/non-certified]"
-        if family == "multiproduct":
+        if not summary and family == "multiproduct":
             circuit_rigorous = (
                 values["circuit_bound_rigorous"].fillna(False).astype(bool)
                 if "circuit_bound_rigorous" in values
@@ -470,10 +472,6 @@ def plot_benchmark(
             )
             if not bool(circuit_rigorous.all()):
                 label += " [ideal bound; circuit unproven]"
-        if summary and "selected_method_label" in values:
-            methods = list(dict.fromkeys(values["selected_method_label"].astype(str)))
-            if len(methods) > 1:
-                label += " [" + " → ".join(methods) + "]"
         axis.plot(
             values[x_column],
             values[metric],
@@ -486,6 +484,23 @@ def plot_benchmark(
             linewidth=2.0 if summary else 1.7,
             alpha=0.7 if heuristic else 1.0,
         )
+        if summary:
+            for _, row in values.iterrows():
+                annotation = None
+                if family == "trotter" and pd.notna(row.get("trotter_order")):
+                    annotation = f"p={int(row['trotter_order'])}"
+                elif family == "multiproduct" and pd.notna(row.get("mpf_term_count")):
+                    annotation = f"J={int(row['mpf_term_count'])}"
+                if annotation is not None:
+                    axis.annotate(
+                        annotation,
+                        (row[x_column], row[metric]),
+                        xytext=(4, 4),
+                        textcoords="offset points",
+                        fontsize=7,
+                        color=color,
+                        clip_on=True,
+                    )
 
     resolved_xscale = xscale or "log"
     if resolved_xscale not in {"linear", "log"}:
@@ -509,7 +524,9 @@ def plot_benchmark(
         sweep_title = "System-size scaling"
     axis.set_ylabel(_METRIC_LABELS.get(metric, metric.replace("_", " ")))
     qualifier = (
-        f"best of evaluated methods; policy={certification_policy}"
+        "best by "
+        f"{_METRIC_LABELS.get(selection_metric or metric, selection_metric or metric)}; "
+        f"policy={certification_policy}"
         if summary
         else "all methods; certification scope shown in labels"
     )

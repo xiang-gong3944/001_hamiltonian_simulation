@@ -87,8 +87,65 @@ def test_best_by_family_retains_selected_method_identity():
         frame, sweep="system-size", metric="t_count", summary=True
     )
     assert {line.get_label().split(" [")[0] for line in figure.axes[0].lines} == {
-        "Best evaluated Trotter",
+        "Trotter",
     }
+
+
+def test_summary_can_select_by_t_count_for_cnot_plot_and_annotate_orders(
+    benchmark_frame,
+):
+    frame = benchmark_frame[benchmark_frame["sweep"] == "system-size"].copy()
+    trotter_p4 = frame[frame["method_family"] == "trotter"].copy()
+    trotter_p4["method_id"] = "trotter-p4"
+    trotter_p4["method_label"] = "Trotter-Suzuki p=4"
+    trotter_p4["trotter_order"] = 4
+    frame.loc[frame["method_family"] == "multiproduct", "method_id"] = "mpf-j3"
+    mpf_j5 = frame[frame["method_family"] == "multiproduct"].copy()
+    mpf_j5["method_id"] = "mpf-j5"
+    mpf_j5["method_label"] = "MPF J=5"
+    mpf_j5["mpf_term_count"] = 5
+    frame = pd.concat([frame, trotter_p4, mpf_j5], ignore_index=True)
+
+    values = {
+        ("trotter-p2", 2): (10, 100),
+        ("trotter-p2", 3): (30, 1),
+        ("trotter-p4", 2): (20, 1),
+        ("trotter-p4", 3): (5, 100),
+        ("mpf-j3", 2): (12, 120),
+        ("mpf-j3", 3): (40, 2),
+        ("mpf-j5", 2): (24, 2),
+        ("mpf-j5", 3): (6, 120),
+    }
+    for (method_id, size), (t_count, cnot_count) in values.items():
+        row = (frame["method_id"] == method_id) & (frame["system_qubits"] == size)
+        frame.loc[row, ["t_count", "cnot_count"]] = [t_count, cnot_count]
+
+    figure = plot_benchmark(
+        frame,
+        sweep="system-size",
+        metric="cnot_count",
+        summary=True,
+        selection_metric="t_count",
+        certification_policy="declared-bound-scope",
+    )
+    axis = figure.axes[0]
+    lines = {line.get_label(): line for line in axis.lines}
+
+    assert lines["Trotter"].get_ydata().tolist() == [100, 100]
+    assert lines["MPF"].get_ydata().tolist() == [120, 120]
+    assert {text.get_text() for text in axis.texts} == {"p=2", "p=4", "J=3", "J=5"}
+    assert "best by T count" in axis.get_title()
+
+    default_figure = plot_benchmark(
+        frame,
+        sweep="system-size",
+        metric="cnot_count",
+        summary=True,
+        certification_policy="declared-bound-scope",
+    )
+    default_lines = {line.get_label(): line for line in default_figure.axes[0].lines}
+    assert default_lines["Trotter"].get_ydata().tolist() == [1, 1]
+    assert default_lines["MPF"].get_ydata().tolist() == [2, 2]
 
 
 def test_plot_can_group_mixed_models_without_unique_value_failure(benchmark_frame):
@@ -174,10 +231,11 @@ def test_default_strict_summary_excludes_ideal_only_mpf_and_qsvt_rows():
     assert set(declared["method_family"]) == {"trotter", "multiproduct", "qsvt"}
     assert "policy=implemented-circuit" in strict_figure.axes[0].get_title()
     assert "policy=declared-bound-scope" in declared_figure.axes[0].get_title()
-    assert any(
-        "ideal-operator-certified MPF" in line.get_label()
-        for line in declared_figure.axes[0].lines
-    )
+    assert {line.get_label() for line in declared_figure.axes[0].lines} == {
+        "Trotter",
+        "MPF",
+        "QSVT",
+    }
 
 
 @pytest.fixture
