@@ -343,13 +343,22 @@ def _mizuta_mu_upper_bound(
     *,
     base_order: int = 2,
 ) -> float:
-    """Upper-bound Mizuta 2026 Eq. (61) by a finite polynomial root.
+    """Upper-bound Mizuta 2026 Eq. (47) by a finite polynomial root.
 
     Let ``A(x)=sum_q alpha_com,q x^q`` for ``base_order < q <= p0``.
     If ``A(x_*)=1``, every coefficient of ``A(x_*)^n`` is at most one.
-    Therefore the supremum in Eq. (61) is at most ``1/x_*``. This retains
+    Therefore the supremum in Eq. (47) is at most ``1/x_*``. This retains
     every finite commutator order required by Theorem 4 without enumerating
     its unbounded repetition index ``n``.
+
+    The formal-order restriction in Eq. (47) does not lower this supremum.
+    The normalized weights ``alpha_com,q * x_*^q`` form a finite probability
+    distribution.  A largest coefficient of its ``n``-fold convolution loses
+    only a polynomial factor in ``n``, while its degree grows linearly and is
+    eventually above every fixed formal-order cutoff.  Its degree root thus
+    converges to ``1/x_*``.  The root is consequently sharp for the supplied
+    nonnegative data and remains a rigorous upper bound when some supplied
+    ``alpha_com,q`` values are themselves upper bounds.
     """
     log_terms = [
         (order, math.log(commutators.at(order)))

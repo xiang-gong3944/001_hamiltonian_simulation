@@ -1,5 +1,6 @@
-import math
 import json
+import math
+from collections import defaultdict
 from itertools import product
 
 import numpy as np
@@ -17,13 +18,68 @@ from hamiltonian_resources import (
     transverse_field_ising,
 )
 from hamiltonian_resources.multiproduct import (
+    _mizuta_mu_upper_bound,
     estimate_mpf_error,
     legacy_w2_proxy_error,
     legacy_w2_proxy_segments,
     multiproduct_coefficients,
     select_mpf_segments,
 )
-from hamiltonian_resources.trotter import suzuki_commutator_bounds
+from hamiltonian_resources.trotter import (
+    PauliNestedCommutatorBounds,
+    suzuki_commutator_bounds,
+)
+
+
+def _synthetic_commutator_bounds(
+    values_by_order: dict[int, float],
+) -> PauliNestedCommutatorBounds:
+    max_order = max(values_by_order)
+    values = tuple(values_by_order.get(order, 0.0) for order in range(2, max_order + 1))
+    return PauliNestedCommutatorBounds(
+        values=values,
+        max_order=max_order,
+        max_exact_order=max_order,
+        state_counts=(0,) * len(values),
+        used_locality_fallback=False,
+        fallback_reason=None,
+        locality_k=1,
+        extensiveness_g=1.0,
+    )
+
+
+def _direct_mizuta_mu_candidates(
+    values_by_order: dict[int, float],
+    *,
+    base_order: int,
+    formal_order: int,
+    max_repetitions: int,
+) -> dict[tuple[int, int, int], float]:
+    """Enumerate Eq. (47) through a finite repetition count.
+
+    Keys are ``(q, n, q+n-1)``.  This helper deliberately implements the
+    paper's index constraints independently of the polynomial-root routine.
+    """
+    assert all(order >= base_order + 1 for order in values_by_order)
+    coefficients = {0: 1.0}
+    candidates: dict[tuple[int, int, int], float] = {}
+    for repetitions in range(1, max_repetitions + 1):
+        following: defaultdict[int, float] = defaultdict(float)
+        for total_degree, coefficient in coefficients.items():
+            for order, commutator_bound in values_by_order.items():
+                following[total_degree + order] += coefficient * commutator_bound
+        coefficients = dict(following)
+        for total_degree, coefficient in coefficients.items():
+            q_value = total_degree - repetitions + 1
+            if (
+                coefficient > 0
+                and q_value >= formal_order + 1
+                and repetitions <= (q_value - 1) // base_order
+            ):
+                candidates[(q_value, repetitions, total_degree)] = coefficient ** (
+                    1 / total_degree
+                )
+    return candidates
 
 
 def _ideal_mpf_operator(hamiltonian, time, segments, m, schedule="new"):
@@ -485,6 +541,57 @@ def test_exact_pauli_commutator_sums_agree_with_dense_tiny_validation():
                 nested = term_matrices[outer] @ nested - nested @ term_matrices[outer]
             dense_sum += np.linalg.norm(nested, ord=2)
         assert bounds.at(order) == pytest.approx(dense_sum, rel=1e-12, abs=1e-14)
+
+
+@pytest.mark.parametrize("formal_order", [2, 4, 14])
+def test_mizuta_single_support_mu_is_sharp_after_formal_order_cutoff(formal_order):
+    values_by_order = {3: 8.0}
+    bounds = _synthetic_commutator_bounds(values_by_order)
+    mu_upper = _mizuta_mu_upper_bound(bounds, base_order=2)
+    minimum_repetitions = math.ceil(formal_order / 2)
+    candidates = _direct_mizuta_mu_candidates(
+        values_by_order,
+        base_order=2,
+        formal_order=formal_order,
+        max_repetitions=minimum_repetitions,
+    )
+
+    assert mu_upper == pytest.approx(2.0)
+    assert min(repetitions for _, repetitions, _ in candidates) == minimum_repetitions
+    assert max(candidates.values()) == pytest.approx(mu_upper)
+
+
+def test_mizuta_finite_enumeration_is_bounded_by_and_approaches_polynomial_root():
+    values_by_order = {3: 0.4, 4: 2.0, 5: 0.7}
+    bounds = _synthetic_commutator_bounds(values_by_order)
+    mu_upper = _mizuta_mu_upper_bound(bounds, base_order=2)
+    short_candidates = _direct_mizuta_mu_candidates(
+        values_by_order,
+        base_order=2,
+        formal_order=14,
+        max_repetitions=10,
+    )
+    long_candidates = _direct_mizuta_mu_candidates(
+        values_by_order,
+        base_order=2,
+        formal_order=14,
+        max_repetitions=80,
+    )
+
+    assert short_candidates
+    assert all(candidate <= mu_upper for candidate in long_candidates.values())
+    assert max(long_candidates.values()) > max(short_candidates.values())
+    assert mu_upper - max(long_candidates.values()) < 0.02
+
+
+def test_mizuta_mu_upper_bound_is_monotone_in_commutator_upper_bounds():
+    exact_data = _synthetic_commutator_bounds({3: 0.4, 4: 2.0, 5: 0.7})
+    enlarged_data = _synthetic_commutator_bounds({3: 0.4, 4: 2.5, 5: 0.7})
+
+    assert _mizuta_mu_upper_bound(
+        exact_data,
+        base_order=2,
+    ) <= _mizuta_mu_upper_bound(enlarged_data, base_order=2)
 
 
 def test_pauli_commutator_cap_uses_explicit_rigorous_locality_fallback():
