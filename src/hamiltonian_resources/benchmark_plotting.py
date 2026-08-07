@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -39,7 +40,202 @@ _METRIC_LABELS = {
     "rotation_count": "Rotation count",
     "toffoli_count": "Toffoli count",
     "depth": "Depth",
+    "segment_count": "Segment count",
+    "mpf_r_error": "MPF error-predicate segment threshold",
+    "mpf_r_time_1": "Mizuta first-time-condition segment threshold",
+    "mpf_r_time_2": "Mizuta mu-time-condition segment threshold",
 }
+_MPF_CONSTRAINT_MARKERS = {
+    "error": "o",
+    "time_1": "^",
+    "time_2": "s",
+    "commuting_exact": "P",
+    "multiple": "D",
+    "unknown": "X",
+}
+
+
+def _mpf_comparison_keys(frame: pd.DataFrame) -> list[str]:
+    keys = [
+        "sweep",
+        "hamiltonian_model",
+        "model_parameters_json",
+        "system_qubits",
+        "evolution_time",
+        "time_scaling_mode",
+        "time_scaling_coefficient",
+        "target_error",
+        "algorithm_error_budget",
+        "mpf_term_count",
+        "mpf_schedule",
+        "rotation_synthesis_error",
+    ]
+    missing = set(keys) - set(frame.columns)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise ValueError(f"benchmark data cannot pair MPF bounds without: {names}")
+    return keys
+
+
+def compare_mpf_bounds(
+    frame: pd.DataFrame,
+    metric: str = "segment_count",
+) -> pd.DataFrame:
+    """Pair rigorous Low and Mizuta rows for the same implemented MPF.
+
+    The comparison is deliberately limited to concrete estimator rows. Policy
+    rows are excluded so that a selected best-bound row cannot be paired with
+    one of its own candidates.
+    """
+    validate_benchmark_frame(frame)
+    values = frame.copy()
+    if "mpf_bound_policy" not in values:
+        values["mpf_bound_policy"] = values["bound_method"]
+    if "mpf_active_constraints_json" not in values:
+        values["mpf_active_constraints_json"] = "[]"
+    if "commutator_cap_fallback" not in values:
+        values["commutator_cap_fallback"] = False
+    values[metric] = _metric_values(values, metric)
+    policy = values["mpf_bound_policy"]
+    concrete = {
+        "low2019-l1-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+    }
+    values = values[
+        (values["status"] == "ok")
+        & (values["method_family"] == "multiproduct")
+        & values["bound_method"].isin(concrete)
+        & policy.isin(concrete)
+        & values["bound_rigorous"].fillna(False).astype(bool)
+        & values[metric].notna()
+        & (values[metric] > 0)
+    ].copy()
+    keys = _mpf_comparison_keys(values)
+    if values.duplicated([*keys, "bound_method"]).any():
+        raise ValueError("benchmark data contains duplicate concrete MPF bound rows")
+
+    shared = [
+        *keys,
+        "method_id",
+        "bound_method",
+        metric,
+        "mpf_active_constraints_json",
+        "commutator_cap_fallback",
+    ]
+    low = values[values["bound_method"] == "low2019-l1-ideal-rigorous"][shared]
+    mizuta = values[
+        values["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    ][shared]
+    paired = low.merge(mizuta, on=keys, how="inner", suffixes=("_low", "_mizuta"))
+    if paired.empty:
+        raise ValueError("benchmark data contains no matched rigorous Low/Mizuta MPF rows")
+    paired = paired.rename(
+        columns={
+            f"{metric}_low": "low_value",
+            f"{metric}_mizuta": "mizuta_value",
+            "method_id_low": "low_method_id",
+            "method_id_mizuta": "mizuta_method_id",
+            "mpf_active_constraints_json_mizuta": "mizuta_active_constraints_json",
+            "commutator_cap_fallback_mizuta": "mizuta_commutator_cap_fallback",
+        }
+    )
+    paired["mizuta_to_low_ratio"] = paired["mizuta_value"] / paired["low_value"]
+    paired["tighter_bound_method"] = "tie"
+    paired.loc[
+        paired["low_value"] < paired["mizuta_value"], "tighter_bound_method"
+    ] = "low2019-l1-ideal-rigorous"
+    paired.loc[
+        paired["mizuta_value"] < paired["low_value"], "tighter_bound_method"
+    ] = "mizuta2026-commutator-ideal-rigorous"
+    return paired.sort_values(keys).reset_index(drop=True)
+
+
+def _active_constraint_label(raw: object) -> str:
+    try:
+        constraints = tuple(json.loads(str(raw)))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "unknown"
+    if len(constraints) == 1:
+        return str(constraints[0])
+    if len(constraints) > 1:
+        return "multiple"
+    return "unknown"
+
+
+def plot_mpf_crossover(
+    frame: pd.DataFrame,
+    *,
+    sweep: BenchmarkSweep,
+    metric: str = "segment_count",
+    ax: Axes | None = None,
+) -> Figure:
+    """Plot the matched Mizuta/Low resource ratio for fixed MPF structures."""
+    paired = compare_mpf_bounds(frame, metric)
+    if sweep not in {"system-size", "target-error"}:
+        raise ValueError("sweep must be 'system-size' or 'target-error'")
+    paired = paired[paired["sweep"] == sweep].copy()
+    if paired.empty:
+        raise ValueError(f"benchmark data contains no matched {sweep!r} MPF rows")
+    x_column = "system_qubits" if sweep == "system-size" else "target_error"
+    paired["active_constraint"] = paired["mizuta_active_constraints_json"].map(
+        _active_constraint_label
+    )
+
+    if ax is None:
+        figure, axis = plt.subplots(figsize=(9.2, 5.8))
+    else:
+        axis = ax
+        figure = axis.figure
+
+    colors = itertools.cycle(("#D55E00", "#0072B2", "#009E73", "#CC79A7"))
+    marker_labels: set[tuple[str, bool]] = set()
+    for (term_count, schedule), values in paired.groupby(
+        ["mpf_term_count", "mpf_schedule"], dropna=False, sort=True
+    ):
+        values = values.sort_values(x_column)
+        color = next(colors)
+        label = f"J={int(term_count)}, schedule={schedule}"
+        axis.plot(
+            values[x_column],
+            values["mizuta_to_low_ratio"],
+            color=color,
+            linewidth=1.8,
+            label=label,
+        )
+        for _, row in values.iterrows():
+            constraint = str(row["active_constraint"])
+            fallback = bool(row["mizuta_commutator_cap_fallback"])
+            marker = _MPF_CONSTRAINT_MARKERS.get(constraint, "X")
+            marker_key = (constraint, fallback)
+            marker_label = None
+            if marker_key not in marker_labels:
+                marker_labels.add(marker_key)
+                marker_label = f"active={constraint}" + (" [fallback]" if fallback else "")
+            axis.scatter(
+                [row[x_column]],
+                [row["mizuta_to_low_ratio"]],
+                marker=marker,
+                s=55,
+                facecolors="none" if fallback else color,
+                edgecolors=color,
+                linewidths=1.3,
+                label=marker_label,
+                zorder=3,
+            )
+    axis.axhline(1.0, color="#333333", linestyle="--", linewidth=1.2, label="crossover")
+    axis.set_xscale("log", base=10)
+    axis.set_yscale("log", base=10)
+    if sweep == "target-error":
+        axis.invert_xaxis()
+        axis.set_xlabel("Target simulation error epsilon")
+    else:
+        axis.set_xlabel("Number of system qubits")
+    axis.set_ylabel(f"Mizuta / Low {_METRIC_LABELS.get(metric, metric)}")
+    axis.set_title("Rigorous MPF finite-resource crossover")
+    axis.grid(True, which="both", alpha=0.28)
+    axis.legend(fontsize="small")
+    figure.tight_layout()
+    return figure
 
 
 def _sweep_frame(frame: pd.DataFrame, sweep: BenchmarkSweep) -> pd.DataFrame:

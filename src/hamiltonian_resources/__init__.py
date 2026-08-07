@@ -5,7 +5,9 @@ from .analytical import ResourceModelProvenance
 from .benchmark_plotting import (
     CertificationPolicy,
     FAMILY_COLORS,
+    compare_mpf_bounds,
     plot_benchmark,
+    plot_mpf_crossover,
     save_benchmark_plots,
     select_best_by_family,
 )
@@ -157,6 +159,7 @@ __all__ = [
     "build_multiproduct_circuit",
     "build_simulation_circuit",
     "build_trotter_circuit",
+    "compare_mpf_bounds",
     "compare_with_exact",
     "compare_plan_with_exact",
     "count_circuit_resources",
@@ -176,6 +179,7 @@ __all__ = [
     "pauli_nested_commutator_bounds",
     "plan_simulation",
     "plot_benchmark",
+    "plot_mpf_crossover",
     "run_benchmark",
     "save_benchmark",
     "save_benchmark_plots",

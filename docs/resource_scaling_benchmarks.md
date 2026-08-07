@@ -160,6 +160,9 @@ are:
 | `bound_components_json`, `bound_assumptions_json` | Structured bound terms and theorem assumptions. |
 | `max_nested_commutator_order`, `max_exact_nested_commutator_order` | Largest order used and largest order evaluated by exact Pauli recurrence. |
 | `locality_compatible`, `commutator_cap_fallback` | Whether locality is preserved and whether the explicit work cap selected a proven fallback. |
+| `mpf_r_error`, `mpf_r_time_1`, `mpf_r_time_2` | Candidate-dependent MPF error and Mizuta time-condition segment thresholds. |
+| `mpf_active_constraints_json` | Every threshold active at the selected segment count, including ties. |
+| `mpf_mu_upper`, `mpf_truncation_order_p0`, `mpf_auxiliary_error` | Selected finite Mizuta theorem inputs. |
 | `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
 | `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
@@ -170,6 +173,11 @@ metadata columns. Validation requires the schema-2 core columns and valid row
 states, but permits reordered columns and user-added derived columns. Loading
 an early schema-2 CSV without the scoped-bound extension columns fills them
 conservatively; historical MPF rows are never upgraded to circuit-rigorous.
+
+`compare_mpf_bounds(data, metric="segment_count")` pairs Low and Mizuta rows
+only when their Hamiltonian, time, target, branch count, schedule, and synthesis
+allocation agree. `plot_mpf_crossover` plots the resulting Mizuta/Low ratio,
+with the active Mizuta constraint and commutator fallback shown explicitly.
 
 `select_best_by_family(data, metric=..., sweep=...)` uses
 `certification_policy="implemented-circuit"` by default. It therefore excludes

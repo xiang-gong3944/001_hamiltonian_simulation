@@ -14,7 +14,9 @@ from hamiltonian_resources import (
     QSVTMethod,
     TimeScaling,
     TrotterMethod,
+    compare_mpf_bounds,
     plot_benchmark,
+    plot_mpf_crossover,
     run_benchmark,
     select_best_by_family,
 )
@@ -176,3 +178,61 @@ def test_default_strict_summary_excludes_ideal_only_mpf_and_qsvt_rows():
         "ideal-operator-certified MPF" in line.get_label()
         for line in declared_figure.axes[0].lines
     )
+
+
+@pytest.fixture
+def paired_mpf_frame():
+    return run_benchmark(
+        BenchmarkConfig(
+            hamiltonian=HamiltonianSpec(
+                parameters={"coupling": 1.0, "field": 3.0, "periodic": False}
+            ),
+            system_sizes=[2, 3],
+            target_errors=[1e-2],
+            time=TimeScaling("fixed", 0.01),
+            fixed_target_error=1e-2,
+            methods=[
+                MultiproductMethod(2, error_method="low2019-l1-ideal-rigorous"),
+                MultiproductMethod(
+                    2,
+                    error_method="mizuta2026-commutator-ideal-rigorous",
+                ),
+            ],
+        ),
+        sweeps="system-size",
+    )
+
+
+def test_compare_mpf_bounds_pairs_only_identical_circuit_structures(paired_mpf_frame):
+    paired = compare_mpf_bounds(paired_mpf_frame)
+
+    assert paired["system_qubits"].tolist() == [2, 3]
+    assert (paired["mizuta_to_low_ratio"] > 1).all()
+    assert set(paired["tighter_bound_method"]) == {
+        "low2019-l1-ideal-rigorous"
+    }
+    assert set(paired["mizuta_active_constraints_json"]) == {'["time_1"]'}
+
+    unmatched = paired_mpf_frame.copy()
+    mizuta = unmatched["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    unmatched.loc[mizuta, "rotation_synthesis_error"] *= 2
+    with pytest.raises(ValueError, match="no matched"):
+        compare_mpf_bounds(unmatched)
+
+
+def test_plot_mpf_crossover_marks_constraints_and_fallback(paired_mpf_frame):
+    marked = paired_mpf_frame.copy()
+    mizuta_rows = marked.index[
+        marked["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    ]
+    marked.loc[mizuta_rows[0], "commutator_cap_fallback"] = True
+
+    figure = plot_mpf_crossover(marked, sweep="system-size")
+    axis = figure.axes[0]
+    labels = [item.get_text() for item in axis.get_legend().get_texts()]
+
+    assert axis.get_xscale() == "log"
+    assert axis.get_yscale() == "log"
+    assert len(axis.lines) == 2  # one J series plus the ratio-one crossover
+    assert "active=time_1" in labels
+    assert "active=time_1 [fallback]" in labels

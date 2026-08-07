@@ -310,6 +310,14 @@ meet the requested budget. Mutually commuting Pauli decompositions are
 recognized separately: the symmetric product formula and MPF are then exact,
 so the reported error is zero.
 
+Segment diagnostics rerun the complete candidate calculation independently for
+the error predicate and for each part of Eq. (48). Thus `r_error`,
+`r_time_1`, and `r_time_2` each use their own candidate-dependent (p_0(r)),
+(mu(r)), and local errors. The active constraint is never inferred by
+freezing the final row's (p_0) or (mu). Under the fixed allocation above,
+the truncated-BCH term has no independent segment threshold: it contributes to
+`r_error` and changes (p_0), which in turn changes `r_time_1`.
+
 ## Why Aftab 2024 is not a selectable rigorous estimator
 
 AAT Theorem 8/Eqs. (114)--(115) is a rigorous one-step ideal-MPF bound for the

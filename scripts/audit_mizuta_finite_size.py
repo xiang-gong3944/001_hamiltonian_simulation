@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Iterable
 
 import numpy as np
@@ -106,6 +107,17 @@ def _alpha_data(hamiltonian: Any, p0: int, workers: int) -> tuple[dict[int, floa
 def _global_geometric_error(local_error: float, segments: int) -> float:
     exponent = segments * math.log1p(local_error)
     return math.expm1(exponent) if exponent < 709 else math.inf
+
+
+def _global_repository_error(local_error: float, segments: int) -> float:
+    if local_error == 0:
+        return 0.0
+    exponent = (
+        math.log(local_error)
+        + math.log(segments)
+        + (segments - 1) * math.log1p(local_error)
+    )
+    return math.exp(exponent) if exponent < 709 else math.inf
 
 
 def _smallest_integer_with_u_shaped_bound(
@@ -375,6 +387,160 @@ def paper_coarse_segments(
     }
 
 
+def _log1p_exp(value: float) -> float:
+    if value > 0:
+        return value + math.log1p(math.exp(-value))
+    return math.log1p(math.exp(value))
+
+
+@lru_cache(maxsize=None)
+def _locality_fallback_mu(sites: int, p0: int) -> float:
+    """Return the polynomial root using only Mizuta Eq. (8) TFIM data."""
+    log_terms = tuple(
+        (
+            order,
+            math.lgamma(order)
+            + (order - 1) * math.log(20.0)
+            + math.log(5.0 * sites),
+        )
+        for order in range(BASE_ORDER + 1, p0 + 1)
+    )
+    lower = max(log_value / order for order, log_value in log_terms)
+    upper = lower + math.log(len(log_terms)) / (BASE_ORDER + 1)
+    for _ in range(80):
+        midpoint = (lower + upper) / 2
+        residual = _logsumexp(
+            log_value - order * midpoint for order, log_value in log_terms
+        )
+        if residual > 0:
+            lower = midpoint
+        else:
+            upper = midpoint
+    return math.exp(upper)
+
+
+def _smallest_true(predicate) -> int:
+    upper = 1
+    while not predicate(upper):
+        upper *= 2
+    lower = 0
+    while lower + 1 < upper:
+        midpoint = (lower + upper) // 2
+        if predicate(midpoint):
+            upper = midpoint
+        else:
+            lower = midpoint
+    return upper
+
+
+def _low_locality_model_segments(sites: int, branches: int, epsilon: float, time: float) -> int:
+    coefficient_l1 = float(np.sum(np.abs(multiproduct_coefficients(branches))))
+    formal_order = 2 * branches
+    lambda_norm = 4 * sites - 1
+    target_log = math.log(epsilon)
+
+    def satisfies(segments: int) -> bool:
+        scaled_time = lambda_norm * abs(time) / segments
+        log_step = (
+            math.log(2 * coefficient_l1)
+            + (formal_order + 1) * math.log(scaled_time)
+            - math.lgamma(formal_order + 2)
+            + scaled_time
+        )
+        log_global = (
+            log_step
+            + math.log(segments)
+            + (segments - 1) * _log1p_exp(log_step)
+        )
+        return log_global <= target_log
+
+    return _smallest_true(satisfies)
+
+
+def _mizuta_locality_model_segments(
+    sites: int,
+    branches: int,
+    epsilon: float,
+    time: float,
+) -> int:
+    coefficient_l1 = float(np.sum(np.abs(multiproduct_coefficients(branches))))
+    exponent_l1 = sum(optimal_mpf_exponents(branches))
+    formal_order = 2 * branches
+
+    def satisfies(segments: int) -> bool:
+        local_budget = math.expm1(math.log1p(epsilon) / segments)
+        auxiliary_error = local_budget / (2 * coefficient_l1 * exponent_l1)
+        p0 = max(3, math.ceil(math.log(3 * sites / auxiliary_error)))
+        mu = _locality_fallback_mu(sites, p0)
+        step_time = abs(time) / segments
+        first_limit = 1 / (8 * math.e**3 * 2 * p0 * 2 * 5)
+        second_limit = 1 / (4 * mu)
+        if step_time > min(first_limit, second_limit):
+            return False
+        log_commutator_error = (
+            math.log(2)
+            + 0.5
+            + math.log(coefficient_l1)
+            + (formal_order + 1) * math.log(2 * mu * step_time)
+        )
+        commutator_error = math.exp(log_commutator_error)
+        local_error = commutator_error + local_budget / 2
+        return _global_repository_error(local_error, segments) <= epsilon
+
+    return _smallest_true(satisfies)
+
+
+def locality_fallback_crossover_summary(
+    branches: Iterable[int] = (2, 3, 5, 7),
+    *,
+    epsilon: float = 1e-3,
+    time_coefficient: float = 1.0,
+) -> list[dict[str, Any]]:
+    """Locate TFIM crossovers without constructing high-N Hamiltonians.
+
+    This diagnostic intentionally models the proven locality fallback used
+    after the exact Pauli-transition cap, with ``t=time_coefficient*N``.
+    """
+    results = []
+    for branch_count in branches:
+        lower = 2
+        upper = 2
+
+        def counts(sites: int) -> tuple[int, int]:
+            time = time_coefficient * sites
+            return (
+                _low_locality_model_segments(sites, branch_count, epsilon, time),
+                _mizuta_locality_model_segments(sites, branch_count, epsilon, time),
+            )
+
+        while True:
+            low_segments, mizuta_segments = counts(upper)
+            if mizuta_segments <= low_segments:
+                break
+            lower = upper
+            upper *= 2
+        while lower + 1 < upper:
+            midpoint = (lower + upper) // 2
+            low_segments, mizuta_segments = counts(midpoint)
+            if mizuta_segments <= low_segments:
+                upper = midpoint
+            else:
+                lower = midpoint
+        low_segments, mizuta_segments = counts(upper)
+        results.append(
+            {
+                "branches_J": branch_count,
+                "epsilon": epsilon,
+                "time_coefficient": time_coefficient,
+                "crossover_sites": upper,
+                "low_segments": low_segments,
+                "mizuta_segments": mizuta_segments,
+                "commutator_mode": "Mizuta Eq. (8) locality fallback",
+            }
+        )
+    return results
+
+
 def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
     hamiltonian = transverse_field_ising(
         scenario.sites,
@@ -395,6 +561,14 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
         scenario.epsilon,
         scenario.branches,
         method="mizuta2026-commutator-ideal-rigorous",
+        workers=workers,
+    )
+    low = select_mpf_segments(
+        hamiltonian,
+        scenario.time,
+        scenario.epsilon,
+        scenario.branches,
+        method="low2019-l1-ideal-rigorous",
         workers=workers,
     )
     components = dict(selected.bound_components)
@@ -471,6 +645,8 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
         "p0": p0,
         "mu": mu,
         "repo_segments": selected.segments,
+        "low_segments": low.segments,
+        "mizuta_to_low_segment_ratio": selected.segments / low.segments,
         "repo_error": selected.error,
         "repo_local_error": selected.local_error,
         "r_error": r_error,
@@ -508,15 +684,19 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
     }
 
 
-def _markdown(results: list[dict[str, Any]]) -> str:
+def _markdown(
+    results: list[dict[str, Any]],
+    crossovers: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [
-        "| N | J | t | epsilon | p0 | mu | r_error | r_time,1 | r_time,2 | r_repo | active |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
+        "| N | J | t | epsilon | p0 | mu | r_error | r_time,1 | r_time,2 | r_Mizuta | r_Low | ratio | active |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
     ]
     for item in results:
         lines.append(
             "| {sites} | {branches_J} | {time:g} | {epsilon:.1e} | {p0} | {mu:.6g} | "
-            "{r_error} | {r_time_1} | {r_time_2} | {repo_segments} | {active_constraint} |".format(
+            "{r_error} | {r_time_1} | {r_time_2} | {repo_segments} | {low_segments} | "
+            "{mizuta_to_low_segment_ratio:.3g} | {active_constraint} |".format(
                 **item
             )
         )
@@ -536,6 +716,20 @@ def _markdown(results: list[dict[str, Any]]) -> str:
                 tight=item["tightened"]["segments"],
             )
         )
+    if crossovers:
+        lines.extend(
+            [
+                "",
+                "| J | epsilon | t/N | crossover N | Low r | Mizuta r | commutators |",
+                "| ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
+            ]
+        )
+        for item in crossovers:
+            lines.append(
+                "| {branches_J} | {epsilon:.1e} | {time_coefficient:g} | "
+                "{crossover_sites} | {low_segments} | {mizuta_segments} | "
+                "{commutator_mode} |".format(**item)
+            )
     return "\n".join(lines)
 
 
@@ -590,6 +784,12 @@ def _check(results: list[dict[str, Any]], workers: int) -> None:
     assert long["active_constraint"] == "time_1"
 
 
+def _check_crossovers(crossovers: list[dict[str, Any]]) -> None:
+    assert [item["branches_J"] for item in crossovers] == [2, 3, 5, 7]
+    assert [item["crossover_sites"] for item in crossovers] == [486, 2037, 11388, 29515]
+    assert all(item["mizuta_segments"] <= item["low_segments"] for item in crossovers)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
@@ -599,6 +799,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--branches", type=int)
     parser.add_argument("--time", type=float)
     parser.add_argument("--epsilon", type=float)
+    parser.add_argument(
+        "--crossover-summary",
+        action="store_true",
+        help="append locality-fallback Low/Mizuta crossover estimates",
+    )
     return parser.parse_args()
 
 
@@ -620,14 +825,18 @@ def main() -> None:
         else DEFAULT_SCENARIOS
     )
     results = [audit_scenario(scenario, args.workers) for scenario in scenarios]
+    crossovers = locality_fallback_crossover_summary() if args.crossover_summary else []
     if args.check:
         if custom:
             raise SystemExit("--check requires the built-in scenario set")
         _check(results, args.workers)
+        if crossovers:
+            _check_crossovers(crossovers)
     if args.format == "json":
-        print(json.dumps(results, indent=2, sort_keys=True))
+        payload: Any = {"scenarios": results, "crossovers": crossovers} if crossovers else results
+        print(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        print(_markdown(results))
+        print(_markdown(results, crossovers))
 
 
 if __name__ == "__main__":
