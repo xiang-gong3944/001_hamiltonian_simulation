@@ -9,7 +9,7 @@ before the same branch register is reused for the next simulation segment.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from numbers import Integral
 from typing import Literal, TypeAlias
@@ -91,6 +91,31 @@ class MPFErrorEstimate:
     max_exact_nested_commutator_order: int = 0
     locality_compatible: bool = False
     commutator_bounds: tuple[tuple[int, float], ...] = ()
+    segment_diagnostics: MPFSegmentDiagnostics | None = None
+
+
+@dataclass(frozen=True)
+class MPFSegmentDiagnostics:
+    """Exact lower-bound decomposition used by MPF segment selection.
+
+    Each reported threshold is obtained by rerunning the corresponding
+    candidate predicate.  In particular, Mizuta diagnostics recompute the
+    candidate-dependent truncation order and commutator parameter rather than
+    freezing their values at the selected row.
+    """
+
+    r_error: int
+    r_time_1: int | None
+    r_time_2: int | None
+    active_constraints: tuple[str, ...]
+    truncation_order_p0: int | None = None
+    mu_upper: float | None = None
+    auxiliary_error: float | None = None
+    auxiliary_allocation_fraction: float | None = None
+    local_commutator_error: float | None = None
+    local_truncated_bch_error: float | None = None
+    allocation_strategy: str = "not-applicable"
+    additional_constraints: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -465,8 +490,11 @@ def _mizuta_ideal_mpf_bound(
             ("mu_upper", 0.0),
             ("local_commutator_error", 0.0),
             ("local_truncated_bch_error", 0.0),
+            ("local_step_error", 0.0),
             ("auxiliary_error", auxiliary_error),
             ("truncation_order_p0", float(truncation_order)),
+            ("first_time_limit", math.inf),
+            ("second_time_limit", math.inf),
             ("locality_k", float(commutators.locality_k)),
             ("extensiveness_g", commutators.extensiveness_g),
         )
@@ -834,6 +862,79 @@ def _select_mpf_segments(
         )
     if method == "mizuta2026-commutator-ideal-rigorous":
         estimate = candidate_estimate(segments)
+
+        def component_value(candidate: int, name: str) -> float:
+            return dict(candidate_estimate(candidate).bound_components)[name]
+
+        def error_satisfied(candidate: int) -> bool:
+            local_error = component_value(candidate, "local_step_error")
+            return _repeated_step_error(local_error, candidate) <= target_error
+
+        def first_time_satisfied(candidate: int) -> bool:
+            limit = component_value(candidate, "first_time_limit")
+            return abs(float(time)) / candidate <= limit
+
+        def second_time_satisfied(candidate: int) -> bool:
+            limit = component_value(candidate, "second_time_limit")
+            return abs(float(time)) / candidate <= limit
+
+        def smallest_component(predicate) -> int:
+            if predicate(1):
+                return 1
+            lower = 1
+            upper = segments
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                if predicate(midpoint):
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            if not predicate(upper) or (upper > 1 and predicate(upper - 1)):
+                raise AssertionError("Mizuta segment diagnostic is not independently minimal")
+            return upper
+
+        r_error = smallest_component(error_satisfied)
+        r_time_1 = smallest_component(first_time_satisfied)
+        r_time_2 = smallest_component(second_time_satisfied)
+        components = dict(estimate.bound_components)
+        commuting_exact = all(value == 0 for _, value in estimate.commutator_bounds)
+        if commuting_exact:
+            active_constraints = ("commuting_exact",)
+        else:
+            thresholds = {
+                "error": r_error,
+                "time_1": r_time_1,
+                "time_2": r_time_2,
+            }
+            if max(thresholds.values()) != segments:
+                raise AssertionError("Mizuta segment diagnostics do not recover selection")
+            active_constraints = tuple(
+                name for name, threshold in thresholds.items() if threshold == segments
+            )
+            if segments > 1:
+                previous_failures = {
+                    "error": not error_satisfied(segments - 1),
+                    "time_1": not first_time_satisfied(segments - 1),
+                    "time_2": not second_time_satisfied(segments - 1),
+                }
+                if not any(previous_failures[name] for name in active_constraints):
+                    raise AssertionError("selected Mizuta segment has no active failing predicate")
+        estimate = replace(
+            estimate,
+            segment_diagnostics=MPFSegmentDiagnostics(
+                r_error=r_error,
+                r_time_1=r_time_1,
+                r_time_2=r_time_2,
+                active_constraints=active_constraints,
+                truncation_order_p0=int(components["truncation_order_p0"]),
+                mu_upper=components["mu_upper"],
+                auxiliary_error=components["auxiliary_error"],
+                auxiliary_allocation_fraction=0.5,
+                local_commutator_error=components["local_commutator_error"],
+                local_truncated_bch_error=components["local_truncated_bch_error"],
+                allocation_strategy="fixed-equal-local-budget",
+            ),
+        )
     else:
         estimate = estimate_mpf_error(
             hamiltonian,
@@ -844,6 +945,17 @@ def _select_mpf_segments(
             method=method,
             workers=execution.workers,
             _execution=execution,
+        )
+        estimate = replace(
+            estimate,
+            segment_diagnostics=MPFSegmentDiagnostics(
+                r_error=segments,
+                r_time_1=None,
+                r_time_2=None,
+                active_constraints=(
+                    "error" if estimate.rigorous else "heuristic_error",
+                ),
+            ),
         )
     return estimate
 

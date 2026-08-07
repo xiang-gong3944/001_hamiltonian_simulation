@@ -236,6 +236,79 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert json.loads(row["bound_components_json"])["mu_upper"] > 0
     assert json.loads(row["commutator_bounds_json"])
     assert bool(row["circuit_bound_rigorous"])
+    assert row["mpf_r_error"] >= 1
+    assert row["mpf_r_time_1"] == row["segment_count"]
+    assert row["mpf_r_time_2"] >= 1
+    assert json.loads(row["mpf_active_constraints_json"]) == ["time_1"]
+    assert row["mpf_mu_upper"] > 0
+    assert row["mpf_truncation_order_p0"] >= 3
+    assert row["mpf_auxiliary_error"] > 0
+    assert row["mpf_auxiliary_allocation_fraction"] == 0.5
+    assert row["mpf_local_commutator_error"] >= 0
+    assert row["mpf_local_truncated_bch_error"] > 0
+    assert row["mpf_bound_policy"] == "mizuta2026-commutator-ideal-rigorous"
+    assert json.loads(row["mpf_bound_candidates_json"]) == {}
+
+
+def test_mizuta_segment_diagnostics_recompute_each_candidate_predicate():
+    hamiltonian = transverse_field_ising(
+        4,
+        coupling=1.0,
+        field=3.0,
+        periodic=False,
+    )
+
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-4,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    diagnostics = estimate.segment_diagnostics
+
+    assert estimate.segments == 708
+    assert diagnostics is not None
+    assert (diagnostics.r_error, diagnostics.r_time_1, diagnostics.r_time_2) == (
+        3,
+        708,
+        1,
+    )
+    assert diagnostics.active_constraints == ("time_1",)
+    assert diagnostics.truncation_order_p0 == 22
+    assert diagnostics.mu_upper == pytest.approx(17.423049714315187)
+    assert diagnostics.auxiliary_allocation_fraction == 0.5
+    assert diagnostics.allocation_strategy == "fixed-equal-local-budget"
+
+
+def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    mizuta = select_mpf_segments(
+        hamiltonian,
+        0.0,
+        1e-3,
+        2,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    low = select_mpf_segments(
+        hamiltonian,
+        0.2,
+        1e-3,
+        2,
+        method="low2019-l1-ideal-rigorous",
+    )
+
+    assert mizuta.segment_diagnostics is not None
+    assert mizuta.segment_diagnostics.active_constraints == (
+        "error",
+        "time_1",
+        "time_2",
+    )
+    assert low.segment_diagnostics is not None
+    assert low.segment_diagnostics.r_error == low.segments
+    assert low.segment_diagnostics.r_time_1 is None
+    assert low.segment_diagnostics.r_time_2 is None
+    assert low.segment_diagnostics.active_constraints == ("error",)
 
 
 def test_repository_branch_count_maps_to_mizuta_formal_order():

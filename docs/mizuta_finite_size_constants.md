@@ -59,9 +59,9 @@ The fixed v4 source locations used for audit are:
 | --- | --- | --- |
 | Eqs. (4), (6), (8)–(10), (23)–(24) | `2_Preliminary.tex:36-102` | Hamiltonian split, product formula, commutators, MPF, well conditioning |
 | BCH Eqs. (41)–(46) | `3_Proof.tex:23-49` | BCH coefficients and \(\lVert\Phi_q\rVert\) |
-| Theorem 3, Eqs. (47)–(49) | `3_Proof.tex:55-71` | Truncation order, first time condition, truncated-BCH error |
+| Theorem 3, Eqs. (33)–(35) | `3_Proof.tex:55-71` | Truncation order, first time condition, truncated-BCH error |
 | Proof-level Eqs. (57)–(59) | `3_Proof.tex:106-141` | Explicit BCH remainder before \(3Ne^{-p_0}\) |
-| Theorem 4, Eqs. (61)–(63) | `3_Proof.tex:165-183` | Finite \(\mu\), both time conditions, local MPF error |
+| Theorem 4, Eqs. (47)–(49) | `3_Proof.tex:165-183` | Finite \(\mu\), both time conditions, local MPF error |
 | Proof-level Eqs. (64)–(67) | `3_Proof.tex:185-219` | Dyson expansion, cancellation, geometric bounds, branchwise BCH error |
 | Lemma 5, Eqs. (68)–(71) | `3_Proof.tex:224-253` | Explicit locality-only upper bound on \(\mu\) |
 | Theorem 6, Eqs. (74)–(87) | `3_Proof.tex:277-384` | Error allocation, \(r_1,r_2\), and asymptotic query count |
@@ -70,11 +70,9 @@ The fixed v4 source locations used for audit are:
 | Lemma 9, Eqs. (103)–(104) | `A1_truncated_BCH.tex:10-104` | Subsystem product-formula series bound |
 | Lemma 10, Eqs. (115)–(116) | `A1_truncated_BCH.tex:201-308` | Subsystem truncated-BCH series bound |
 
-The repository metadata currently cites "Theorem 4, Eqs. (47)--(49), with
-Theorem 3, Eqs. (33)--(35)."  That metadata does not match the published v4
-numbering: Eqs. (47)–(49) belong to Theorem 3, while Theorem 4 is Eqs.
-(61)–(63).  This is a citation defect, not a change in the implemented
-formula.
+The published *Quantum* equation numbering is authoritative throughout the
+repository: Theorem 3 is cited as Eqs. (33)–(35), and Theorem 4 as
+Eqs. (47)–(49).
 
 ## 2. Notation and repository mapping
 
@@ -859,7 +857,6 @@ It is not the strongest finite-size bound recoverable from the same proof:
   latter geometric sum, not to the looser envelope the code actually tests;
 - it enforces \(p_0\geq3\), an extra harmless restriction for the benchmark
   regime;
-- its theorem/equation metadata has the numbering reversal noted in Section 1.
 
 The polynomial root itself is not a source of looseness for fixed supplied
 commutator bounds: Eq. (23) shows it is sharp for those inputs.  In the

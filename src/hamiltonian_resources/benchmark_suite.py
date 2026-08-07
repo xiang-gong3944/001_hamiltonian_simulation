@@ -61,6 +61,18 @@ BENCHMARK_COLUMNS = (
     "mpf_term_count",
     "mpf_formal_order",
     "segment_count",
+    "mpf_r_error",
+    "mpf_r_time_1",
+    "mpf_r_time_2",
+    "mpf_active_constraints_json",
+    "mpf_mu_upper",
+    "mpf_truncation_order_p0",
+    "mpf_auxiliary_error",
+    "mpf_auxiliary_allocation_fraction",
+    "mpf_local_commutator_error",
+    "mpf_local_truncated_bch_error",
+    "mpf_bound_policy",
+    "mpf_bound_candidates_json",
     "query_count",
     "qsvt_degree",
     "trotter_partition",
@@ -138,6 +150,18 @@ _SCHEMA2_EXTENSION_COLUMNS = {
     "locality_compatible",
     "commutator_cap_fallback",
     "commutator_bounds_json",
+    "mpf_r_error",
+    "mpf_r_time_1",
+    "mpf_r_time_2",
+    "mpf_active_constraints_json",
+    "mpf_mu_upper",
+    "mpf_truncation_order_p0",
+    "mpf_auxiliary_error",
+    "mpf_auxiliary_allocation_fraction",
+    "mpf_local_commutator_error",
+    "mpf_local_truncated_bch_error",
+    "mpf_bound_policy",
+    "mpf_bound_candidates_json",
     "mpf_physical_branch_count",
     "mpf_negative_coefficient_count",
     "mpf_padding_branch_count",
@@ -435,10 +459,38 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         )
     elif isinstance(plan, MPFPlan):
         error = plan.error_estimate
+        diagnostics = error.segment_diagnostics
         structure = plan.lcu_structure
         per_segment = plan.logical_counts.as_dict()["per_segment"]
         result.update(
             segment_count=plan.segments,
+            mpf_r_error=(diagnostics.r_error if diagnostics is not None else None),
+            mpf_r_time_1=(diagnostics.r_time_1 if diagnostics is not None else None),
+            mpf_r_time_2=(diagnostics.r_time_2 if diagnostics is not None else None),
+            mpf_active_constraints_json=json.dumps(
+                diagnostics.active_constraints if diagnostics is not None else (),
+                separators=(",", ":"),
+            ),
+            mpf_mu_upper=(diagnostics.mu_upper if diagnostics is not None else None),
+            mpf_truncation_order_p0=(
+                diagnostics.truncation_order_p0 if diagnostics is not None else None
+            ),
+            mpf_auxiliary_error=(
+                diagnostics.auxiliary_error if diagnostics is not None else None
+            ),
+            mpf_auxiliary_allocation_fraction=(
+                diagnostics.auxiliary_allocation_fraction
+                if diagnostics is not None
+                else None
+            ),
+            mpf_local_commutator_error=(
+                diagnostics.local_commutator_error if diagnostics is not None else None
+            ),
+            mpf_local_truncated_bch_error=(
+                diagnostics.local_truncated_bch_error if diagnostics is not None else None
+            ),
+            mpf_bound_policy=plan.method.error_method,
+            mpf_bound_candidates_json=json.dumps({}, separators=(",", ":")),
             query_count=plan.logical_counts.as_dict()["totals"]["controlled_s2"],
             bound_components_json=json.dumps(
                 dict(error.bound_components), sort_keys=True, separators=(",", ":")
