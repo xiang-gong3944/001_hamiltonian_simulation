@@ -82,15 +82,13 @@ candidate without claiming a final percentage. Structured integrations can use
 the existing `progress` callback for benchmark rows and `commutator_progress`
 for `CommutatorProgress` events.
 
-`MultiproductMethod(m)` uses
-`error_method="mizuta2026-commutator-ideal-rigorous"` by default. The
-Hamiltonian-1-norm baseline remains available as
-`error_method="low2019-l1-ideal-rigorous"`; the historical `low-rigorous`
-spelling remains an input alias. To
+`MultiproductMethod(m)` uses the Hamiltonian-1-norm bound
+`error_method="low2019-l1-ideal-rigorous"` by default; the historical
+`low-rigorous` spelling remains an input alias. To
 reproduce historical W2-calibrated projections, request
 `MultiproductMethod(m, error_method="legacy-w2-proxy")`. Such rows remain
 available in full plots but are explicitly styled as heuristic. The preferred
-locality-compatible commutator method is
+opt-in locality-compatible commutator method is
 `MultiproductMethod(m,
 error_method="mizuta2026-commutator-ideal-rigorous")`. Its theorem map and
 the reason that Aftab 2024 is not exposed as a finite rigorous estimator are
@@ -190,13 +188,13 @@ alias. Plot titles record the selected policy, and summaries retain
 2. Trotter orders 1 and 2 use rigorous commutator bounds. Higher supported
    orders use the Schubert--Mendl bound within the practical group cap and
    report an explicit nonrigorous fallback otherwise.
-3. MPF segment selection defaults to the Mizuta method using Theorem 3,
-   Eqs. (33)--(35), and Theorem 4, Eqs. (47)--(49), with
-   exact finite-order Pauli commutators and a proven locality fallback. The
-   selectable Low--Kliuchnikov--Wiebe baseline uses
+3. MPF segment selection defaults to the Low--Kliuchnikov--Wiebe bound using
    Eqs. (14)--(15), with `lambda=sum_j ||h_j||=hamiltonian.alpha` for the
    individual Pauli decomposition and the registered schedule's coefficient
-   1-norm; Eq. (16) supplies only its upper search bracket.
+   1-norm; Eq. (16) supplies only its upper search bracket. The opt-in Mizuta
+   method uses Theorem 3, Eqs. (33)--(35), and Theorem 4,
+   Eqs. (47)--(49), with exact finite-order Pauli commutators and a proven
+   locality fallback.
 4. QSVT degree selection uses rigorous Jacobi--Anger parity-tail bounds. The
    exact scaled polynomial and ideal cubic-OAA block have separate derived
    claims; floating `pyqsp` phase residuals remain finite-grid observations,

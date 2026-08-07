@@ -157,7 +157,15 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     from hamiltonian_resources import BenchmarkConfig, MultiproductMethod, run_benchmark
 
     frame = run_benchmark(
-        BenchmarkConfig(system_sizes=[2], methods=[MultiproductMethod(3)]),
+        BenchmarkConfig(
+            system_sizes=[2],
+            methods=[
+                MultiproductMethod(
+                    3,
+                    error_method="mizuta2026-commutator-ideal-rigorous",
+                )
+            ],
+        ),
         sweeps="system-size",
     )
     row = frame.iloc[0]
