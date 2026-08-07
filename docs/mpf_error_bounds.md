@@ -56,6 +56,17 @@ so the repository formal order is \(2J\) and the leading local error order is
 \(\lVert a\rVert_1=\sum_j|a_j|\), the local time is \(\tau=t/r\), and `r` is
 the positive integer segment count.
 
+In repository notation, `term_count` is the number of MPF branches \(J\); it is
+not Mizuta's formal-order parameter. For the implemented symmetric second-order
+base formula,
+
+\[
+m_{\mathrm{formal}}=2J.
+\]
+
+Existing public API parameter names (including the legacy `m` spelling), method
+IDs, and serialized keys are retained for backward compatibility.
+
 ## Notation map
 
 | Concept | LKW 2019 | AAT 2024 | Mizuta 2026 | Repository |
@@ -113,6 +124,28 @@ as `OverflowError`; it is not converted to a finite estimate.
 This is a worst-case operator-norm guarantee for
 \(M(t/r)^r\). It is independent of commutation structure and does not certify
 the robust-OAA shared-ancilla circuit.
+
+## Finite-size comparison with the Mizuta bound
+
+The Low 2019 bound can require fewer resources than the Mizuta 2026
+commutator bound at finite \((N,t,\epsilon)\), without contradicting their
+asymptotic comparison. Low controls the error through the Hamiltonian
+coefficient 1-norm \(\lambda\), which generally gives poorer asymptotic
+system-size scaling, but it retains favorable explicit finite-order factors
+such as \((2J+1)!\) and does not impose Mizuta's finite-step time hypothesis.
+
+Mizuta instead supplies a rigorous locality-compatible commutator scaling. Its
+explicit theorem also uses sufficient time conditions, including
+
+\[
+|\tau|\le \frac{1}{8e^3c_pp_0kg},
+\]
+
+which can dominate the required segment count at finite size. Consequently,
+the Mizuta bound is not necessarily numerically tighter than Low for a fixed
+finite problem. Its principal advantage is the improved locality-aware
+asymptotic scaling. Both methods remain rigorous within their declared scopes;
+the observed finite-resource difference is therefore not a contradiction.
 
 ## Mizuta 2026 finite-order commutator bound
 

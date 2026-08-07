@@ -190,9 +190,10 @@ alias. Plot titles record the selected policy, and summaries retain
 2. Trotter orders 1 and 2 use rigorous commutator bounds. Higher supported
    orders use the Schubert--Mendl bound within the practical group cap and
    report an explicit nonrigorous fallback otherwise.
-3. MPF segment selection defaults to the Mizuta method using Theorem 4,
-   Eqs. (61)--(63), with exact finite-order Pauli commutators and a proven
-   locality fallback. The selectable Low--Kliuchnikov--Wiebe baseline uses
+3. MPF segment selection defaults to the Mizuta method using Theorem 3,
+   Eqs. (33)--(35), and Theorem 4, Eqs. (47)--(49), with
+   exact finite-order Pauli commutators and a proven locality fallback. The
+   selectable Low--Kliuchnikov--Wiebe baseline uses
    Eqs. (14)--(15), with `lambda=sum_j ||h_j||=hamiltonian.alpha` for the
    individual Pauli decomposition and the registered schedule's coefficient
    1-norm; Eq. (16) supplies only its upper search bracket.
