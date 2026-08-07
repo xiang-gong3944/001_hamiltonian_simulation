@@ -98,18 +98,18 @@
       "target_error": 0.01,
       "expected": {
         "method_id": "mpf-m3-mizuta2026-commutator-ideal-rigorous",
-        "segment_count": 1967,
-        "query_count": 41307,
-        "bound_value": 0.0044999849710530455,
+        "segment_count": 1858,
+        "query_count": 39018,
+        "bound_value": 0.0061396553728881136,
         "bound_method": "mizuta2026-commutator-ideal-rigorous",
         "bound_rigorous": true,
         "bound_scope": "ideal-mpf",
         "circuit_bound_rigorous": false,
         "total_qubits": 7,
-        "rotation_count": 495684,
-        "toffoli_count": 51142,
-        "t_count": 45807496,
-        "cnot_count": 944160
+        "rotation_count": 468216,
+        "toffoli_count": 48308,
+        "t_count": 43269104,
+        "cnot_count": 891840
       }
     },
     {

@@ -243,7 +243,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert row["mpf_mu_upper"] > 0
     assert row["mpf_truncation_order_p0"] >= 3
     assert row["mpf_auxiliary_error"] > 0
-    assert row["mpf_auxiliary_allocation_fraction"] == 0.5
+    assert 0 < row["mpf_auxiliary_allocation_fraction"] < 1
     assert row["mpf_local_commutator_error"] >= 0
     assert row["mpf_local_truncated_bch_error"] > 0
     assert row["mpf_bound_policy"] == "mizuta2026-commutator-ideal-rigorous"
@@ -267,18 +267,134 @@ def test_mizuta_segment_diagnostics_recompute_each_candidate_predicate():
     )
     diagnostics = estimate.segment_diagnostics
 
-    assert estimate.segments == 708
+    assert estimate.segments == 675
     assert diagnostics is not None
     assert (diagnostics.r_error, diagnostics.r_time_1, diagnostics.r_time_2) == (
-        3,
-        708,
+        2,
+        675,
         1,
     )
     assert diagnostics.active_constraints == ("time_1",)
+    assert diagnostics.truncation_order_p0 == 21
+    assert diagnostics.mu_upper == pytest.approx(17.412555296623527)
+    assert diagnostics.auxiliary_allocation_fraction == pytest.approx(0.8121327656087732)
+    assert diagnostics.allocation_strategy == "optimized-discrete-p0"
+
+
+def test_mizuta_fixed_equal_allocation_remains_available_for_audit():
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0, periodic=False)
+
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-4,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+        auxiliary_allocation_fraction=0.5,
+    )
+    diagnostics = estimate.segment_diagnostics
+
+    assert estimate.segments == 708
+    assert diagnostics is not None
+    assert (diagnostics.r_error, diagnostics.r_time_1, diagnostics.r_time_2) == (3, 708, 1)
     assert diagnostics.truncation_order_p0 == 22
     assert diagnostics.mu_upper == pytest.approx(17.423049714315187)
     assert diagnostics.auxiliary_allocation_fraction == 0.5
-    assert diagnostics.allocation_strategy == "fixed-equal-local-budget"
+    assert diagnostics.allocation_strategy == "fixed-local-budget-fraction"
+
+
+@pytest.mark.parametrize(
+    ("sites", "time", "epsilon", "branches", "fixed_segments", "optimized_segments", "rho"),
+    [
+        (4, 0.01, 1e-4, 2, 675, 643, 0.7952327646929407),
+        (4, 0.01, 1e-4, 4, 740, 708, 0.5894035594342328),
+        (4, 4.0, 1e-4, 3, 359_933, 359_933, 0.39489677289325875),
+        (12, 12.0, 1e-3, 3, 1_079_799, 1_041_235, 0.9320125405347331),
+        (50, 50.0, 1e-3, 3, 4_981_214, 4_820_529, 0.8951029956261423),
+    ],
+)
+def test_mizuta_discrete_allocation_optimizer_representative_cases(
+    sites, time, epsilon, branches, fixed_segments, optimized_segments, rho
+):
+    hamiltonian = transverse_field_ising(
+        sites,
+        coupling=1.0,
+        field=3.0,
+        periodic=False,
+    )
+
+    optimized = select_mpf_segments(
+        hamiltonian,
+        time,
+        epsilon,
+        branches,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    fixed = select_mpf_segments(
+        hamiltonian,
+        time,
+        epsilon,
+        branches,
+        method="mizuta2026-commutator-ideal-rigorous",
+        auxiliary_allocation_fraction=0.5,
+    )
+
+    assert optimized.segments == optimized_segments
+    assert fixed.segments == fixed_segments
+    assert optimized.segments <= fixed.segments
+    assert optimized.segment_diagnostics is not None
+    assert optimized.segment_diagnostics.auxiliary_allocation_fraction == pytest.approx(rho)
+    if optimized.segments > 1:
+        previous = estimate_mpf_error(
+            hamiltonian,
+            time,
+            optimized.segments - 1,
+            branches,
+            method="mizuta2026-commutator-ideal-rigorous",
+            target_error=epsilon,
+        )
+        assert not (previous.rigorous and previous.error <= epsilon)
+
+
+def test_mizuta_selected_allocation_reproduces_production_formulas_and_dense_search():
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0, periodic=False)
+    epsilon = 1e-4
+    selected = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        epsilon,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    diagnostics = selected.segment_diagnostics
+    assert diagnostics is not None
+    assert diagnostics.auxiliary_error is not None
+    assert diagnostics.auxiliary_allocation_fraction is not None
+    assert diagnostics.truncation_order_p0 is not None
+    local_budget = math.expm1(math.log1p(epsilon) / selected.segments)
+
+    assert math.ceil(
+        math.log(3 * hamiltonian.num_qubits / diagnostics.auxiliary_error)
+    ) == diagnostics.truncation_order_p0
+    assert diagnostics.local_truncated_bch_error == pytest.approx(
+        diagnostics.auxiliary_allocation_fraction * local_budget
+    )
+
+    dense_errors = []
+    for fraction in np.linspace(0.001, 0.999, 200):
+        estimate = estimate_mpf_error(
+            hamiltonian,
+            0.01,
+            selected.segments,
+            3,
+            method="mizuta2026-commutator-ideal-rigorous",
+            target_error=epsilon,
+            auxiliary_allocation_fraction=float(fraction),
+        )
+        if estimate.rigorous:
+            dense_errors.append(estimate.error)
+    assert dense_errors
+    assert selected.error <= min(dense_errors) * (1 + 1e-12)
 
 
 def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
@@ -327,7 +443,7 @@ def test_best_rigorous_ideal_policy_selects_low_and_retains_candidates():
     assert estimate.segments == 1
     assert [(candidate.method, candidate.segments) for candidate in estimate.bound_candidates] == [
         ("low2019-l1-ideal-rigorous", 1),
-        ("mizuta2026-commutator-ideal-rigorous", 708),
+        ("mizuta2026-commutator-ideal-rigorous", 675),
     ]
     assert all(candidate.rigorous for candidate in estimate.bound_candidates)
 
@@ -353,7 +469,7 @@ def test_best_rigorous_ideal_policy_can_select_mizuta_and_break_ties_with_low():
     )
 
     assert mizuta.method == "mizuta2026-commutator-ideal-rigorous"
-    assert mizuta.segments == 9
+    assert mizuta.segments == 8
     assert tie.method == "low2019-l1-ideal-rigorous"
     assert tie.segments == 1
 

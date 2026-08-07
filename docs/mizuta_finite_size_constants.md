@@ -34,9 +34,9 @@ p_0=\left\lceil\log\frac{3N}{\eta}\right\rceil,
 
 For the repository's representative four-qubit example, the first condition
 in (2), not the measured commutator parameter, fixes the segment count.  At
-\(t=0.01\), \(J=3\), and target error \(10^{-4}\), the approximation-error
-condition alone asks for only three segments and the \(\mu\)-dependent time
-condition asks for one, but the truncated-BCH time condition asks for 708.
+\(t=0.01\), \(J=3\), and target error \(10^{-4}\), exact optimization of the
+printed-theorem auxiliary allocation asks for 675 segments; the retained
+50/50 audit result is 708.
 
 ## 1. Status labels and source map
 
@@ -716,18 +716,18 @@ A=\frac{17}{9},\qquad K=7,\qquad W=\frac{33}{5}.
 
 ### 10.1 Which constraint is active?
 
-| \(N\) | \(J\) | \(t\) | \(\varepsilon\) | \(p_0\) | \(\mu\) | \(r_{\rm error}\) | \(r_{\rm time,1}\) | \(r_{\rm time,2}\) | repository \(r\) | active |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
-| 4 | 2 | 0.01 | \(10^{-4}\) | 21 | 17.4126 | 6 | 675 | 1 | 675 | time 1 |
-| 4 | 3 | 0.01 | \(10^{-3}\) | 20 | 17.3990 | 2 | 643 | 1 | 643 | time 1 |
-| 4 | 3 | 0.01 | \(10^{-4}\) | 22 | 17.4230 | 3 | 708 | 1 | 708 | time 1 |
-| 4 | 3 | 0.01 | \(10^{-6}\) | 27 | 17.4535 | 6 | 868 | 1 | 868 | time 1 |
-| 4 | 4 | 0.01 | \(10^{-4}\) | 23 | 17.4320 | 2 | 740 | 1 | 740 | time 1 |
-| 4 | 3 | 4 | \(10^{-4}\) | 28 | 17.4567 | 2524 | 359933 | 280 | 359933 | time 1 |
+| \(N\) | \(J\) | \(t\) | \(\varepsilon\) | \(p_0\) | \(\rho\) | \(\mu\) | \(r_{\rm error}\) | \(r_{\rm time,1}\) | \(r_{\rm time,2}\) | repository \(r\) | active |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
+| 4 | 2 | 0.01 | \(10^{-4}\) | 20 | 0.795 | 17.3990 | 5 | 643 | 1 | 643 | time 1 |
+| 4 | 3 | 0.01 | \(10^{-3}\) | 19 | 0.543 | 17.3830 | 2 | 611 | 1 | 611 | time 1 |
+| 4 | 3 | 0.01 | \(10^{-4}\) | 21 | 0.812 | 17.4126 | 2 | 675 | 1 | 675 | time 1 |
+| 4 | 3 | 0.01 | \(10^{-6}\) | 26 | 0.678 | 17.4495 | 4 | 836 | 1 | 836 | time 1 |
+| 4 | 4 | 0.01 | \(10^{-4}\) | 22 | 0.589 | 17.4230 | 2 | 708 | 1 | 708 | time 1 |
+| 4 | 3 | 4 | \(10^{-4}\) | 28 | 0.395 | 17.4567 | 2004 | 359933 | 279 | 359933 | time 1 |
 
-The quantity labelled \(r_{\rm error}\) uses the paper's equal local error
-split.  `r_trunc` is not shown because it is absorbed into \(\eta,p_0\), as
-explained after Eq. (39).
+Each quantity uses exact discrete optimization of the printed-theorem local
+allocation. `r_trunc` is not shown because it is absorbed into
+\(\eta,p_0\), as explained after Eq. (39).
 
 ### 10.2 Coarse, theorem-driven, and tightened counts
 
@@ -747,25 +747,24 @@ separately labelled proof-level tightening, not the published theorem.
 
 ### 10.3 Why hundreds of segments occur with moderate \(\mu\)
 
-For \(N=4,J=3,t=0.01,\varepsilon=10^{-4}\), the repository chooses \(p_0=22\)
-and obtains \(\mu=17.4230497\).  The three diagnostic quantities are
+For \(N=4,J=3,t=0.01,\varepsilon=10^{-4}\), the repository chooses
+\(\rho=0.8121328\), \(p_0=21\), and obtains \(\mu=17.4125553\).  The three
+diagnostic quantities are
 
 \[
 \begin{aligned}
-r_{\mathrm{error}}&=3,\\
+r_{\mathrm{error}}&=2,\\
 r_{\mathrm{time},2}
-&=\left\lceil2\cdot2\cdot17.4230497\cdot0.01\right\rceil=1,\\
+&=1,\\
 r_{\mathrm{time},1}
-&=\left\lceil
-8e^3\cdot2\cdot22\cdot2\cdot5\cdot0.01
-\right\rceil=708.
+&=675.
 \end{aligned}
 \tag{48}
 \]
 
 The local commutator contribution at the selected \(r\) is only
-\(4.36\times10^{-23}\), whereas the allocated truncated-BCH contribution is
-\(7.06\times10^{-8}\).  The poor count therefore does not diagnose a large
+\(6.06\times10^{-23}\), whereas the allocated truncated-BCH contribution is
+\(1.20\times10^{-7}\).  The poor count therefore does not diagnose a large
 physical commutator.  It diagnoses the universal sufficient constant in
 Theorem 3.
 
@@ -840,15 +839,15 @@ upper-rounding assumptions recorded by the implementation.  It correctly:
 5. chooses adaptive \(p_0\), checks both time hypotheses, and evaluates
    Theorem 4's \(2\sqrt e\) local bound;
 6. uses the rigorous polynomial-root upper bound for \(\mu\);
-7. searches for the smallest integer satisfying its implemented predicate.
+7. exactly enumerates the discrete \(p_0\) values allowed by the first time
+   hypothesis and jointly optimizes the auxiliary allocation;
+8. searches for the smallest integer satisfying its implemented predicate.
 
 It is not the strongest finite-size bound recoverable from the same proof:
 
 - it uses \(AK\) instead of \(W\);
 - it uses \(2\sqrt e x^{m+1}\) instead of Eq. (27) or the branchwise Eq. (25);
 - it uses the single \(\eta\) remainder instead of Eq. (15) per branch;
-- it fixes half of a local budget for truncation rather than jointly optimizing
-  the error allocation and \(p_0\);
 - its repeated-step envelope is
   \(r\delta(1+\delta)^{r-1}\), which is looser than the exact geometric sum
   \((1+\delta)^r-1\);
@@ -878,13 +877,13 @@ but must remain labelled as refinements rather than quotations of Theorem 4:
    \(q_i^{-2}\) factors as far as the available data allow;
 3. use \(W=\sum|c_j|k_j\) rather than \(AK\);
 4. use Eq. (27), with \(x<1\), instead of Eq. (28), with \(x\leq1/2\);
-5. optimize \(p_0\) and the commutator/truncation error allocation jointly;
-6. use the exact geometric telescoping sum (41) for the repeated ideal MPF;
-7. retain \(p_0N^{1/p_0}\) and the exact composition count if Lemma 5 must be
+5. use the exact geometric telescoping sum (41) for the repeated ideal MPF;
+6. retain \(p_0N^{1/p_0}\) and the exact composition count if Lemma 5 must be
    used instead of measured commutators.
 
 For the central \(N=4,J=3,t=0.01,\varepsilon=10^{-4}\) point, the implemented
-Theorem 4 count is 708 and the conservative same-ingredients calculation in
+Theorem 4 count is 675 (708 with the retained 50/50 audit split), and the
+conservative same-ingredients calculation in
 the audit script is 436.  This is a meaningful constant improvement, but it is
 still hundreds of segments: the subsystem BCH coefficient bound remains the
 dominant conservative ingredient.

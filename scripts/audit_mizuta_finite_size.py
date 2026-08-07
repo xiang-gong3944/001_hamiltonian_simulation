@@ -469,6 +469,51 @@ def _mizuta_locality_model_segments(
 
     def satisfies(segments: int) -> bool:
         local_budget = math.expm1(math.log1p(epsilon) / segments)
+        allocation_scale = coefficient_l1 * exponent_l1
+        log_scale = math.log(3 * sites * allocation_scale / local_budget)
+        p0 = max(3, math.floor(log_scale) + 1)
+        step_time = abs(time) / segments
+        while True:
+            first_limit = 1 / (8 * math.e**3 * 2 * p0 * 2 * 5)
+            if step_time > first_limit:
+                return False
+            target = float(np.nextafter(float(p0), -np.inf))
+            fraction = math.exp(log_scale - target)
+            mu = _locality_fallback_mu(sites, p0)
+            second_limit = 1 / (4 * mu)
+            log_commutator_error = (
+                math.log(2)
+                + 0.5
+                + math.log(coefficient_l1)
+                + (formal_order + 1) * math.log(2 * mu * step_time)
+            )
+            commutator_error = math.exp(log_commutator_error)
+            local_error = commutator_error + fraction * local_budget
+            if (
+                step_time <= second_limit
+                and _global_repository_error(local_error, segments) <= epsilon
+            ):
+                return True
+            if _global_repository_error(commutator_error, segments) > epsilon:
+                return False
+            p0 += 1
+
+    return _smallest_true(satisfies)
+
+
+def _mizuta_locality_model_segments_fixed_equal(
+    sites: int,
+    branches: int,
+    epsilon: float,
+    time: float,
+) -> int:
+    """Retain the former 50/50 locality model for crossover audit."""
+    coefficient_l1 = float(np.sum(np.abs(multiproduct_coefficients(branches))))
+    exponent_l1 = sum(optimal_mpf_exponents(branches))
+    formal_order = 2 * branches
+
+    def satisfies(segments: int) -> bool:
+        local_budget = math.expm1(math.log1p(epsilon) / segments)
         auxiliary_error = local_budget / (2 * coefficient_l1 * exponent_l1)
         p0 = max(3, math.ceil(math.log(3 * sites / auxiliary_error)))
         mu = _locality_fallback_mu(sites, p0)
@@ -503,36 +548,46 @@ def locality_fallback_crossover_summary(
     """
     results = []
     for branch_count in branches:
-        lower = 2
-        upper = 2
-
-        def counts(sites: int) -> tuple[int, int]:
+        def counts(sites: int, *, fixed_equal: bool = False) -> tuple[int, int]:
             time = time_coefficient * sites
+            mizuta_model = (
+                _mizuta_locality_model_segments_fixed_equal
+                if fixed_equal
+                else _mizuta_locality_model_segments
+            )
             return (
                 _low_locality_model_segments(sites, branch_count, epsilon, time),
-                _mizuta_locality_model_segments(sites, branch_count, epsilon, time),
+                mizuta_model(sites, branch_count, epsilon, time),
             )
 
-        while True:
-            low_segments, mizuta_segments = counts(upper)
-            if mizuta_segments <= low_segments:
-                break
-            lower = upper
-            upper *= 2
-        while lower + 1 < upper:
-            midpoint = (lower + upper) // 2
-            low_segments, mizuta_segments = counts(midpoint)
-            if mizuta_segments <= low_segments:
-                upper = midpoint
-            else:
-                lower = midpoint
-        low_segments, mizuta_segments = counts(upper)
+        def locate(*, fixed_equal: bool = False) -> tuple[int, int, int]:
+            lower = 2
+            upper = 2
+            while True:
+                low_segments, mizuta_segments = counts(upper, fixed_equal=fixed_equal)
+                if mizuta_segments <= low_segments:
+                    break
+                lower = upper
+                upper *= 2
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                low_segments, mizuta_segments = counts(midpoint, fixed_equal=fixed_equal)
+                if mizuta_segments <= low_segments:
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            low_segments, mizuta_segments = counts(upper, fixed_equal=fixed_equal)
+            return upper, low_segments, mizuta_segments
+
+        upper, low_segments, mizuta_segments = locate()
+        fixed_equal_crossover, _, _ = locate(fixed_equal=True)
         results.append(
             {
                 "branches_J": branch_count,
                 "epsilon": epsilon,
                 "time_coefficient": time_coefficient,
                 "crossover_sites": upper,
+                "fixed_equal_crossover_sites": fixed_equal_crossover,
                 "low_segments": low_segments,
                 "mizuta_segments": mizuta_segments,
                 "commutator_mode": "Mizuta Eq. (8) locality fallback",
@@ -563,6 +618,15 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
         method="mizuta2026-commutator-ideal-rigorous",
         workers=workers,
     )
+    fixed_equal = select_mpf_segments(
+        hamiltonian,
+        scenario.time,
+        scenario.epsilon,
+        scenario.branches,
+        method="mizuta2026-commutator-ideal-rigorous",
+        auxiliary_allocation_fraction=0.5,
+        workers=workers,
+    )
     low = select_mpf_segments(
         hamiltonian,
         scenario.time,
@@ -572,28 +636,17 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
         workers=workers,
     )
     components = dict(selected.bound_components)
+    diagnostics = selected.segment_diagnostics
+    if diagnostics is None:
+        raise AssertionError("Mizuta selection did not return segment diagnostics")
     p0 = int(components["truncation_order_p0"])
     mu = components["mu_upper"]
     locality_k = int(components["locality_k"])
     extensiveness_g = components["extensiveness_g"]
-    r_time_one = _ceil_positive(scenario.time / components["first_time_limit"])
-    r_time_two = _ceil_positive(scenario.time / components["second_time_limit"])
-    r_error = _ceil_positive(
-        (
-            8
-            * math.sqrt(math.e)
-            * coefficient_l1
-            * (BASE_REPETITIONS * mu * abs(scenario.time)) ** (formal_order + 1)
-            / scenario.epsilon
-        )
-        ** (1 / formal_order)
-    )
-    component_counts = {
-        "error": r_error,
-        "time_1": r_time_one,
-        "time_2": r_time_two,
-    }
-    active = max(component_counts, key=component_counts.__getitem__)
+    r_time_one = diagnostics.r_time_1
+    r_time_two = diagnostics.r_time_2
+    r_error = diagnostics.r_error
+    active = ",".join(diagnostics.active_constraints)
 
     theorem = theorem_minimum_segments(
         hamiltonian,
@@ -645,6 +698,8 @@ def audit_scenario(scenario: Scenario, workers: int) -> dict[str, Any]:
         "p0": p0,
         "mu": mu,
         "repo_segments": selected.segments,
+        "fixed_equal_segments": fixed_equal.segments,
+        "allocation_fraction": diagnostics.auxiliary_allocation_fraction,
         "low_segments": low.segments,
         "mizuta_to_low_segment_ratio": selected.segments / low.segments,
         "repo_error": selected.error,
@@ -689,13 +744,13 @@ def _markdown(
     crossovers: list[dict[str, Any]] | None = None,
 ) -> str:
     lines = [
-        "| N | J | t | epsilon | p0 | mu | r_error | r_time,1 | r_time,2 | r_Mizuta | r_Low | ratio | active |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
+        "| N | J | t | epsilon | p0 | rho | mu | r_error | r_time,1 | r_time,2 | r_Mizuta | fixed 50/50 | r_Low | ratio | active |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
     ]
     for item in results:
         lines.append(
-            "| {sites} | {branches_J} | {time:g} | {epsilon:.1e} | {p0} | {mu:.6g} | "
-            "{r_error} | {r_time_1} | {r_time_2} | {repo_segments} | {low_segments} | "
+            "| {sites} | {branches_J} | {time:g} | {epsilon:.1e} | {p0} | {allocation_fraction:.3f} | {mu:.6g} | "
+            "{r_error} | {r_time_1} | {r_time_2} | {repo_segments} | {fixed_equal_segments} | {low_segments} | "
             "{mizuta_to_low_segment_ratio:.3g} | {active_constraint} |".format(
                 **item
             )
@@ -720,14 +775,14 @@ def _markdown(
         lines.extend(
             [
                 "",
-                "| J | epsilon | t/N | crossover N | Low r | Mizuta r | commutators |",
-                "| ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
+                "| J | epsilon | t/N | crossover N | fixed 50/50 crossover N | Low r | Mizuta r | commutators |",
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |",
             ]
         )
         for item in crossovers:
             lines.append(
                 "| {branches_J} | {epsilon:.1e} | {time_coefficient:g} | "
-                "{crossover_sites} | {low_segments} | {mizuta_segments} | "
+                "{crossover_sites} | {fixed_equal_crossover_sites} | {low_segments} | {mizuta_segments} | "
                 "{commutator_mode} |".format(**item)
             )
     return "\n".join(lines)
@@ -765,9 +820,11 @@ def _check(results: list[dict[str, Any]], workers: int) -> None:
         and item["time"] == 0.01
         and item["epsilon"] == 1e-4
     )
-    assert short["p0"] == 22
-    assert short["repo_segments"] == 708
-    assert math.isclose(short["mu"], 17.423049714315187, rel_tol=2e-12)
+    assert short["p0"] == 21
+    assert short["repo_segments"] == 675
+    assert short["fixed_equal_segments"] == 708
+    assert math.isclose(short["allocation_fraction"], 0.8121327656087732, rel_tol=2e-12)
+    assert math.isclose(short["mu"], 17.412555296623527, rel_tol=2e-12)
     assert short["active_constraint"] == "time_1"
 
     long = next(
@@ -780,13 +837,20 @@ def _check(results: list[dict[str, Any]], workers: int) -> None:
     )
     assert long["p0"] == 28
     assert long["repo_segments"] == 359933
-    assert long["r_time_2"] == 280
+    assert long["fixed_equal_segments"] == 359933
+    assert long["r_time_2"] == 279
     assert long["active_constraint"] == "time_1"
 
 
 def _check_crossovers(crossovers: list[dict[str, Any]]) -> None:
     assert [item["branches_J"] for item in crossovers] == [2, 3, 5, 7]
-    assert [item["crossover_sites"] for item in crossovers] == [486, 2037, 11388, 29515]
+    assert [item["crossover_sites"] for item in crossovers] == [439, 1998, 11388, 28949]
+    assert [item["fixed_equal_crossover_sites"] for item in crossovers] == [
+        486,
+        2037,
+        11388,
+        29515,
+    ]
     assert all(item["mizuta_segments"] <= item["low_segments"] for item in crossovers)
 
 

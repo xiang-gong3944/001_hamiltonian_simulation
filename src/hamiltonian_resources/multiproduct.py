@@ -453,38 +453,101 @@ def _repeated_step_error(step_error: float, segments: int) -> float:
     return math.exp(log_error) if log_error < 709 else math.inf
 
 
-def _mizuta_ideal_mpf_bound(
+@dataclass(frozen=True)
+class _MizutaAllocationCandidate:
+    """One exact printed-theorem evaluation at fixed ``(r, p0, rho)``."""
+
+    allocation_fraction: float
+    auxiliary_error: float
+    truncation_order: int
+    mu_upper: float
+    prefactor: float
+    local_commutator_error: float
+    local_truncated_bch_error: float
+    local_step_error: float
+    repeated_error: float
+    first_time_limit: float
+    second_time_limit: float
+    commutators: PauliNestedCommutatorBounds
+    commuting_exact: bool = False
+    zero_time_exact: bool = False
+
+
+@dataclass(frozen=True)
+class _MizutaCandidateEvaluation:
+    """Allocation-aware predicates for one candidate segment count."""
+
+    selected: _MizutaAllocationCandidate
+    error_satisfied: bool
+    first_time_satisfied: bool
+    second_time_satisfied: bool
+    full_satisfied: bool
+    error_and_time_1_satisfied: bool
+    error_and_time_2_satisfied: bool
+    time_1_and_time_2_satisfied: bool
+
+
+def _mizuta_truncation_order(
+    hamiltonian: PauliHamiltonian,
+    local_budget: float,
+    allocation_scale: float,
+    allocation_fraction: float,
+) -> int:
+    auxiliary_error = allocation_fraction * local_budget / allocation_scale
+    if auxiliary_error <= 0:
+        raise OverflowError("Mizuta auxiliary error underflowed float range")
+    return max(3, math.ceil(math.log(3 * hamiltonian.num_qubits / auxiliary_error)))
+
+
+def _mizuta_minimum_fraction_for_order(
+    hamiltonian: PauliHamiltonian,
+    local_budget: float,
+    allocation_scale: float,
+    truncation_order: int,
+) -> float:
+    """Return the smallest floating ``rho`` assigned to one discrete ``p0``."""
+    log_scale = math.log(3 * hamiltonian.num_qubits * allocation_scale / local_budget)
+    # The exact lower endpoint is exp(log_scale-p0).  Move the target exponent
+    # one float below p0 so the production ceil calculation robustly maps the
+    # returned fraction to p0 rather than p0+1 at a rounded boundary.
+    target = float(np.nextafter(float(truncation_order), -np.inf))
+    fraction = math.exp(log_scale - target)
+    if not 0 < fraction < 1:
+        raise ValueError("truncation order has no allocation fraction in (0, 1)")
+    for _ in range(64):
+        derived = _mizuta_truncation_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            fraction,
+        )
+        if derived == truncation_order:
+            return fraction
+        direction = np.inf if derived > truncation_order else 0.0
+        fraction = float(np.nextafter(fraction, direction))
+    raise ArithmeticError("could not reproduce the discrete Mizuta truncation order")
+
+
+def _mizuta_allocation_candidate(
     hamiltonian: PauliHamiltonian,
     time: float,
     term_count: int,
     segments: int,
     coefficient_l1_norm: float,
-    exponents: tuple[int, ...],
+    exponent_l1_norm: float,
     target_error: float,
-    execution: CommutatorExecution | None = None,
-) -> tuple[
-    float,
-    float,
-    tuple[tuple[str, float], ...],
-    PauliNestedCommutatorBounds,
-    tuple[str, ...],
-    bool,
-]:
-    """Evaluate Mizuta 2026 Theorem 4/Eqs. (47)--(49) for ``p=2``."""
+    allocation_fraction: float,
+    truncation_order: int,
+    execution: CommutatorExecution | None,
+) -> _MizutaAllocationCandidate:
+    """Evaluate Theorem 4 at one allocation without freezing any input."""
     mizuta_formal_order = 2 * term_count
     base_order = 2
-    base_repetitions = 2  # c_p for the ordered Strang formula, paper Eq. (6)
-    exponent_l1_norm = float(sum(exponents))
+    base_repetitions = 2
     step_time = abs(float(time)) / segments
-
-    # Allocate half of the exact local budget implied by the repeated-step
-    # target to the truncated-BCH remainder in Theorem 4.
     local_budget = math.expm1(math.log1p(target_error) / segments)
-    auxiliary_error = local_budget / (2 * coefficient_l1_norm * exponent_l1_norm)
-    if auxiliary_error <= 0:
-        raise OverflowError("Mizuta auxiliary error underflowed float range")
-    truncation_order = math.ceil(math.log(3 * hamiltonian.num_qubits / auxiliary_error))
-    truncation_order = max(base_order + 1, truncation_order)
+    allocation_scale = coefficient_l1_norm * exponent_l1_norm
+    auxiliary_error = allocation_fraction * local_budget / allocation_scale
     if execution is not None:
         execution.report(
             CommutatorProgress(
@@ -509,27 +572,24 @@ def _mizuta_ideal_mpf_bound(
         _segment_candidate=segments,
         _target_error=target_error,
     )
-
-    if all(value == 0 for value in commutators.values):
-        components = (
-            ("mu_upper", 0.0),
-            ("local_commutator_error", 0.0),
-            ("local_truncated_bch_error", 0.0),
-            ("local_step_error", 0.0),
-            ("auxiliary_error", auxiliary_error),
-            ("truncation_order_p0", float(truncation_order)),
-            ("first_time_limit", math.inf),
-            ("second_time_limit", math.inf),
-            ("locality_k", float(commutators.locality_k)),
-            ("extensiveness_g", commutators.extensiveness_g),
-        )
-        return (
-            0.0,
-            0.0,
-            components,
-            commutators,
-            ("all individual Pauli summands commute; the ordered Strang formula is exact",),
-            True,
+    commuting_exact = all(value == 0 for value in commutators.values)
+    zero_time_exact = step_time == 0
+    if commuting_exact:
+        return _MizutaAllocationCandidate(
+            allocation_fraction=allocation_fraction,
+            auxiliary_error=auxiliary_error,
+            truncation_order=truncation_order,
+            mu_upper=0.0,
+            prefactor=0.0,
+            local_commutator_error=0.0,
+            local_truncated_bch_error=0.0,
+            local_step_error=0.0,
+            repeated_error=0.0,
+            first_time_limit=math.inf,
+            second_time_limit=math.inf,
+            commutators=commutators,
+            commuting_exact=True,
+            zero_time_exact=zero_time_exact,
         )
 
     mu_upper = _mizuta_mu_upper_bound(commutators, base_order=base_order)
@@ -553,9 +613,12 @@ def _mizuta_ideal_mpf_bound(
             local_commutator_error = (
                 math.exp(log_commutator_error) if log_commutator_error < 709 else math.inf
             )
-    local_truncated_bch_error = coefficient_l1_norm * exponent_l1_norm * auxiliary_error
+    local_truncated_bch_error = allocation_scale * auxiliary_error
+    if zero_time_exact:
+        # The allocation term only bounds a truncated representation. At
+        # tau=0 the product formula, MPF, and exact evolution are identical.
+        local_truncated_bch_error = 0.0
     local_step_error = local_commutator_error + local_truncated_bch_error
-
     k_value = commutators.locality_k
     g_value = commutators.extensiveness_g
     first_time_limit = (
@@ -564,7 +627,212 @@ def _mizuta_ideal_mpf_bound(
         else 1 / (8 * math.e**3 * base_repetitions * truncation_order * k_value * g_value)
     )
     second_time_limit = math.inf if mu_upper == 0 else 1 / (2 * base_repetitions * mu_upper)
-    time_hypothesis_satisfied = step_time <= min(first_time_limit, second_time_limit)
+    return _MizutaAllocationCandidate(
+        allocation_fraction=allocation_fraction,
+        auxiliary_error=auxiliary_error,
+        truncation_order=truncation_order,
+        mu_upper=mu_upper,
+        prefactor=prefactor,
+        local_commutator_error=local_commutator_error,
+        local_truncated_bch_error=local_truncated_bch_error,
+        local_step_error=local_step_error,
+        repeated_error=_repeated_step_error(local_step_error, segments),
+        first_time_limit=first_time_limit,
+        second_time_limit=second_time_limit,
+        commutators=commutators,
+        zero_time_exact=zero_time_exact,
+    )
+
+
+def _evaluate_mizuta_candidate(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None,
+    allocation_fraction: float | None,
+) -> _MizutaCandidateEvaluation:
+    """Evaluate fixed or exactly optimized printed-theorem allocations."""
+    exponent_l1_norm = float(sum(exponents))
+    allocation_scale = coefficient_l1_norm * exponent_l1_norm
+    local_budget = math.expm1(math.log1p(target_error) / segments)
+    if local_budget <= 0:
+        raise OverflowError("Mizuta local error budget underflowed float range")
+
+    def evaluate(fraction: float, order: int) -> _MizutaAllocationCandidate:
+        return _mizuta_allocation_candidate(
+            hamiltonian,
+            time,
+            term_count,
+            segments,
+            coefficient_l1_norm,
+            exponent_l1_norm,
+            target_error,
+            fraction,
+            order,
+            execution,
+        )
+
+    if allocation_fraction is not None:
+        if not 0 < allocation_fraction < 1:
+            raise ValueError("auxiliary_allocation_fraction must lie in (0, 1)")
+        order = _mizuta_truncation_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            allocation_fraction,
+        )
+        candidate = evaluate(allocation_fraction, order)
+        error_ok = candidate.repeated_error <= target_error
+        first_ok = abs(float(time)) / segments <= candidate.first_time_limit
+        second_ok = abs(float(time)) / segments <= candidate.second_time_limit
+        return _MizutaCandidateEvaluation(
+            selected=candidate,
+            error_satisfied=error_ok,
+            first_time_satisfied=first_ok,
+            second_time_satisfied=second_ok,
+            full_satisfied=error_ok and first_ok and second_ok,
+            error_and_time_1_satisfied=error_ok and first_ok,
+            error_and_time_2_satisfied=error_ok and second_ok,
+            time_1_and_time_2_satisfied=first_ok and second_ok,
+        )
+
+    nearly_one = float(np.nextafter(1.0, 0.0))
+    minimum_order = _mizuta_truncation_order(
+        hamiltonian,
+        local_budget,
+        allocation_scale,
+        nearly_one,
+    )
+    first_candidate = evaluate(
+        _mizuta_minimum_fraction_for_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            minimum_order,
+        ),
+        minimum_order,
+    )
+    if first_candidate.commuting_exact or first_candidate.zero_time_exact:
+        return _MizutaCandidateEvaluation(
+            selected=first_candidate,
+            error_satisfied=True,
+            first_time_satisfied=True,
+            second_time_satisfied=True,
+            full_satisfied=True,
+            error_and_time_1_satisfied=True,
+            error_and_time_2_satisfied=True,
+            time_1_and_time_2_satisfied=True,
+        )
+
+    step_time = abs(float(time)) / segments
+    best_full: _MizutaAllocationCandidate | None = None
+    best_time_feasible: _MizutaAllocationCandidate | None = None
+    first_error: _MizutaAllocationCandidate | None = None
+    first_ok_exists = False
+    second_ok_exists = False
+    error_time_1_exists = False
+    error_time_2_exists = False
+    time_1_time_2_exists = False
+    order = minimum_order
+    candidate = first_candidate
+    while True:
+        error_ok = candidate.repeated_error <= target_error
+        first_ok = step_time <= candidate.first_time_limit
+        second_ok = step_time <= candidate.second_time_limit
+        first_ok_exists = first_ok_exists or first_ok
+        second_ok_exists = second_ok_exists or second_ok
+        error_time_1_exists = error_time_1_exists or (error_ok and first_ok)
+        error_time_2_exists = error_time_2_exists or (error_ok and second_ok)
+        time_1_time_2_exists = time_1_time_2_exists or (first_ok and second_ok)
+        if error_ok and first_error is None:
+            first_error = candidate
+        if first_ok and second_ok and (
+            best_time_feasible is None
+            or candidate.repeated_error < best_time_feasible.repeated_error
+        ):
+            best_time_feasible = candidate
+        if error_ok and first_ok and second_ok and (
+            best_full is None or candidate.repeated_error < best_full.repeated_error
+        ):
+            best_full = candidate
+
+        commutator_only_error = _repeated_step_error(
+            candidate.local_commutator_error,
+            segments,
+        )
+        no_future_error = commutator_only_error > target_error
+        # The first hypothesis makes the full feasible p0 range finite.  Walk
+        # through its first failing order even after a valid allocation is
+        # found so every allowed discrete p0 participates in the minimization.
+        full_search_done = not first_ok
+        error_search_done = first_error is not None or no_future_error
+        error_time_1_done = error_time_1_exists or no_future_error or not first_ok
+        error_time_2_done = error_time_2_exists or no_future_error or not second_ok
+        if full_search_done and error_search_done and error_time_1_done and error_time_2_done:
+            break
+
+        order += 1
+        fraction = _mizuta_minimum_fraction_for_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            order,
+        )
+        candidate = evaluate(fraction, order)
+
+    selected = best_time_feasible or first_error or first_candidate
+    return _MizutaCandidateEvaluation(
+        selected=selected,
+        error_satisfied=first_error is not None,
+        first_time_satisfied=first_ok_exists,
+        second_time_satisfied=second_ok_exists,
+        full_satisfied=best_full is not None,
+        error_and_time_1_satisfied=error_time_1_exists,
+        error_and_time_2_satisfied=error_time_2_exists,
+        time_1_and_time_2_satisfied=time_1_time_2_exists,
+    )
+
+
+def _mizuta_ideal_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None = None,
+    allocation_fraction: float | None = None,
+) -> tuple[
+    float,
+    float,
+    tuple[tuple[str, float], ...],
+    PauliNestedCommutatorBounds,
+    tuple[str, ...],
+    bool,
+]:
+    """Evaluate Mizuta 2026 Theorem 4/Eqs. (47)--(49) for ``p=2``."""
+    evaluation = _evaluate_mizuta_candidate(
+        hamiltonian,
+        time,
+        term_count,
+        segments,
+        coefficient_l1_norm,
+        exponents,
+        target_error,
+        execution,
+        allocation_fraction,
+    )
+    candidate = evaluation.selected
+    selected_step_time = abs(float(time)) / segments
+    time_hypothesis_satisfied = selected_step_time <= min(
+        candidate.first_time_limit,
+        candidate.second_time_limit,
+    )
     assumptions = (
         "individual Pauli summands define the ordered H_gamma decomposition",
         "Pauli support gives k-locality and per-site coefficient sums give g-extensiveness",
@@ -577,25 +845,37 @@ def _mizuta_ideal_mpf_bound(
         "the repeated ideal MPF is composed with the Eq. (15) telescoping argument",
     )
     components = (
-        ("mu_upper", mu_upper),
-        ("local_commutator_error", local_commutator_error),
-        ("local_truncated_bch_error", local_truncated_bch_error),
-        ("local_step_error", local_step_error),
-        ("auxiliary_error", auxiliary_error),
-        ("truncation_order_p0", float(truncation_order)),
-        ("first_time_limit", first_time_limit),
-        ("second_time_limit", second_time_limit),
-        ("locality_k", float(k_value)),
-        ("extensiveness_g", g_value),
+        ("mu_upper", candidate.mu_upper),
+        ("local_commutator_error", candidate.local_commutator_error),
+        ("local_truncated_bch_error", candidate.local_truncated_bch_error),
+        ("local_step_error", candidate.local_step_error),
+        ("auxiliary_error", candidate.auxiliary_error),
+        ("auxiliary_allocation_fraction", candidate.allocation_fraction),
+        ("truncation_order_p0", float(candidate.truncation_order)),
+        ("first_time_limit", candidate.first_time_limit),
+        ("second_time_limit", candidate.second_time_limit),
+        ("locality_k", float(candidate.commutators.locality_k)),
+        ("extensiveness_g", candidate.commutators.extensiveness_g),
+        ("error_predicate_satisfied", float(evaluation.error_satisfied)),
+        ("time_1_predicate_satisfied", float(evaluation.first_time_satisfied)),
+        ("time_2_predicate_satisfied", float(evaluation.second_time_satisfied)),
+        ("joint_predicate_satisfied", float(evaluation.full_satisfied)),
+        ("error_and_time_1_satisfied", float(evaluation.error_and_time_1_satisfied)),
+        ("error_and_time_2_satisfied", float(evaluation.error_and_time_2_satisfied)),
+        ("time_1_and_time_2_satisfied", float(evaluation.time_1_and_time_2_satisfied)),
     )
-    error = (
-        _repeated_step_error(local_step_error, segments) if time_hypothesis_satisfied else math.inf
-    )
+    if candidate.commuting_exact:
+        assumptions = (
+            "all individual Pauli summands commute; the ordered Strang formula is exact",
+        )
+    elif candidate.zero_time_exact:
+        assumptions = ("zero-time evolution is exact",)
+    error = candidate.repeated_error if time_hypothesis_satisfied else math.inf
     return (
         error,
-        prefactor,
+        candidate.prefactor,
         components,
-        commutators,
+        candidate.commutators,
         assumptions,
         time_hypothesis_satisfied,
     )
@@ -617,9 +897,15 @@ def _estimate_mpf_error(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     target_error: float | None = None,
+    auxiliary_allocation_fraction: float | None = None,
     execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
-    """Estimate ideal-MPF error while preserving certification provenance."""
+    """Estimate ideal-MPF error while preserving certification provenance.
+
+    Mizuta estimates optimize the printed-theorem auxiliary allocation when
+    ``auxiliary_allocation_fraction`` is ``None``. A value in ``(0, 1)`` fixes
+    that fraction, primarily to reproduce the former 50/50 audit baseline.
+    """
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
     if segments < 1:
@@ -690,6 +976,7 @@ def _estimate_mpf_error(
             exponents,
             target_error,
             execution,
+            auxiliary_allocation_fraction,
         )
         reference = "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
         theorem_or_equations = (
@@ -753,6 +1040,7 @@ def estimate_mpf_error(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     target_error: float | None = None,
+    auxiliary_allocation_fraction: float | None = None,
     workers: int = 1,
     progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
@@ -767,6 +1055,7 @@ def estimate_mpf_error(
             schedule=schedule,
             method=method,
             target_error=target_error,
+            auxiliary_allocation_fraction=auxiliary_allocation_fraction,
             execution=execution,
         )
 
@@ -779,6 +1068,7 @@ def _select_mpf_segments(
     *,
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    auxiliary_allocation_fraction: float | None = None,
     execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
     """Select segments and return the resulting scoped MPF estimate.
@@ -804,6 +1094,7 @@ def _select_mpf_segments(
                 m,
                 schedule=schedule,
                 method=candidate_method,
+                auxiliary_allocation_fraction=auxiliary_allocation_fraction,
                 execution=execution,
             )
             for candidate_method in (
@@ -901,6 +1192,7 @@ def _select_mpf_segments(
                     schedule=schedule,
                     method=method,
                     target_error=target_error,
+                    auxiliary_allocation_fraction=auxiliary_allocation_fraction,
                     workers=execution.workers,
                     _execution=execution,
                 )
@@ -936,20 +1228,17 @@ def _select_mpf_segments(
     if method == "mizuta2026-commutator-ideal-rigorous":
         estimate = candidate_estimate(segments)
 
-        def component_value(candidate: int, name: str) -> float:
-            return dict(candidate_estimate(candidate).bound_components)[name]
+        def predicate_value(candidate: int, name: str) -> bool:
+            return bool(dict(candidate_estimate(candidate).bound_components)[name])
 
         def error_satisfied(candidate: int) -> bool:
-            local_error = component_value(candidate, "local_step_error")
-            return _repeated_step_error(local_error, candidate) <= target_error
+            return predicate_value(candidate, "error_predicate_satisfied")
 
         def first_time_satisfied(candidate: int) -> bool:
-            limit = component_value(candidate, "first_time_limit")
-            return abs(float(time)) / candidate <= limit
+            return predicate_value(candidate, "time_1_predicate_satisfied")
 
         def second_time_satisfied(candidate: int) -> bool:
-            limit = component_value(candidate, "second_time_limit")
-            return abs(float(time)) / candidate <= limit
+            return predicate_value(candidate, "time_2_predicate_satisfied")
 
         def smallest_component(predicate) -> int:
             if predicate(1):
@@ -971,6 +1260,7 @@ def _select_mpf_segments(
         r_time_2 = smallest_component(second_time_satisfied)
         components = dict(estimate.bound_components)
         commuting_exact = all(value == 0 for _, value in estimate.commutator_bounds)
+        additional_constraints: tuple[tuple[str, int], ...] = ()
         if commuting_exact:
             active_constraints = ("commuting_exact",)
         else:
@@ -979,19 +1269,31 @@ def _select_mpf_segments(
                 "time_1": r_time_1,
                 "time_2": r_time_2,
             }
-            if max(thresholds.values()) != segments:
-                raise AssertionError("Mizuta segment diagnostics do not recover selection")
-            active_constraints = tuple(
-                name for name, threshold in thresholds.items() if threshold == segments
-            )
+            independent_maximum = max(thresholds.values())
+            if auxiliary_allocation_fraction is not None and independent_maximum != segments:
+                raise AssertionError("fixed-allocation diagnostics do not recover selection")
+            if independent_maximum > segments:
+                raise AssertionError("Mizuta component threshold exceeds joint selection")
+            if independent_maximum == segments:
+                active_constraints = tuple(
+                    name for name, threshold in thresholds.items() if threshold == segments
+                )
+            else:
+                active_constraints = ("joint_allocation",)
+                additional_constraints = (("joint_allocation", segments),)
+            if not predicate_value(segments, "joint_predicate_satisfied"):
+                raise AssertionError("selected Mizuta segment fails the complete predicate")
             if segments > 1:
-                previous_failures = {
-                    "error": not error_satisfied(segments - 1),
-                    "time_1": not first_time_satisfied(segments - 1),
-                    "time_2": not second_time_satisfied(segments - 1),
-                }
-                if not any(previous_failures[name] for name in active_constraints):
-                    raise AssertionError("selected Mizuta segment has no active failing predicate")
+                if predicate_value(segments - 1, "joint_predicate_satisfied"):
+                    raise AssertionError("Mizuta segment selection is not jointly minimal")
+                if active_constraints != ("joint_allocation",):
+                    previous_failures = {
+                        "error": not error_satisfied(segments - 1),
+                        "time_1": not first_time_satisfied(segments - 1),
+                        "time_2": not second_time_satisfied(segments - 1),
+                    }
+                    if not any(previous_failures[name] for name in active_constraints):
+                        raise AssertionError("selected Mizuta segment has no active failing predicate")
         estimate = replace(
             estimate,
             segment_diagnostics=MPFSegmentDiagnostics(
@@ -1002,10 +1304,15 @@ def _select_mpf_segments(
                 truncation_order_p0=int(components["truncation_order_p0"]),
                 mu_upper=components["mu_upper"],
                 auxiliary_error=components["auxiliary_error"],
-                auxiliary_allocation_fraction=0.5,
+                auxiliary_allocation_fraction=components["auxiliary_allocation_fraction"],
                 local_commutator_error=components["local_commutator_error"],
                 local_truncated_bch_error=components["local_truncated_bch_error"],
-                allocation_strategy="fixed-equal-local-budget",
+                allocation_strategy=(
+                    "optimized-discrete-p0"
+                    if auxiliary_allocation_fraction is None
+                    else "fixed-local-budget-fraction"
+                ),
+                additional_constraints=additional_constraints,
             ),
         )
     else:
@@ -1041,11 +1348,17 @@ def select_mpf_segments(
     *,
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    auxiliary_allocation_fraction: float | None = None,
     workers: int = 1,
     progress: CommutatorProgressCallback | None = None,
     _execution: CommutatorExecution | None = None,
 ) -> MPFErrorEstimate:
-    """Select the smallest segment count satisfying the requested bound."""
+    """Select the smallest segment count satisfying the requested bound.
+
+    Mizuta selection exactly optimizes its discrete auxiliary allocation by
+    default. Set ``auxiliary_allocation_fraction`` to a value in ``(0, 1)``
+    only when a fixed-allocation comparison is required.
+    """
     with execution_scope(workers, _execution, progress) as execution:
         return _select_mpf_segments(
             hamiltonian,
@@ -1054,6 +1367,7 @@ def select_mpf_segments(
             m,
             schedule=schedule,
             method=method,
+            auxiliary_allocation_fraction=auxiliary_allocation_fraction,
             execution=execution,
         )
 

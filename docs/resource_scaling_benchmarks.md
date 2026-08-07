@@ -168,7 +168,7 @@ are:
 | `locality_compatible`, `commutator_cap_fallback` | Whether locality is preserved and whether the explicit work cap selected a proven fallback. |
 | `mpf_r_error`, `mpf_r_time_1`, `mpf_r_time_2` | Candidate-dependent MPF error and Mizuta time-condition segment thresholds. |
 | `mpf_active_constraints_json` | Every threshold active at the selected segment count, including ties. |
-| `mpf_mu_upper`, `mpf_truncation_order_p0`, `mpf_auxiliary_error` | Selected finite Mizuta theorem inputs. |
+| `mpf_mu_upper`, `mpf_truncation_order_p0`, `mpf_auxiliary_error`, `mpf_auxiliary_allocation_fraction` | Selected finite Mizuta theorem inputs and the exact optimized local-budget fraction. |
 | `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
 | `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
@@ -208,7 +208,9 @@ alias. Plot titles record the selected policy, and summaries retain
    1-norm; Eq. (16) supplies only its upper search bracket. The opt-in Mizuta
    method uses Theorem 3, Eqs. (33)--(35), and Theorem 4,
    Eqs. (47)--(49), with exact finite-order Pauli commutators and a proven
-   locality fallback.
+   locality fallback. Its printed-theorem auxiliary allocation is optimized
+   over every discrete truncation order allowed by the first time hypothesis;
+   50/50 remains available through the direct API for audit comparison.
 4. QSVT degree selection uses rigorous Jacobi--Anger parity-tail bounds. The
    exact scaled polynomial and ideal cubic-OAA block have separate derived
    claims; floating `pyqsp` phase residuals remain finite-grid observations,

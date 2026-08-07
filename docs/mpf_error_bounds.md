@@ -290,17 +290,35 @@ When it holds, Eq. (49), with the upper bound on \(\mu\), gives
 +\lVert a\rVert_1\lVert k\rVert_1\eta.
 \]
 
-The code chooses
+For a candidate segment count, let
 
 \[
 d_r=(1+\varepsilon_{\rm target})^{1/r}-1,
-\qquad
-\eta=\frac{d_r}{2\lVert a\rVert_1\lVert k\rVert_1},
 \]
 
-so half of the exact local budget is reserved for the truncated-BCH remainder.
-It then evaluates the displayed bound rather than assuming the other half is
-sufficient.
+and parameterize the auxiliary allocation by \(0<\rho<1\):
+
+\[
+\eta_{\rm aux}(r,\rho)=
+\frac{\rho d_r}{\lVert a\rVert_1\lVert k\rVert_1}.
+\]
+
+The 50/50 value \(\rho=1/2\) is an implementation choice, not a theorem
+constant. Production selection therefore optimizes it exactly through the
+discrete truncation order
+
+\[
+p_0=\left\lceil\log\frac{3N}{\eta_{\rm aux}}\right\rceil.
+\]
+
+For fixed \((r,p_0)\), the commutator data and \(\mu[p_0]\) are fixed, while
+the truncated-BCH term increases with \(\rho\). The implementation evaluates
+the smallest floating-point \(\rho\) reproducing each feasible \(p_0\), checks
+every \(p_0\) allowed by the first time hypothesis, and chooses the valid
+allocation with the smallest complete repeated error. No heuristic grid or
+maximum truncation-order cap is used. Passing
+`auxiliary_allocation_fraction=0.5` to the direct estimation/selection API
+retains the earlier equal split for reproducible audits.
 
 Theorem 4 is a one-step ideal-MPF result. The repository composes it to the
 repeated ideal operator explicitly: if \(U=e^{-iH\tau}\) and
@@ -317,13 +335,15 @@ meet the requested budget. Mutually commuting Pauli decompositions are
 recognized separately: the symmetric product formula and MPF are then exact,
 so the reported error is zero.
 
-Segment diagnostics rerun the complete candidate calculation independently for
-the error predicate and for each part of Eq. (48). Thus `r_error`,
-`r_time_1`, and `r_time_2` each use their own candidate-dependent (p_0(r)),
-(mu(r)), and local errors. The active constraint is never inferred by
-freezing the final row's (p_0) or (mu). Under the fixed allocation above,
-the truncated-BCH term has no independent segment threshold: it contributes to
-`r_error` and changes (p_0), which in turn changes `r_time_1`.
+Segment diagnostics rerun the complete allocation-aware candidate calculation
+independently for the error predicate and for each part of Eq. (48). Thus
+`r_error`, `r_time_1`, and `r_time_2` each use their own candidate-dependent
+\(p_0(r,\rho)\), \(\mu(r,\rho)\), and local errors. The active constraint is
+never inferred by freezing the final row's \(p_0\), \(\mu\), or \(\rho\). If
+the independently minimal predicates cannot be met by one common allocation,
+diagnostics report an explicit `joint_allocation` threshold. The
+truncated-BCH term still has no independent `r_trunc`: it contributes to
+`r_error` and changes \(p_0\), which in turn changes `r_time_1`.
 
 ## Why Aftab 2024 is not a selectable rigorous estimator
 
