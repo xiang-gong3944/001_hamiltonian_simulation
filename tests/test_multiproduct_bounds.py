@@ -19,6 +19,8 @@ from hamiltonian_resources import (
 )
 from hamiltonian_resources.multiproduct import (
     _mizuta_mu_upper_bound,
+    _w2_triangle_b2,
+    _w2_triangle_ideal_mpf_bound,
     estimate_mpf_error,
     legacy_w2_proxy_error,
     legacy_w2_proxy_segments,
@@ -27,6 +29,7 @@ from hamiltonian_resources.multiproduct import (
 )
 from hamiltonian_resources.trotter import (
     PauliNestedCommutatorBounds,
+    estimate_suzuki_error,
     suzuki_commutator_bounds,
 )
 
@@ -118,6 +121,32 @@ def _ideal_mpf_operator_error(hamiltonian, time, segments, m, schedule="new"):
     return float(np.linalg.norm(approximation - exact, ord=2))
 
 
+def _ideal_mpf_step(hamiltonian, step_time, m, schedule="new"):
+    return sum(
+        coefficient
+        * Operator(
+            build_trotter_circuit(
+                hamiltonian,
+                step_time,
+                reps=exponent,
+                order=2,
+                partition="individual",
+            )
+        ).data
+        for coefficient, exponent in zip(
+            multiproduct_coefficients(m, schedule=schedule),
+            estimate_mpf_error(
+                hamiltonian,
+                step_time,
+                1,
+                m,
+                schedule=schedule,
+            ).exponents,
+            strict=True,
+        )
+    )
+
+
 def _zero_ancilla_block(circuit, system_qubits):
     ancillas = circuit.num_qubits - system_qubits
     return Operator(circuit).data[:: 2**ancillas, :: 2**ancillas]
@@ -151,6 +180,189 @@ def test_legacy_w2_proxy_exactly_reproduces_historical_rule(m):
         (alpha_effective * time) ** (formal_order + 1)
         / segments**formal_order
     )
+
+
+@pytest.mark.parametrize(
+    ("m", "expected_b2"),
+    [(2, 2 / 3), (3, 2 / 9), (5, 0.03546760370814992)],
+)
+def test_w2_triangle_b2_uses_absolute_branch_weights(m, expected_b2):
+    coefficients = multiproduct_coefficients(m)
+    exponents = estimate_mpf_error(
+        transverse_field_ising(1),
+        0.0,
+        1,
+        m,
+    ).exponents
+
+    signed_cancellation = math.fsum(
+        float(coefficient) / exponent**2
+        for coefficient, exponent in zip(coefficients, exponents, strict=True)
+    )
+    b2 = _w2_triangle_b2(coefficients, exponents)
+
+    assert signed_cancellation == pytest.approx(0.0, abs=1e-15)
+    assert b2 == pytest.approx(expected_b2)
+    assert b2 > abs(signed_cancellation)
+
+
+@pytest.mark.parametrize("m", [2, 3, 5])
+@pytest.mark.parametrize("step_time", [0.03, 0.17])
+def test_each_mpf_branch_obeys_w2_strang_telescoping(m, step_time):
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("XI", 0.31), ("YZ", -0.47), ("ZZ", 0.23), ("IX", -0.19)],
+    )
+    _, w2 = suzuki_commutator_bounds(hamiltonian)
+    exact = expm(-1j * step_time * hamiltonian.matrix())
+    exponents = estimate_mpf_error(hamiltonian, step_time, 1, m).exponents
+
+    for exponent in exponents:
+        branch = Operator(
+            build_trotter_circuit(
+                hamiltonian,
+                step_time,
+                reps=exponent,
+                order=2,
+                partition="individual",
+            )
+        ).data
+        actual = float(np.linalg.norm(branch - exact, ord=2))
+        bound = w2 * abs(step_time) ** 3 / exponent**2
+        assert actual <= bound * (1 + 1e-12) + 1e-12
+
+
+@pytest.mark.parametrize("m", [2, 3, 5])
+@pytest.mark.parametrize(("time", "segments"), [(0.08, 1), (0.24, 3)])
+def test_w2_triangle_bounds_exact_local_and_repeated_ideal_mpf(m, time, segments):
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("XI", 0.31), ("YZ", -0.47), ("ZZ", 0.23), ("IX", -0.19)],
+    )
+    estimate = estimate_mpf_error(
+        hamiltonian,
+        time,
+        segments,
+        m,
+        method="childs2021-w2-triangle-ideal-rigorous",
+    )
+    step_time = time / segments
+    step = _ideal_mpf_step(hamiltonian, step_time, m)
+    exact_step = expm(-1j * step_time * hamiltonian.matrix())
+    actual_local = float(np.linalg.norm(step - exact_step, ord=2))
+    actual_repeated = _ideal_mpf_operator_error(hamiltonian, time, segments, m)
+
+    assert estimate.rigorous
+    assert estimate.scope == "ideal-mpf"
+    assert estimate.local_error_rigorous
+    assert actual_local <= estimate.local_error * (1 + 1e-12) + 1e-12
+    assert actual_repeated <= estimate.error * (1 + 1e-12) + 1e-12
+
+
+def test_w2_triangle_commuting_case_is_exact_and_selects_one_segment():
+    hamiltonian = PauliHamiltonian.from_terms(
+        2,
+        [("ZI", 0.7), ("IZ", -0.2), ("ZZ", 0.4)],
+    )
+    estimate = select_mpf_segments(
+        hamiltonian,
+        5.0,
+        1e-12,
+        3,
+        method="childs2021-w2-triangle-ideal-rigorous",
+    )
+
+    assert estimate.segments == 1
+    assert estimate.error == 0.0
+    assert estimate.local_error == 0.0
+    assert dict(estimate.bound_components)["w2"] == 0.0
+    assert _ideal_mpf_operator_error(hamiltonian, 0.5, 1, 3) < 1e-12
+
+
+def test_w2_triangle_segment_selection_is_minimal():
+    hamiltonian = transverse_field_ising(2, field=3.0)
+    target_error = 9e-4
+    selected = select_mpf_segments(
+        hamiltonian,
+        2.0,
+        target_error,
+        3,
+        method="childs2021-w2-triangle-ideal-rigorous",
+    )
+    previous = estimate_mpf_error(
+        hamiltonian,
+        2.0,
+        selected.segments - 1,
+        3,
+        method="childs2021-w2-triangle-ideal-rigorous",
+    )
+
+    assert selected.segments == 161
+    assert selected.error <= target_error
+    assert previous.error > target_error
+
+
+def test_w2_triangle_log_domain_handles_overflowing_direct_bound():
+    repeated, _, local, _ = _w2_triangle_ideal_mpf_bound(
+        1e300,
+        1e100,
+        1,
+        (1.0,),
+        (1,),
+    )
+    scaled, _, scaled_local, _ = _w2_triangle_ideal_mpf_bound(
+        1e300,
+        1e100,
+        10**200,
+        (1.0,),
+        (1,),
+    )
+
+    assert math.isinf(local) and math.isinf(repeated)
+    assert math.isfinite(scaled_local) and math.isfinite(scaled)
+
+
+def test_w2_triangle_single_branch_reduces_to_second_order_trotter_bound():
+    hamiltonian = transverse_field_ising(3, field=0.7)
+    time = 0.4
+    segments = 7
+    _, w2 = suzuki_commutator_bounds(hamiltonian)
+    repeated, prefactor, local, b2 = _w2_triangle_ideal_mpf_bound(
+        w2,
+        time,
+        segments,
+        (1.0,),
+        (1,),
+    )
+    trotter = estimate_suzuki_error(
+        hamiltonian,
+        time,
+        reps=segments,
+        order=2,
+        partition="individual",
+    )
+
+    assert b2 == 1.0
+    assert prefactor == w2
+    assert local == pytest.approx(w2 * abs(time / segments) ** 3)
+    assert repeated == pytest.approx(w2 * abs(time) ** 3 / segments**2)
+    assert repeated == pytest.approx(trotter.error)
+
+
+@pytest.mark.parametrize(
+    "hamiltonian",
+    [
+        transverse_field_ising(3, field=0.7),
+        PauliHamiltonian.from_terms(
+            2,
+            [("XI", 0.31), ("YZ", -0.47), ("ZZ", 0.23), ("II", 0.9)],
+        ),
+    ],
+)
+def test_alpha_cubed_is_a_redundant_coarse_w2_prefactor(hamiltonian):
+    _, w2 = suzuki_commutator_bounds(hamiltonian)
+
+    assert w2 <= hamiltonian.alpha**3 / 2 * (1 + 1e-15)
 
 
 def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
@@ -199,6 +411,75 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     assert legacy["bound_method"] == "legacy-w2-proxy"
     assert not bool(legacy["bound_rigorous"])
     assert not bool(legacy["bound_target_satisfied"])
+
+
+def test_w2_triangle_provenance_serializes_to_benchmark_rows():
+    from hamiltonian_resources import BenchmarkConfig, MultiproductMethod, TimeScaling, run_benchmark
+
+    row = run_benchmark(
+        BenchmarkConfig(
+            system_sizes=[2],
+            time=TimeScaling("fixed", 0.2),
+            methods=[
+                MultiproductMethod(
+                    3,
+                    error_method="childs2021-w2-triangle-ideal-rigorous",
+                )
+            ],
+        ),
+        sweeps="system-size",
+    ).iloc[0]
+    components = json.loads(row["bound_components_json"])
+    assumptions = json.loads(row["bound_assumptions_json"])
+
+    assert row["method_id"] == "mpf-m3-childs2021-w2-triangle-ideal-rigorous"
+    assert row["bound_method"] == "childs2021-w2-triangle-ideal-rigorous"
+    assert bool(row["bound_rigorous"])
+    assert row["bound_scope"] == "ideal-mpf"
+    assert row["hamiltonian_decomposition"] == "ordered individual Pauli terms"
+    assert "Childs" in row["bound_reference"]
+    assert bool(row["locality_compatible"])
+    assert row["max_nested_commutator_order"] == 3
+    assert row["max_exact_nested_commutator_order"] == 3
+    assert set(components) == {
+        "w2",
+        "b2",
+        "local_step_size",
+        "local_step_error",
+        "repeated_ideal_mpf_error",
+    }
+    assert components["local_step_size"] == pytest.approx(
+        row["evolution_time"] / row["segment_count"]
+    )
+    assert components["repeated_ideal_mpf_error"] == row["bound_value"]
+    assert "no MPF cancellation condition is used" in assumptions
+
+
+def test_representative_w2_triangle_comparison_retains_expected_tradeoffs():
+    hamiltonian = transverse_field_ising(2, coupling=1.0, field=3.0, periodic=False)
+    methods = (
+        "legacy-w2-proxy",
+        "low2019-l1-ideal-rigorous",
+        "childs2021-w2-triangle-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+    )
+    segments = {
+        method: select_mpf_segments(
+            hamiltonian,
+            2.0,
+            9e-4,
+            3,
+            method=method,
+        ).segments
+        for method in methods
+    }
+
+    assert segments == {
+        "legacy-w2-proxy": 20,
+        "low2019-l1-ideal-rigorous": 24,
+        "childs2021-w2-triangle-ideal-rigorous": 161,
+        "mizuta2026-commutator-ideal-rigorous": 123_406,
+    }
 
 
 def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
@@ -443,17 +724,18 @@ def test_best_rigorous_ideal_policy_selects_low_and_retains_candidates():
     assert estimate.segments == 1
     assert [(candidate.method, candidate.segments) for candidate in estimate.bound_candidates] == [
         ("low2019-l1-ideal-rigorous", 1),
+        ("childs2021-w2-triangle-ideal-rigorous", 1),
         ("mizuta2026-commutator-ideal-rigorous", 675),
     ]
     assert all(candidate.rigorous for candidate in estimate.bound_candidates)
 
 
-def test_best_rigorous_ideal_policy_can_select_mizuta_and_break_ties_with_low():
+def test_best_rigorous_ideal_policy_can_select_w2_and_break_ties_with_low():
     identity_heavy = PauliHamiltonian.from_terms(
         1,
         [("I", 1000.0), ("X", 0.1), ("Z", 0.1)],
     )
-    mizuta = select_mpf_segments(
+    w2_triangle = select_mpf_segments(
         identity_heavy,
         0.01,
         1e-3,
@@ -468,8 +750,8 @@ def test_best_rigorous_ideal_policy_can_select_mizuta_and_break_ties_with_low():
         method="best-rigorous-ideal",
     )
 
-    assert mizuta.method == "mizuta2026-commutator-ideal-rigorous"
-    assert mizuta.segments == 8
+    assert w2_triangle.method == "childs2021-w2-triangle-ideal-rigorous"
+    assert w2_triangle.segments == 1
     assert tie.method == "low2019-l1-ideal-rigorous"
     assert tie.segments == 1
 
@@ -492,6 +774,7 @@ def test_best_rigorous_ideal_policy_propagates_selected_bound_and_policy_to_benc
     assert row["bound_method"] == "low2019-l1-ideal-rigorous"
     assert [candidate["method"] for candidate in candidates] == [
         "low2019-l1-ideal-rigorous",
+        "childs2021-w2-triangle-ideal-rigorous",
         "mizuta2026-commutator-ideal-rigorous",
     ]
     assert all(candidate["rigorous"] for candidate in candidates)

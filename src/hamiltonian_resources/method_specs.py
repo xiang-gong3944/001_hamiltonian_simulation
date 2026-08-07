@@ -60,6 +60,8 @@ class MultiproductMethod:
         suffix = "" if self.schedule == "new" else f" ({self.schedule})"
         if self.error_method == "legacy-w2-proxy":
             suffix += " [legacy W2 heuristic]"
+        elif self.error_method == "childs2021-w2-triangle-ideal-rigorous":
+            suffix += " [Childs 2021 W2 triangle]"
         elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
             suffix += " [Mizuta 2026 commutator]"
         elif self.error_method == "best-rigorous-ideal":
@@ -72,6 +74,7 @@ class MultiproductMethod:
         optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
         if self.error_method not in (
             "low2019-l1-ideal-rigorous",
+            "childs2021-w2-triangle-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
             "best-rigorous-ideal",
             "low-rigorous",
@@ -80,6 +83,7 @@ class MultiproductMethod:
             raise ValueError(
                 "MPF error method must be 'low2019-l1-ideal-rigorous' "
                 "(historical alias 'low-rigorous'), "
+                "'childs2021-w2-triangle-ideal-rigorous', "
                 "'mizuta2026-commutator-ideal-rigorous', "
                 "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )

@@ -744,7 +744,7 @@ def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
         _EvaluationConfig(
             time=5.0,
             target_error=1e-6,
-            mpf_error_method="legacy-w2-proxy",
+            mpf_error_method="childs2021-w2-triangle-ideal-rigorous",
         ),
     )
 

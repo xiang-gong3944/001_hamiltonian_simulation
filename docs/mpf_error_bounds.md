@@ -1,8 +1,11 @@
 # MPF error bounds and certification scopes
 
 This document maps the MPF notation used by the repository to the latest
-available revisions checked on 2026-07-31:
+available revisions checked on 2026-08-07:
 
+- Childs, Su, Tran, Wiebe, and Zhu,
+  [Phys. Rev. X 11, 011020 (2021)](https://link.aps.org/doi/10.1103/PhysRevX.11.011020),
+  [arXiv:1912.08854](https://arxiv.org/abs/1912.08854);
 - Low, Kliuchnikov, and Wiebe (LKW),
   [arXiv:1907.11679v2](https://arxiv.org/abs/1907.11679), 2019;
 - Aftab, An, and Trivisa (AAT),
@@ -125,6 +128,77 @@ This is a worst-case operator-norm guarantee for
 \(M(t/r)^r\). It is independent of commutation structure and does not certify
 the robust-OAA shared-ancilla circuit.
 
+## W2 triangle rigorous bound
+
+The method identifier is `childs2021-w2-triangle-ideal-rigorous`. For the same
+ordered individual-Pauli decomposition and symmetric second-order sequence,
+Childs, Su, Tran, Wiebe, and Zhu prove
+
+\[
+\lVert S_2(s)-e^{-iHs}\rVert\le W_2|s|^3.
+\]
+
+For one MPF branch \(V_k(\tau)=S_2(\tau/k)^k\), unitary telescoping gives
+
+\[
+\lVert V_k(\tau)-e^{-iH\tau}\rVert
+\le kW_2|\tau/k|^3
+=\frac{W_2|\tau|^3}{k^2}.
+\]
+
+Because \(\sum_j a_j=1\), the ideal MPF step consequently satisfies
+
+\[
+\delta_r=\lVert M(t/r)-e^{-iHt/r}\rVert
+\le W_2|t/r|^3B_2,
+\qquad
+B_2=\sum_j\frac{|a_j|}{k_j^2}.
+\]
+
+Finally, \(\lVert M(t/r)\rVert\le1+\delta_r\) and repeated-step telescoping give
+
+\[
+E_r=\lVert M(t/r)^r-e^{-iHt}\rVert
+\le r\delta_r(1+\delta_r)^{r-1}.
+\]
+
+The implementation evaluates the repeated expression in the log domain and
+uses integer doubling followed by binary search to select the smallest passing
+segment count. It records \(W_2\), \(B_2\), the local step size, \(\delta_r\),
+and \(E_r\). When \(W_2=0\), the ordered Strang step is exact and one segment
+is selected.
+
+This proof deliberately does not use
+\(\sum_j a_j/k_j^{2q}=0\). In particular, the absolute values in \(B_2\)
+discard even the \(q=1\) cancellation. The bound is therefore rigorous,
+commutation-sensitive, and useful at finite size, but it retains
+second-order-like error scaling rather than the formal \(2J\)-order MPF
+scaling.
+
+For the helper-level degenerate schedule \(a_1=k_1=1\), \(B_2=1\) and the
+local result is exactly \(W_2|\tau|^3\). That approximation is itself unitary,
+so the sharper repeated unitary telescoping result is
+\(W_2|t|^3/r^2\), identical to the repository's ordinary second-order
+individual-partition Trotter estimate. Public MPF schedules continue to start
+at \(J=2\).
+
+### Hamiltonian-1-norm comparison
+
+Let \(q_g=\lVert H_g\rVert_1\) and
+\(Q_g=\sum_{j>g}q_j\). Submultiplicativity of the Pauli coefficient 1-norm and
+\(\lVert[A,B]\rVert_1\le2\lVert A\rVert_1\lVert B\rVert_1\) imply
+
+\[
+W_2\le\sum_g\left(\frac{q_gQ_g^2}{3}+\frac{q_g^2Q_g}{6}\right)
+\le\frac{\alpha^3}{2}\le\alpha^3.
+\]
+
+Thus \(\alpha^3\) is a rigorous but coarser Strang prefactor for this
+decomposition. Taking the minimum of it and the computed \(W_2\) would be
+valid but redundant: the computed commutator bound is already no larger. The
+new estimator therefore uses \(W_2\) directly and does not preserve the
+historical \(\min\{\alpha,W_2^{1/3}\}\) expression.
+
 ## Finite-size comparison with the Mizuta bound
 
 The Low 2019 bound can require fewer resources than the Mizuta 2026
@@ -147,12 +221,13 @@ finite problem. Its principal advantage is the improved locality-aware
 asymptotic scaling. Both methods remain rigorous within their declared scopes;
 the observed finite-resource difference is therefore not a contradiction.
 
-The opt-in `best-rigorous-ideal` policy evaluates both bounds for the same
-branch count and exponent schedule. Because this fixes the implemented MPF
-circuit structure per segment, it selects the candidate with fewer segments,
-then the smaller certified error, with Low as the final deterministic
-tie-breaker. Metadata retains both candidates and the concrete selected bound.
-Low remains the default, and the nonrigorous W2 proxy is never a candidate.
+The opt-in `best-rigorous-ideal` policy evaluates Low, the W2 triangle bound,
+and Mizuta for the same branch count and exponent schedule. Because this fixes
+the implemented MPF circuit structure per segment, it selects the candidate
+with fewer segments, then the smaller certified error. Exact remaining ties
+use the stable order Low, W2 triangle, then Mizuta. Metadata retains all three
+candidates and the concrete selected bound. Low remains the default, and the
+nonrigorous historical W2 proxy is never a candidate.
 
 ## Mizuta 2026 finite-order commutator bound
 
@@ -372,7 +447,7 @@ curve would require an explicitly nonrigorous diagnostic name and is not done
 here. The AAT result remains an important rigorous comparison and intermediate
 analysis; it is not silently combined with Mizuta's finite-truncation theorem.
 
-## Historical W2 proxy
+## Historical W2 high-order proxy
 
 `legacy-w2-proxy` preserves the old substitution
 
@@ -384,7 +459,9 @@ E_r=\alpha_{\rm eff}^{2J+1}|t|^{2J+1}/r^{2J}.
 
 No cited MPF theorem proves this substitution. Its rows always carry
 `bound_rigorous=false`, have no commutator certification scope, and are never
-selected by either rigorous policy.
+selected by the rigorous policy. It is deprecated for new analysis and retained
+only to reproduce historical benchmark data. Historical rows are not renamed
+or reinterpreted as instances of the W2 triangle bound.
 
 ## Ideal operator versus implemented circuit
 

@@ -64,6 +64,32 @@ def test_report_keeps_ideal_and_implemented_target_assessments_separate():
     )
 
 
+def test_w2_triangle_ideal_claim_and_oaa_derivations_keep_separate_scopes():
+    report = estimate_resources(
+        transverse_field_ising(2, field=0.7),
+        MultiproductMethod(
+            3,
+            error_method="childs2021-w2-triangle-ideal-rigorous",
+        ),
+        0.1,
+        1e-2,
+    )
+
+    assert report.error_analysis.sizing_estimate.method == (
+        "childs2021-w2-triangle-ideal-rigorous"
+    )
+    assert report.error_analysis.claim_for_scope("ideal-mpf") is not None
+    assert report.error_analysis.claim_for_scope("one-segment-ideal-mpf") is not None
+    assert (
+        report.error_analysis.claim_for_scope("one-segment-amplified-good-block")
+        is not None
+    )
+    assert report.error_metadata["bound_scope"] == "ideal-mpf"
+    assert report.error_metadata["circuit_bound_scope"] == (
+        "repeated-shared-ancilla-good-block"
+    )
+
+
 def test_qsvt_ideal_polynomial_is_certified_but_floating_circuit_is_not():
     report = estimate_resources(
         transverse_field_ising(2, field=0.7),

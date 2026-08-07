@@ -42,6 +42,7 @@ _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
 MPFErrorMethod: TypeAlias = Literal[
     "low2019-l1-ideal-rigorous",
+    "childs2021-w2-triangle-ideal-rigorous",
     "mizuta2026-commutator-ideal-rigorous",
     "best-rigorous-ideal",
     "low-rigorous",
@@ -451,6 +452,81 @@ def _repeated_step_error(step_error: float, segments: int) -> float:
         return math.inf
     log_error = math.log(step_error) + math.log(segments) + (segments - 1) * math.log1p(step_error)
     return math.exp(log_error) if log_error < 709 else math.inf
+
+
+def _w2_triangle_b2(
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+) -> float:
+    """Return the absolute-value branch factor ``sum_j |a_j| / k_j^2``."""
+    if len(coefficients) != len(exponents) or not exponents:
+        raise ValueError("coefficients and exponents must have the same nonzero length")
+    if any(exponent < 1 for exponent in exponents):
+        raise ValueError("MPF exponents must be positive")
+    if any(not math.isfinite(float(coefficient)) for coefficient in coefficients):
+        raise ValueError("MPF coefficients must be finite")
+    return math.fsum(
+        abs(float(coefficient)) / exponent**2
+        for coefficient, exponent in zip(coefficients, exponents, strict=True)
+    )
+
+
+def _w2_triangle_log_ideal_mpf_bound(
+    w2: float,
+    time: float,
+    segments: int,
+    b2: float,
+    *,
+    unitary_single_branch: bool = False,
+) -> tuple[float, float]:
+    """Return log local and repeated W2-triangle errors without overflow."""
+    if segments < 1:
+        raise ValueError("segments must be positive")
+    if w2 < 0 or b2 < 0:
+        raise ValueError("W2 and B2 must be nonnegative")
+    if not math.isfinite(time):
+        raise ValueError("time must be finite")
+    if w2 == 0 or b2 == 0 or time == 0:
+        return -math.inf, -math.inf
+    log_segments = math.log(segments)
+    log_delta = (
+        math.log(w2)
+        + 3 * (math.log(abs(float(time))) - log_segments)
+        + math.log(b2)
+    )
+    if unitary_single_branch:
+        return log_delta, log_segments + log_delta
+    log_error = log_segments + log_delta + (segments - 1) * _log1p_exp(log_delta)
+    return log_delta, log_error
+
+
+def _w2_triangle_ideal_mpf_bound(
+    w2: float,
+    time: float,
+    segments: int,
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+) -> tuple[float, float, float, float]:
+    """Return repeated error, prefactor, local error, and B2.
+
+    A single coefficient-one branch is itself unitary, so its repeated bound
+    uses the sharper unitary telescoping factor ``r * delta``. Registered MPF
+    schedules have at least two branches; the special case supports the
+    ordinary-Strang regression without extending the public LCU schedule API.
+    """
+    b2 = _w2_triangle_b2(coefficients, exponents)
+    unitary_single_branch = len(coefficients) == 1 and float(coefficients[0]) == 1.0
+    log_local, log_error = _w2_triangle_log_ideal_mpf_bound(
+        w2,
+        time,
+        segments,
+        b2,
+        unitary_single_branch=unitary_single_branch,
+    )
+    prefactor = w2 * b2
+    local_error = math.exp(log_local) if log_local < 709 else math.inf
+    error = math.exp(log_error) if log_error < 709 else math.inf
+    return error, prefactor, local_error, b2
 
 
 @dataclass(frozen=True)
@@ -916,6 +992,7 @@ def _estimate_mpf_error(
     coefficients = multiproduct_coefficients(m, schedule=schedule)
     coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
     method = _normalize_mpf_error_method(method)
+    w2_commutator_bound = False
     if method == "low2019-l1-ideal-rigorous":
         error, prefactor = _low_ideal_mpf_bound(
             hamiltonian,
@@ -942,6 +1019,41 @@ def _estimate_mpf_error(
             "the bound certifies the repeated ideal MPF operator only",
         )
         commutators: PauliNestedCommutatorBounds | None = None
+    elif method == "childs2021-w2-triangle-ideal-rigorous":
+        _, w2 = suzuki_commutator_bounds(hamiltonian)
+        error, prefactor, local_error, b2 = _w2_triangle_ideal_mpf_bound(
+            w2,
+            time,
+            int(segments),
+            coefficients,
+            exponents,
+        )
+        rigorous = True
+        local_error_rigorous = True
+        reference = (
+            "Childs, Su, Tran, Wiebe, and Zhu, Phys. Rev. X 11, 011020 (2021)"
+        )
+        theorem_or_equations = (
+            "Propositions 9--10 Strang bound; repository MPF triangle and "
+            "repeated-step telescoping derivation"
+        )
+        local_step_size = abs(float(time)) / int(segments)
+        bound_components = (
+            ("w2", w2),
+            ("b2", b2),
+            ("local_step_size", local_step_size),
+            ("local_step_error", local_error),
+            ("repeated_ideal_mpf_error", error),
+        )
+        assumptions = (
+            "H is decomposed into the ordered individual Pauli summands",
+            "each branch uses the same ordered symmetric second-order formula",
+            "branch and MPF errors are combined only by triangle inequalities",
+            "no MPF cancellation condition is used",
+            "the bound certifies the repeated ideal MPF operator only",
+        )
+        commutators = None
+        w2_commutator_bound = True
     elif method == "legacy-w2-proxy":
         error, prefactor = legacy_w2_proxy_error(
             hamiltonian,
@@ -993,6 +1105,7 @@ def _estimate_mpf_error(
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
+            "'childs2021-w2-triangle-ideal-rigorous', "
             "'mizuta2026-commutator-ideal-rigorous', "
             "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
@@ -1017,11 +1130,17 @@ def _estimate_mpf_error(
         bound_components=bound_components,
         assumptions=assumptions,
         fallback_reason=(commutators.fallback_reason if commutators is not None else None),
-        max_nested_commutator_order=(commutators.max_order if commutators is not None else 0),
-        max_exact_nested_commutator_order=(
-            commutators.max_exact_order if commutators is not None else 0
+        max_nested_commutator_order=(
+            commutators.max_order
+            if commutators is not None
+            else (3 if w2_commutator_bound else 0)
         ),
-        locality_compatible=commutators is not None,
+        max_exact_nested_commutator_order=(
+            commutators.max_exact_order
+            if commutators is not None
+            else (3 if w2_commutator_bound else 0)
+        ),
+        locality_compatible=commutators is not None or w2_commutator_bound,
         commutator_bounds=(
             tuple((order, commutators.at(order)) for order in range(2, commutators.max_order + 1))
             if commutators is not None
@@ -1077,6 +1196,8 @@ def _select_mpf_segments(
     Wiebe, arXiv:1907.11679, only as a safe upper bracket, then finds the
     smallest integer satisfying their direct Eqs. (14)--(15) bound by binary
     search. ``low-rigorous`` remains a backward-compatible alias.
+    ``childs2021-w2-triangle-ideal-rigorous`` composes the rigorous Strang W2
+    error through branch, MPF, and repeated-step triangle inequalities.
     ``legacy-w2-proxy`` exactly reproduces the historical heuristic.
     """
     if not np.isfinite(time):
@@ -1099,15 +1220,21 @@ def _select_mpf_segments(
             )
             for candidate_method in (
                 "low2019-l1-ideal-rigorous",
+                "childs2021-w2-triangle-ideal-rigorous",
                 "mizuta2026-commutator-ideal-rigorous",
             )
         )
+        tie_break_priority = {
+            "low2019-l1-ideal-rigorous": 0,
+            "childs2021-w2-triangle-ideal-rigorous": 1,
+            "mizuta2026-commutator-ideal-rigorous": 2,
+        }
         chosen = min(
             candidates,
             key=lambda item: (
                 item.segments,
                 item.error,
-                0 if item.method == "low2019-l1-ideal-rigorous" else 1,
+                tie_break_priority[item.method],
             ),
         )
         summaries = tuple(
@@ -1128,6 +1255,44 @@ def _select_mpf_segments(
         )
     if method == "legacy-w2-proxy":
         segments = legacy_w2_proxy_segments(hamiltonian, time, target_error, m)
+    elif method == "childs2021-w2-triangle-ideal-rigorous":
+        coefficients = multiproduct_coefficients(m, schedule=schedule)
+        exponents = optimal_mpf_exponents(m, schedule=schedule)
+        b2 = _w2_triangle_b2(coefficients, exponents)
+        _, w2 = suzuki_commutator_bounds(hamiltonian)
+        if w2 == 0 or time == 0:
+            segments = 1
+        else:
+            target_log = math.log(target_error)
+
+            def satisfies_w2(candidate: int) -> bool:
+                _, log_error = _w2_triangle_log_ideal_mpf_bound(
+                    w2,
+                    time,
+                    candidate,
+                    b2,
+                )
+                return log_error <= target_log
+
+            segments = 1
+            while not satisfies_w2(segments):
+                segments *= 2
+                if math.log(segments) > 709:
+                    raise OverflowError("required MPF segment count exceeds float range")
+            if segments > 1:
+                lower = 1
+                upper = segments
+                while lower + 1 < upper:
+                    midpoint = (lower + upper) // 2
+                    if satisfies_w2(midpoint):
+                        upper = midpoint
+                    else:
+                        lower = midpoint
+                segments = upper
+            if not satisfies_w2(segments):
+                raise AssertionError("selected W2-triangle segment fails its error bound")
+            if segments > 1 and satisfies_w2(segments - 1):
+                raise AssertionError("W2-triangle segment selection is not minimal")
     elif method == "low2019-l1-ideal-rigorous":
         coefficients = multiproduct_coefficients(m, schedule=schedule)
         coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
@@ -1222,6 +1387,7 @@ def _select_mpf_segments(
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
+            "'childs2021-w2-triangle-ideal-rigorous', "
             "'mizuta2026-commutator-ideal-rigorous', "
             "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
