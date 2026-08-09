@@ -46,6 +46,7 @@ class _EvaluationConfig:
             "low2019-l1-ideal-rigorous",
             "childs2021-w2-triangle-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
+            "mizuta2026-theorem3-legacy-ideal-rigorous",
             "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
@@ -55,6 +56,7 @@ class _EvaluationConfig:
                 "(historical alias 'low-rigorous'), "
                 "'childs2021-w2-triangle-ideal-rigorous', "
                 "'mizuta2026-commutator-ideal-rigorous', "
+                "'mizuta2026-theorem3-legacy-ideal-rigorous', "
                 "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )
 

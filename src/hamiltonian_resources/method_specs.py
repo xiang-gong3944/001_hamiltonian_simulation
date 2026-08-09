@@ -63,7 +63,9 @@ class MultiproductMethod:
         elif self.error_method == "childs2021-w2-triangle-ideal-rigorous":
             suffix += " [Childs 2021 W2 triangle]"
         elif self.error_method == "mizuta2026-commutator-ideal-rigorous":
-            suffix += " [Mizuta 2026 commutator]"
+            suffix += " [Mizuta 2026 refined commutator]"
+        elif self.error_method == "mizuta2026-theorem3-legacy-ideal-rigorous":
+            suffix += " [Mizuta 2026 legacy Theorem 3]"
         elif self.error_method == "best-rigorous-ideal":
             suffix += " [best rigorous ideal bound]"
         return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
@@ -76,6 +78,7 @@ class MultiproductMethod:
             "low2019-l1-ideal-rigorous",
             "childs2021-w2-triangle-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
+            "mizuta2026-theorem3-legacy-ideal-rigorous",
             "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
@@ -85,6 +88,7 @@ class MultiproductMethod:
                 "(historical alias 'low-rigorous'), "
                 "'childs2021-w2-triangle-ideal-rigorous', "
                 "'mizuta2026-commutator-ideal-rigorous', "
+                "'mizuta2026-theorem3-legacy-ideal-rigorous', "
                 "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )
 

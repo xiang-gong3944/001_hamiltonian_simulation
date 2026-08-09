@@ -19,6 +19,7 @@ from hamiltonian_resources import (
 )
 from hamiltonian_resources.multiproduct import (
     _mizuta_mu_upper_bound,
+    _refined_mizuta_candidate,
     _w2_triangle_b2,
     _w2_triangle_ideal_mpf_bound,
     estimate_mpf_error,
@@ -374,7 +375,7 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
             methods=[
                 MultiproductMethod(
                     3,
-                    error_method="mizuta2026-commutator-ideal-rigorous",
+                    error_method="mizuta2026-theorem3-legacy-ideal-rigorous",
                 )
             ],
         ),
@@ -382,7 +383,7 @@ def test_mpf_metadata_distinguishes_ideal_and_circuit_certification():
     )
     row = frame.iloc[0]
 
-    assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    assert row["bound_method"] == "mizuta2026-theorem3-legacy-ideal-rigorous"
     assert bool(row["bound_rigorous"])
     assert row["bound_scope"] == "ideal-mpf"
     assert bool(row["bound_target_satisfied"])
@@ -461,7 +462,7 @@ def test_representative_w2_triangle_comparison_retains_expected_tradeoffs():
         "legacy-w2-proxy",
         "low2019-l1-ideal-rigorous",
         "childs2021-w2-triangle-ideal-rigorous",
-        "mizuta2026-commutator-ideal-rigorous",
+        "mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     segments = {
         method: select_mpf_segments(
@@ -478,7 +479,7 @@ def test_representative_w2_triangle_comparison_retains_expected_tradeoffs():
         "legacy-w2-proxy": 20,
         "low2019-l1-ideal-rigorous": 24,
         "childs2021-w2-triangle-ideal-rigorous": 161,
-        "mizuta2026-commutator-ideal-rigorous": 123_406,
+        "mizuta2026-theorem3-legacy-ideal-rigorous": 123_406,
     }
 
 
@@ -497,7 +498,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
             methods=[
                 MultiproductMethod(
                     2,
-                    error_method="mizuta2026-commutator-ideal-rigorous",
+                    error_method="mizuta2026-theorem3-legacy-ideal-rigorous",
                 )
             ],
         ),
@@ -505,7 +506,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     ).iloc[0]
 
     assert row["status"] == "ok"
-    assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    assert row["bound_method"] == "mizuta2026-theorem3-legacy-ideal-rigorous"
     assert "Mizuta" in row["bound_reference"]
     assert row["bound_theorem_or_equations"] == (
         "Theorem 4, Eqs. (47)--(49), with Theorem 3, Eqs. (33)--(35)"
@@ -527,7 +528,7 @@ def test_mizuta_theorem_metadata_propagates_to_benchmark_rows():
     assert 0 < row["mpf_auxiliary_allocation_fraction"] < 1
     assert row["mpf_local_commutator_error"] >= 0
     assert row["mpf_local_truncated_bch_error"] > 0
-    assert row["mpf_bound_policy"] == "mizuta2026-commutator-ideal-rigorous"
+    assert row["mpf_bound_policy"] == "mizuta2026-theorem3-legacy-ideal-rigorous"
     assert json.loads(row["mpf_bound_candidates_json"]) == []
 
 
@@ -544,7 +545,7 @@ def test_mizuta_segment_diagnostics_recompute_each_candidate_predicate():
         0.01,
         1e-4,
         3,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     diagnostics = estimate.segment_diagnostics
 
@@ -570,7 +571,7 @@ def test_mizuta_fixed_equal_allocation_remains_available_for_audit():
         0.01,
         1e-4,
         3,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
         auxiliary_allocation_fraction=0.5,
     )
     diagnostics = estimate.segment_diagnostics
@@ -609,14 +610,14 @@ def test_mizuta_discrete_allocation_optimizer_representative_cases(
         time,
         epsilon,
         branches,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     fixed = select_mpf_segments(
         hamiltonian,
         time,
         epsilon,
         branches,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
         auxiliary_allocation_fraction=0.5,
     )
 
@@ -631,7 +632,7 @@ def test_mizuta_discrete_allocation_optimizer_representative_cases(
             time,
             optimized.segments - 1,
             branches,
-            method="mizuta2026-commutator-ideal-rigorous",
+            method="mizuta2026-theorem3-legacy-ideal-rigorous",
             target_error=epsilon,
         )
         assert not (previous.rigorous and previous.error <= epsilon)
@@ -645,7 +646,7 @@ def test_mizuta_selected_allocation_reproduces_production_formulas_and_dense_sea
         0.01,
         epsilon,
         3,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     diagnostics = selected.segment_diagnostics
     assert diagnostics is not None
@@ -668,7 +669,7 @@ def test_mizuta_selected_allocation_reproduces_production_formulas_and_dense_sea
             0.01,
             selected.segments,
             3,
-            method="mizuta2026-commutator-ideal-rigorous",
+            method="mizuta2026-theorem3-legacy-ideal-rigorous",
             target_error=epsilon,
             auxiliary_allocation_fraction=float(fraction),
         )
@@ -678,6 +679,126 @@ def test_mizuta_selected_allocation_reproduces_production_formulas_and_dense_sea
     assert selected.error <= min(dense_errors) * (1 + 1e-12)
 
 
+def test_refined_mizuta_selects_p0_directly_and_reports_branchwise_remainders():
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0, periodic=False)
+
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-4,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    diagnostics = estimate.segment_diagnostics
+
+    assert estimate.segments == 2
+    assert estimate.error <= 1e-4
+    assert diagnostics is not None
+    assert diagnostics.truncation_order_p0 == 4
+    assert diagnostics.auxiliary_error is None
+    assert diagnostics.auxiliary_allocation_fraction is None
+    assert diagnostics.allocation_strategy == "direct-p0-remainder-optimization"
+    assert diagnostics.refined_lemma9_remainder > 0.0
+    assert diagnostics.refined_lemma10_remainder > 0.0
+    assert diagnostics.total_branchwise_bch_remainder == pytest.approx(
+        diagnostics.refined_lemma9_remainder + diagnostics.refined_lemma10_remainder
+    )
+    assert diagnostics.local_step_error == pytest.approx(
+        diagnostics.local_commutator_error + diagnostics.total_branchwise_bch_remainder
+    )
+    assert diagnostics.repeated_global_error == pytest.approx(estimate.error)
+    assert diagnostics.legacy_first_condition_passed is False
+    assert diagnostics.second_time_limit > estimate.local_step_size
+    assert diagnostics.schedule_weighted_extensiveness == pytest.approx(5.0)
+    assert np.allclose(diagnostics.schedule_weights, 1.0, atol=2e-15)
+    assert diagnostics.refined_tail_fallback_status == "not-used"
+
+    previous = estimate_mpf_error(
+        hamiltonian,
+        0.01,
+        estimate.segments - 1,
+        3,
+        method="mizuta2026-commutator-ideal-rigorous",
+        target_error=1e-4,
+    )
+    assert not (previous.rigorous and previous.error <= 1e-4)
+
+
+def test_refined_mizuta_rejects_auxiliary_allocation_option():
+    with pytest.raises(ValueError, match="not applicable to the refined Mizuta"):
+        estimate_mpf_error(
+            transverse_field_ising(2, field=0.7),
+            0.01,
+            2,
+            2,
+            method="mizuta2026-commutator-ideal-rigorous",
+            target_error=1e-3,
+            auxiliary_allocation_fraction=0.5,
+        )
+
+
+def test_refined_tail_failure_uses_legacy_fallback_only_under_first_condition(monkeypatch):
+    monkeypatch.setattr(
+        "hamiltonian_resources.multiproduct.refined_mizuta_remainder",
+        lambda *args, **kwargs: None,
+    )
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0)
+    coefficients = multiproduct_coefficients(3)
+    exponents = (1, 2, 4)
+
+    fallback = _refined_mizuta_candidate(
+        hamiltonian,
+        0.01,
+        3,
+        1000,
+        coefficients,
+        exponents,
+        1e-4,
+        3,
+        None,
+    )
+    rejected = _refined_mizuta_candidate(
+        hamiltonian,
+        0.01,
+        3,
+        1,
+        coefficients,
+        exponents,
+        1e-4,
+        3,
+        None,
+    )
+
+    assert fallback.legacy_first_condition_passed
+    assert fallback.used_legacy_tail_fallback
+    assert fallback.tail_certified
+    assert fallback.local_truncated_bch_error > 0.0
+    assert not rejected.legacy_first_condition_passed
+    assert not rejected.used_legacy_tail_fallback
+    assert not rejected.tail_certified
+    assert math.isinf(rejected.local_truncated_bch_error)
+
+
+def test_refined_mizuta_bound_upper_bounds_dense_small_system_error():
+    hamiltonian = transverse_field_ising(2, field=0.7)
+    estimate = select_mpf_segments(
+        hamiltonian,
+        0.01,
+        1e-3,
+        2,
+        method="mizuta2026-commutator-ideal-rigorous",
+    )
+    exact_error = _ideal_mpf_operator_error(
+        hamiltonian,
+        0.01,
+        estimate.segments,
+        2,
+    )
+
+    assert exact_error <= estimate.error <= 1e-3
+    assert estimate.rigorous
+
+
 def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
     hamiltonian = transverse_field_ising(2, field=0.7)
     mizuta = select_mpf_segments(
@@ -685,7 +806,7 @@ def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
         0.0,
         1e-3,
         2,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     low = select_mpf_segments(
         hamiltonian,
@@ -725,7 +846,7 @@ def test_best_rigorous_ideal_policy_selects_low_and_retains_candidates():
     assert [(candidate.method, candidate.segments) for candidate in estimate.bound_candidates] == [
         ("low2019-l1-ideal-rigorous", 1),
         ("childs2021-w2-triangle-ideal-rigorous", 1),
-        ("mizuta2026-commutator-ideal-rigorous", 675),
+        ("mizuta2026-commutator-ideal-rigorous", 2),
     ]
     assert all(candidate.rigorous for candidate in estimate.bound_candidates)
 
@@ -750,7 +871,7 @@ def test_best_rigorous_ideal_policy_can_select_w2_and_break_ties_with_low():
         method="best-rigorous-ideal",
     )
 
-    assert w2_triangle.method == "childs2021-w2-triangle-ideal-rigorous"
+    assert w2_triangle.method == "mizuta2026-commutator-ideal-rigorous"
     assert w2_triangle.segments == 1
     assert tie.method == "low2019-l1-ideal-rigorous"
     assert tie.segments == 1
@@ -791,7 +912,7 @@ def test_repository_branch_count_maps_to_mizuta_formal_order():
         0.01,
         1,
         method.term_count,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
         target_error=1e-3,
     )
 
@@ -1190,7 +1311,7 @@ def test_mizuta_bound_is_exact_zero_for_commuting_pauli_terms():
         5.0,
         1e-8,
         3,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
 
     assert estimate.segments == 1
@@ -1207,7 +1328,7 @@ def test_mizuta_bound_upper_bounds_small_system_ideal_mpf_error():
         0.01,
         1e-3,
         2,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
     )
     exact_error = _ideal_mpf_operator_error(
         hamiltonian,
@@ -1227,7 +1348,7 @@ def test_mizuta_bound_upper_bounds_small_system_ideal_mpf_error():
             0.01,
             estimate.segments - 1,
             2,
-            method="mizuta2026-commutator-ideal-rigorous",
+            method="mizuta2026-theorem3-legacy-ideal-rigorous",
             target_error=1e-3,
         )
         assert not previous.rigorous or previous.error > 1e-3
@@ -1245,7 +1366,7 @@ def test_mizuta_analytical_path_never_constructs_dense_hamiltonian(monkeypatch):
         0.01,
         300,
         2,
-        method="mizuta2026-commutator-ideal-rigorous",
+        method="mizuta2026-theorem3-legacy-ideal-rigorous",
         target_error=1e-3,
     )
 
