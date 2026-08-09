@@ -799,6 +799,40 @@ def test_refined_mizuta_bound_upper_bounds_dense_small_system_error():
     assert estimate.rigorous
 
 
+def test_refined_mizuta_diagnostics_serialize_to_benchmark_rows():
+    from hamiltonian_resources import BenchmarkConfig, TimeScaling, run_benchmark
+
+    row = run_benchmark(
+        BenchmarkConfig(
+            system_sizes=[2],
+            time=TimeScaling("fixed", 0.01),
+            methods=[
+                MultiproductMethod(
+                    2,
+                    error_method="mizuta2026-commutator-ideal-rigorous",
+                )
+            ],
+        ),
+        sweeps="system-size",
+    ).iloc[0]
+
+    assert row["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    assert row["mpf_auxiliary_error"] is None
+    assert row["mpf_auxiliary_allocation_fraction"] is None
+    assert row["mpf_refined_lemma9_remainder"] > 0.0
+    assert row["mpf_refined_lemma10_remainder"] > 0.0
+    assert row["mpf_total_branchwise_bch_remainder"] > 0.0
+    assert row["mpf_local_step_error"] > 0.0
+    assert row["mpf_repeated_global_error"] == pytest.approx(row["bound_value"])
+    assert row["mpf_legacy_first_condition_passed"] in (True, False)
+    assert row["mpf_second_time_limit"] > 0.0
+    assert np.allclose(json.loads(row["mpf_schedule_weights_json"]), 1.0, atol=2e-15)
+    assert row["mpf_schedule_weighted_extensiveness"] > 0.0
+    assert row["mpf_exact_commutator_cutoff"] >= 3
+    assert row["mpf_refined_tail_fallback_status"] == "not-used"
+    assert row["mpf_local_error_dominance"] in ("commutator", "bch", "tie")
+
+
 def test_mpf_segment_diagnostics_preserve_tied_constraints_and_low_provenance():
     hamiltonian = transverse_field_ising(2, field=0.7)
     mizuta = select_mpf_segments(

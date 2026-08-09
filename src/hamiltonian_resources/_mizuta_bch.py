@@ -393,8 +393,8 @@ def _flow_integral_certificate(
     locality_k: int,
     rho: float,
     *,
-    logarithmic_step: float = 1.0 / 256.0,
-    maximum_intervals: int = 8192,
+    logarithmic_step: float = 1.0 / 64.0,
+    maximum_intervals: int = 2048,
 ) -> MizutaTailCertificate | None:
     """Lower-bound ``integral_rho^R dx/(2*k*x*G(x))`` by right rectangles.
 
@@ -480,16 +480,34 @@ def certify_lemma10_tail(
         truncation_order,
         maximum_order,
     )
-    log_largest = math.log(largest_rho)
     log_smallest = math.log(smallest_rho)
-    for index in range(32):
-        fraction = index / 31.0
-        log_rho = log_largest + fraction * (log_smallest - log_largest)
+    log_largest = math.log(largest_rho)
+    best: MizutaTailCertificate | None = None
+    # Flow existence is monotone in the starting radius: if rho fails, every
+    # larger radius fails as well.  Start next to x, retain the largest
+    # successful grid point, and stop at the first failure.  This avoids
+    # paying a full divergent-flow integration for every oversized radius.
+    for index in range(24):
+        fraction = index / 23.0
+        log_rho = log_smallest + fraction * (log_largest - log_smallest)
         rho = _round_up(math.exp(log_rho))
         certificate = _flow_integral_certificate(log_g, locality_k, rho)
-        if certificate is not None:
-            return certificate
-    return None
+        if certificate is None:
+            break
+        best = certificate
+    if best is not None:
+        return best
+
+    # A coarse right-endpoint grid can lose enough area to miss a radius very
+    # close to the true flow boundary.  Retry only the smallest radius on the
+    # original fine grid before declaring that the refined tail is unavailable.
+    return _flow_integral_certificate(
+        log_g,
+        locality_k,
+        smallest_rho,
+        logarithmic_step=1.0 / 256.0,
+        maximum_intervals=8192,
+    )
 
 
 @dataclass(frozen=True)

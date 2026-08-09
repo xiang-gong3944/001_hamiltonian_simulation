@@ -71,6 +71,21 @@ BENCHMARK_COLUMNS = (
     "mpf_auxiliary_allocation_fraction",
     "mpf_local_commutator_error",
     "mpf_local_truncated_bch_error",
+    "mpf_refined_lemma9_remainder",
+    "mpf_refined_lemma10_remainder",
+    "mpf_total_branchwise_bch_remainder",
+    "mpf_local_step_error",
+    "mpf_repeated_global_error",
+    "mpf_legacy_first_time_limit",
+    "mpf_legacy_first_condition_passed",
+    "mpf_second_time_limit",
+    "mpf_schedule_weights_json",
+    "mpf_schedule_weighted_extensiveness",
+    "mpf_exact_commutator_cutoff",
+    "mpf_locality_fallback",
+    "mpf_locality_fallback_reason",
+    "mpf_refined_tail_fallback_status",
+    "mpf_local_error_dominance",
     "mpf_bound_policy",
     "mpf_bound_candidates_json",
     "query_count",
@@ -160,6 +175,21 @@ _SCHEMA2_EXTENSION_COLUMNS = {
     "mpf_auxiliary_allocation_fraction",
     "mpf_local_commutator_error",
     "mpf_local_truncated_bch_error",
+    "mpf_refined_lemma9_remainder",
+    "mpf_refined_lemma10_remainder",
+    "mpf_total_branchwise_bch_remainder",
+    "mpf_local_step_error",
+    "mpf_repeated_global_error",
+    "mpf_legacy_first_time_limit",
+    "mpf_legacy_first_condition_passed",
+    "mpf_second_time_limit",
+    "mpf_schedule_weights_json",
+    "mpf_schedule_weighted_extensiveness",
+    "mpf_exact_commutator_cutoff",
+    "mpf_locality_fallback",
+    "mpf_locality_fallback_reason",
+    "mpf_refined_tail_fallback_status",
+    "mpf_local_error_dominance",
     "mpf_bound_policy",
     "mpf_bound_candidates_json",
     "mpf_physical_branch_count",
@@ -462,6 +492,18 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         diagnostics = error.segment_diagnostics
         structure = plan.lcu_structure
         per_segment = plan.logical_counts.as_dict()["per_segment"]
+        if (
+            diagnostics is None
+            or diagnostics.local_commutator_error is None
+            or diagnostics.total_branchwise_bch_remainder is None
+        ):
+            local_error_dominance = None
+        elif diagnostics.local_commutator_error > diagnostics.total_branchwise_bch_remainder:
+            local_error_dominance = "commutator"
+        elif diagnostics.local_commutator_error < diagnostics.total_branchwise_bch_remainder:
+            local_error_dominance = "bch"
+        else:
+            local_error_dominance = "tie"
         result.update(
             segment_count=plan.segments,
             mpf_r_error=(diagnostics.r_error if diagnostics is not None else None),
@@ -489,6 +531,56 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
             mpf_local_truncated_bch_error=(
                 diagnostics.local_truncated_bch_error if diagnostics is not None else None
             ),
+            mpf_refined_lemma9_remainder=(
+                diagnostics.refined_lemma9_remainder if diagnostics is not None else None
+            ),
+            mpf_refined_lemma10_remainder=(
+                diagnostics.refined_lemma10_remainder if diagnostics is not None else None
+            ),
+            mpf_total_branchwise_bch_remainder=(
+                diagnostics.total_branchwise_bch_remainder
+                if diagnostics is not None
+                else None
+            ),
+            mpf_local_step_error=(
+                diagnostics.local_step_error if diagnostics is not None else None
+            ),
+            mpf_repeated_global_error=(
+                diagnostics.repeated_global_error if diagnostics is not None else None
+            ),
+            mpf_legacy_first_time_limit=(
+                diagnostics.legacy_first_time_limit if diagnostics is not None else None
+            ),
+            mpf_legacy_first_condition_passed=(
+                diagnostics.legacy_first_condition_passed if diagnostics is not None else None
+            ),
+            mpf_second_time_limit=(
+                diagnostics.second_time_limit if diagnostics is not None else None
+            ),
+            mpf_schedule_weights_json=json.dumps(
+                diagnostics.schedule_weights if diagnostics is not None else (),
+                separators=(",", ":"),
+            ),
+            mpf_schedule_weighted_extensiveness=(
+                diagnostics.schedule_weighted_extensiveness
+                if diagnostics is not None
+                else None
+            ),
+            mpf_exact_commutator_cutoff=(
+                diagnostics.max_exact_nested_commutator_order
+                if diagnostics is not None
+                else None
+            ),
+            mpf_locality_fallback=(
+                diagnostics.used_locality_fallback if diagnostics is not None else None
+            ),
+            mpf_locality_fallback_reason=(
+                diagnostics.locality_fallback_reason if diagnostics is not None else None
+            ),
+            mpf_refined_tail_fallback_status=(
+                diagnostics.refined_tail_fallback_status if diagnostics is not None else None
+            ),
+            mpf_local_error_dominance=local_error_dominance,
             mpf_bound_policy=(error.requested_method or plan.method.error_method),
             mpf_bound_candidates_json=json.dumps(
                 [candidate.as_dict() for candidate in error.bound_candidates],
