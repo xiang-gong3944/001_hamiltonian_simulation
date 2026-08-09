@@ -2080,9 +2080,9 @@ def select_mpf_segments(
 ) -> MPFErrorEstimate:
     """Select the smallest segment count satisfying the requested bound.
 
-    Mizuta selection exactly optimizes its discrete auxiliary allocation by
-    default. Set ``auxiliary_allocation_fraction`` to a value in ``(0, 1)``
-    only when a fixed-allocation comparison is required.
+    Refined Mizuta selection enumerates ``p0`` and evaluates the BCH remainder
+    directly. The auxiliary allocation option applies only to the explicit
+    ``mizuta2026-theorem3-legacy-ideal-rigorous`` identifier.
     """
     with execution_scope(workers, _execution, progress) as execution:
         return _select_mpf_segments(

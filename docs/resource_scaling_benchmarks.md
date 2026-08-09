@@ -92,7 +92,10 @@ triangle inequalities to the proven Strang W2 bound and deliberately discards
 formal-order MPF cancellation. The higher-order locality-compatible
 commutator alternative is
 `MultiproductMethod(m,
-error_method="mizuta2026-commutator-ideal-rigorous")`. Its theorem map and
+error_method="mizuta2026-commutator-ideal-rigorous")`. This refined method
+evaluates the BCH remainder directly for each \((r,p_0)\). The former printed
+Theorem-3 allocation calculation is preserved as
+`mizuta2026-theorem3-legacy-ideal-rigorous`. Their theorem map and
 the reason that Aftab 2024 is not exposed as a finite rigorous estimator are
 documented in [MPF error bounds](mpf_error_bounds.md). To reproduce historical
 W2-calibrated projections only, request
@@ -173,7 +176,13 @@ are:
 | `locality_compatible`, `commutator_cap_fallback` | Whether locality is preserved and whether the explicit work cap selected a proven fallback. |
 | `mpf_r_error`, `mpf_r_time_1`, `mpf_r_time_2` | Candidate-dependent MPF error and Mizuta time-condition segment thresholds. |
 | `mpf_active_constraints_json` | Every threshold active at the selected segment count, including ties. |
-| `mpf_mu_upper`, `mpf_truncation_order_p0`, `mpf_auxiliary_error`, `mpf_auxiliary_allocation_fraction` | Selected finite Mizuta theorem inputs and the exact optimized local-budget fraction. |
+| `mpf_mu_upper`, `mpf_truncation_order_p0` | Selected finite Mizuta commutator inputs. |
+| `mpf_auxiliary_error`, `mpf_auxiliary_allocation_fraction` | Printed-Theorem-3 legacy allocation; `None` for the refined estimator. |
+| `mpf_refined_lemma9_remainder`, `mpf_refined_lemma10_remainder`, `mpf_total_branchwise_bch_remainder` | Refined order-resolved BCH components. |
+| `mpf_local_step_error`, `mpf_repeated_global_error`, `mpf_local_error_dominance` | Refined local/repeated totals and commutator-vs-BCH dominance. |
+| `mpf_legacy_first_time_limit`, `mpf_legacy_first_condition_passed`, `mpf_second_time_limit` | Reported printed first condition and active second time limit. |
+| `mpf_schedule_weights_json`, `mpf_schedule_weighted_extensiveness` | Actual Suzuki occurrence weights and derived \(g_\alpha\). |
+| `mpf_exact_commutator_cutoff`, `mpf_locality_fallback`, `mpf_refined_tail_fallback_status` | Exact-order cutoff and locality/tail fallback provenance. |
 | `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
 | `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
@@ -211,11 +220,12 @@ alias. Plot titles record the selected policy, and summaries retain
    Eqs. (14)--(15), with `lambda=sum_j ||h_j||=hamiltonian.alpha` for the
    individual Pauli decomposition and the registered schedule's coefficient
    1-norm; Eq. (16) supplies only its upper search bracket. The opt-in Mizuta
-   method uses Theorem 3, Eqs. (33)--(35), and Theorem 4,
-   Eqs. (47)--(49), with exact finite-order Pauli commutators and a proven
-   locality fallback. Its printed-theorem auxiliary allocation is optimized
-   over every discrete truncation order allowed by the first time hypothesis;
-   50/50 remains available through the direct API for audit comparison.
+   refined method uses Theorem 4, Eqs. (47)--(49), with the direct Lemma-9 and
+   Lemma-10 BCH remainder, exact finite-order Pauli commutators, and a proven
+   locality fallback. It enumerates \(p_0\) directly. The explicit legacy
+   identifier retains Theorem 3, Eqs. (33)--(35), optimizes the auxiliary
+   allocation over every order allowed by the first time hypothesis, and
+   keeps the fixed 50/50 audit option.
 4. QSVT degree selection uses rigorous Jacobi--Anger parity-tail bounds. The
    exact scaled polynomial and ideal cubic-OAA block have separate derived
    claims; floating `pyqsp` phase residuals remain finite-grid observations,

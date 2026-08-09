@@ -231,9 +231,18 @@ nonrigorous historical W2 proxy is never a candidate.
 
 ## Mizuta 2026 finite-order commutator bound
 
-The method identifier is `mizuta2026-commutator-ideal-rigorous`. Mizuta's
-Theorem 4 is used with base order \(p=2\), paper formal order equal to the
-repository's \(2J\), and \(c_p=c_2=2\).
+Two explicit method identifiers separate the implementations:
+
+- `mizuta2026-theorem3-legacy-ideal-rigorous` reproduces the printed
+  Theorems 3--4 auxiliary-error/allocation construction;
+- `mizuta2026-commutator-ideal-rigorous` evaluates the refined Lemma-9 and
+  Lemma-10 BCH remainder directly for every \((r,p_0)\).
+
+Both use Theorem 4 with base order \(p=2\), paper formal order equal to the
+repository's \(2J\), and \(c_p=c_2=2\). They share the audited finite
+commutator data and polynomial-root `mu_upper` below. The full refined
+recurrence and scalar-tail proof are in
+[Refined finite-size BCH remainder](refined_mizuta_bch.md).
 
 ### Locality data and exact Pauli commutators
 
@@ -279,9 +288,10 @@ The estimate stays rigorous under this replacement, but records the fallback
 reason, the maximum exact order, and the maximum order used. It never falls
 back to the W2 heuristic.
 
-### Finite truncation and the sharp polynomial-root bound on \(\mu\)
+### Legacy finite truncation and the shared polynomial-root bound on \(\mu\)
 
-For a chosen auxiliary \(\eta\in(0,1)\), Mizuta Eq. (33) sets
+For the explicit legacy identifier, a chosen auxiliary
+\(\eta\in(0,1)\) enters Mizuta Eq. (33) as
 
 \[
 p_0=\left\lceil\log(3N/\eta)\right\rceil.
@@ -340,12 +350,13 @@ supplied bounds; remaining looseness comes from the supplied commutator bounds,
 not from ignoring the MPF order condition.
 
 At fixed \(p_0\) and fixed supplied commutator data, this root is independent
-of \(J\). Across complete resource estimates, `mu_upper` can still vary with
-\(J\) because the coefficient and exponent norms change the allocated
-auxiliary error, which can change \(p_0\). That is a finite-truncation input
-effect, not a benefit or penalty from the formal-order cutoff in Eq. (47).
+of \(J\). In the legacy estimator, `mu_upper` can still vary with \(J\) because
+the coefficient and exponent norms change the allocated auxiliary error and
+therefore \(p_0\). In the refined estimator, \(p_0\) is an independent
+enumerated candidate. Neither effect is a benefit or penalty from the
+formal-order cutoff in Eq. (47).
 
-### Error and time hypotheses
+### Printed-Theorem-3 legacy error and time hypotheses
 
 Mizuta Eq. (48) requires
 
@@ -393,7 +404,10 @@ every \(p_0\) allowed by the first time hypothesis, and chooses the valid
 allocation with the smallest complete repeated error. No heuristic grid or
 maximum truncation-order cap is used. Passing
 `auxiliary_allocation_fraction=0.5` to the direct estimation/selection API
-retains the earlier equal split for reproducible audits.
+retains the earlier equal split for reproducible audits under
+`mizuta2026-theorem3-legacy-ideal-rigorous`. Supplying that option to the
+refined identifier is rejected because no auxiliary allocation participates
+in refined selection.
 
 Theorem 4 is a one-step ideal-MPF result. The repository composes it to the
 repeated ideal operator explicitly: if \(U=e^{-iH\tau}\) and
@@ -410,7 +424,7 @@ meet the requested budget. Mutually commuting Pauli decompositions are
 recognized separately: the symmetric product formula and MPF are then exact,
 so the reported error is zero.
 
-Segment diagnostics rerun the complete allocation-aware candidate calculation
+Legacy segment diagnostics rerun the complete allocation-aware candidate calculation
 independently for the error predicate and for each part of Eq. (48). Thus
 `r_error`, `r_time_1`, and `r_time_2` each use their own candidate-dependent
 \(p_0(r,\rho)\), \(\mu(r,\rho)\), and local errors. The active constraint is
@@ -419,6 +433,55 @@ the independently minimal predicates cannot be met by one common allocation,
 diagnostics report an explicit `joint_allocation` threshold. The
 truncated-BCH term still has no independent `r_trunc`: it contributes to
 `r_error` and changes \(p_0\), which in turn changes `r_time_1`.
+
+### Direct refined BCH remainder
+
+For the refined identifier, the local BCH contribution is evaluated
+branchwise:
+
+\[
+\delta_{\mathrm{BCH}}(\tau,p_0)
+=\sum_j|c_j|k_jR_{p_0}(\tau/k_j),
+\qquad
+R_{p_0}(x)=N\sum_{q>p_0}(A_q+B_q)|x|^q.
+\]
+
+Here \(A_q\) retains Lemma 9's finite insertion sum, and \(B_q\) is generated
+from the order-resolved Lemma-10 nested-adjoint and outer-Dyson recurrences.
+The actual Suzuki schedule defines
+
+\[
+w_\gamma=\sum_{v:\gamma_v=\gamma}|\alpha_v|,
+\qquad
+g_\alpha=\max_i\sum_\gamma w_\gamma
+\sum_{X\ni i}\lVert h_X^\gamma\rVert.
+\]
+
+For Strang, the two half steps total one, so \(g_\alpha=g\), rather than the
+coarse \(c_2g=2g\). Coefficients are generated through \(Q=2p_0+32\); a
+positive scalar-flow/Cauchy theorem certifies the remaining infinite tail.
+If that theorem cannot certify a candidate, the coarse \(3Ne^{-p_0}\) tail is
+used only when the legacy first condition holds, with explicit fallback
+provenance.
+
+The refined local bound is
+
+\[
+\delta_r=
+2\sqrt e\lVert c\rVert_1
+(c_p\mu[p_0]|t|/r)^{2J+1}
++\delta_{\mathrm{BCH}}(t/r,p_0),
+\]
+
+subject to the unchanged second time hypothesis. For each \(r\), the code
+enumerates \(p_0\geq3\), chooses the certified order with the smallest
+repeated error, then selects the smallest passing integer \(r\) and verifies
+that \(r-1\) fails. The printed first time limit is diagnostic unless it is
+needed for the fallback. Refined auxiliary diagnostics are `None`.
+
+This refinement exposes and controls the BCH terms used in the same MPF
+cancellation proof. It changes no physical MPF operation or circuit. The full
+derivation is in [Refined finite-size BCH remainder](refined_mizuta_bch.md).
 
 ## Why Aftab 2024 is not a selectable rigorous estimator
 

@@ -92,16 +92,16 @@
       }
     },
     {
-      "method": {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "mizuta2026-commutator-ideal-rigorous"},
+      "method": {"family": "multiproduct", "term_count": 3, "schedule": "new", "error_method": "mizuta2026-theorem3-legacy-ideal-rigorous"},
       "system_qubits": 2,
       "evolution_time": 0.1,
       "target_error": 0.01,
       "expected": {
-        "method_id": "mpf-m3-mizuta2026-commutator-ideal-rigorous",
+        "method_id": "mpf-m3-mizuta2026-theorem3-legacy-ideal-rigorous",
         "segment_count": 1858,
         "query_count": 39018,
         "bound_value": 0.0061396553728881136,
-        "bound_method": "mizuta2026-commutator-ideal-rigorous",
+        "bound_method": "mizuta2026-theorem3-legacy-ideal-rigorous",
         "bound_rigorous": true,
         "bound_scope": "ideal-mpf",
         "circuit_bound_rigorous": false,

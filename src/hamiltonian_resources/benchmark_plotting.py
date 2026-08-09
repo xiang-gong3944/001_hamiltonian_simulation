@@ -49,7 +49,9 @@ _MPF_CONSTRAINT_MARKERS = {
     "error": "o",
     "time_1": "^",
     "time_2": "s",
+    "joint_p0": "D",
     "commuting_exact": "P",
+    "zero_time_exact": "P",
     "multiple": "D",
     "unknown": "X",
 }

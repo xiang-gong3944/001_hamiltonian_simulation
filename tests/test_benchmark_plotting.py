@@ -265,11 +265,9 @@ def test_compare_mpf_bounds_pairs_only_identical_circuit_structures(paired_mpf_f
     paired = compare_mpf_bounds(paired_mpf_frame)
 
     assert paired["system_qubits"].tolist() == [2, 3]
-    assert (paired["mizuta_to_low_ratio"] > 1).all()
-    assert set(paired["tighter_bound_method"]) == {
-        "low2019-l1-ideal-rigorous"
-    }
-    assert set(paired["mizuta_active_constraints_json"]) == {'["time_1"]'}
+    assert (paired["mizuta_to_low_ratio"] == 1).all()
+    assert set(paired["tighter_bound_method"]) == {"tie"}
+    assert set(paired["mizuta_active_constraints_json"]) == {'["error","time_2"]'}
 
     unmatched = paired_mpf_frame.copy()
     mizuta = unmatched["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
@@ -292,5 +290,5 @@ def test_plot_mpf_crossover_marks_constraints_and_fallback(paired_mpf_frame):
     assert axis.get_xscale() == "log"
     assert axis.get_yscale() == "log"
     assert len(axis.lines) == 2  # one J series plus the ratio-one crossover
-    assert "active=time_1" in labels
-    assert "active=time_1 [fallback]" in labels
+    assert "active=multiple" in labels
+    assert "active=multiple [fallback]" in labels

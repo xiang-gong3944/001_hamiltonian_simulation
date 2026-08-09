@@ -7,6 +7,14 @@ is [arXiv:2507.06557v4](https://arxiv.org/abs/2507.06557v4), which is the
 revision linked by the [published article](https://quantum-journal.org/papers/q-2026-01-19-1974/).
 All logarithms are natural.
 
+> **Implementation status.** Sections 1--12 reconstruct the printed theorem
+> and its proof-level finite-size information. The printed construction is
+> preserved as `mizuta2026-theorem3-legacy-ideal-rigorous`. The production
+> identifier `mizuta2026-commutator-ideal-rigorous` now evaluates the refined
+> Lemma-9/Lemma-10 remainder directly. Its recurrence, scalar-tail theorem,
+> and benchmarks are documented in
+> [Refined finite-size BCH remainder](refined_mizuta_bch.md).
+
 The main finite-size conclusion is simple but severe.  The published local
 bound is fully explicit:
 
@@ -121,11 +129,11 @@ historically named `m` is instead the branch count \(J\).
 | \(a_j\) | coefficient \(c_j\) | `multiproduct_coefficients(J)` |
 | \(A=\sum_j|a_j|\) | \(\lVert c\rVert_1\) | `coefficient_l1_norm` |
 | \(K=\sum_j k_j\) | \(\lVert k\rVert_1\) | sum of `exponents` |
-| \(W=\sum_j|a_j|k_j\) | retained proof-level weight | not used by the estimator |
+| \(W=\sum_j|a_j|k_j\) | retained proof-level weight | used by the refined branchwise remainder |
 | \(p=2,c_p=2\) | base formula parameters | ordered symmetric second order |
 | \(\tau=t/r\) | local simulated time | `local_step_size` |
 | \(\alpha_{\mathrm{com},q}\) | Eq. (8) | exact/upward-rounded Pauli recurrence |
-| \(\eta\) | Theorem 3/4 auxiliary error | `auxiliary_error` |
+| \(\eta\) | Theorem 3/4 auxiliary error | legacy `auxiliary_error`; not applicable to refined |
 | \(p_0\) | finite BCH/commutator cutoff | `truncation_order_p0` |
 
 For individual Pauli terms \(H_\gamma=h_\gamma P_\gamma\), the repository
@@ -747,7 +755,7 @@ separately labelled proof-level tightening, not the published theorem.
 
 ### 10.3 Why hundreds of segments occur with moderate \(\mu\)
 
-For \(N=4,J=3,t=0.01,\varepsilon=10^{-4}\), the repository chooses
+For \(N=4,J=3,t=0.01,\varepsilon=10^{-4}\), the explicit legacy estimator chooses
 \(\rho=0.8121328\), \(p_0=21\), and obtains \(\mu=17.4125553\).  The three
 diagnostic quantities are
 
@@ -825,9 +833,9 @@ not a finite prefactor proved by Mizuta.
 | Eqs. (84)–(87) | \(m\), \(A\), \(K\), \(r_1\), and \(r_2\) are converted to asymptotic scaling |
 | Table 1 | \([\log(Ngt/\varepsilon)]^2\) is absorbed into `polylog`; oracle gate constants are omitted |
 
-## 13. Audit of the current implementation
+## 13. Audit of the preserved legacy implementation
 
-The method `mizuta2026-commutator-ideal-rigorous` is a rigorous upper bound for
+The method `mizuta2026-theorem3-legacy-ideal-rigorous` is a rigorous upper bound for
 its declared **ideal-MPF** scope, subject to ordinary floating-point
 upper-rounding assumptions recorded by the implementation.  It correctly:
 
@@ -866,10 +874,12 @@ Finally, none of the ideal-MPF statements silently certifies the repository's
 repeated shared-ancilla robust-OAA circuit.  That distinction in the existing
 resource model remains necessary.
 
-## 14. Tightenings that preserve the strategy
+## 14. Refinements that preserve the strategy
 
 The following changes are mathematically compatible with the paper's method,
-but must remain labelled as refinements rather than quotations of Theorem 4:
+but remain labelled as refinements rather than quotations of Theorem 4. The
+production refined identifier implements items 1--3 through its
+order-resolved Lemma-9/Lemma-10 majorants and branchwise remainder:
 
 1. evaluate the two BCH geometric tails in Eq. (15) instead of replacing them
    by \(3Ne^{-p_0}\);
@@ -901,6 +911,32 @@ dominant conservative ingredient.
   nearly all numerical benefit of a moderate measured \(\mu\).
 - Mizuta's paper does not contain enough information to recover a numerical
   QAA/query prefactor or a per-oracle gate prefactor.
-- The repository implements a rigorous version of the printed Theorem 4 local
-  bound for the ideal MPF, but it does not implement the strongest finite-size
-  bound recoverable from the proof.
+- The repository preserves the printed Theorem-4 construction under the
+  explicit legacy identifier and separately implements a rigorous direct BCH
+  refinement under `mizuta2026-commutator-ideal-rigorous`.
+
+## 16. Refined production path
+
+The refined estimator replaces the legacy dependency
+
+\[
+\eta_{\rm aux}\longrightarrow p_0
+\longrightarrow(8e^3c_pp_0kg)^{-1}
+\]
+
+by
+
+\[
+p_0\longrightarrow R_{p_0}(t/r)
+\longrightarrow\delta_{\rm BCH}
+\longrightarrow\delta_{\rm comm}+\delta_{\rm BCH}.
+\]
+
+It derives schedule-weighted extensiveness from the actual Suzuki factors,
+retains the exact Strang parity of the logarithm, generates the Lemma-10
+nested-adjoint and Dyson majorants order by order, and proves the infinite
+tail with a positive scalar-flow/Cauchy certificate. The second Mizuta time
+hypothesis and the audited polynomial-root `mu_upper` are unchanged. See
+[Refined finite-size BCH remainder](refined_mizuta_bch.md) for the complete
+derivation, outward-rounding rules, diagnostics, and executed benchmark
+results.
