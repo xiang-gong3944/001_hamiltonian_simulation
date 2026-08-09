@@ -58,6 +58,28 @@ def test_mpf_plan_builder_consumes_stored_lcu_structure(monkeypatch):
     assert np.allclose(Operator(planned).data, Operator(legacy).data, atol=1e-12)
 
 
+def test_dynamic_mpf_plan_builder_uses_the_resolved_branch_count():
+    from hamiltonian_resources.hamiltonians import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 1.0)])
+    plan = plan_simulation(
+        hamiltonian,
+        MultiproductMethod(None, branch_count_policy="mizuta2026-theorem6"),
+        5.0,
+        0.1,
+    )
+
+    circuit = build_simulation_circuit(plan)
+
+    assert plan.method.term_count is None
+    assert plan.term_count == 3
+    assert circuit.metadata["formal_order"] == 6
+    assert circuit.metadata["exponents"] == plan.exponents
+    assert circuit.metadata["physical_branch_count"] == (
+        plan.lcu_structure.physical_branch_count
+    )
+
+
 def test_qsvt_plan_builder_uses_fixed_selected_degree(monkeypatch):
     import hamiltonian_resources.qsvt as qsvt
 

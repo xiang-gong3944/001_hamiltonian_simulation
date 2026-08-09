@@ -1066,7 +1066,7 @@ def test_repeated_shared_ancilla_claim_bounds_the_actual_projected_block():
     circuit = build_multiproduct_circuit(
         hamiltonian,
         plan.time,
-        m=plan.method.term_count,
+        m=plan.term_count,
         segments=plan.segments,
         schedule=plan.method.schedule,
     )

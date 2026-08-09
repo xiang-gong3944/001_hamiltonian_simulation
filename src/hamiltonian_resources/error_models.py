@@ -182,6 +182,10 @@ class SuzukiSizingEstimate(SizingEstimate):
 class MPFSizingEstimate(SizingEstimate):
     segments: int
     term_count: int
+    formal_order: int
+    branch_count_policy: str
+    branch_count_policy_extensiveness_g: float | None
+    branch_count_policy_target_error: float
     schedule: str
     exponents: tuple[int, ...]
     coefficient_l1_norm: float

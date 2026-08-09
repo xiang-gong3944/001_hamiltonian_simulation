@@ -119,6 +119,11 @@ class MPFBranchCountSelection:
     target_error: float
     schedule: MPFSchedule
 
+    @property
+    def branch_count(self) -> int:
+        """Selected theorem notation ``J`` (the number of MPF branches)."""
+        return self.term_count
+
 
 @dataclass(frozen=True)
 class MPFBoundCandidateSummary:
@@ -2478,7 +2483,7 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
     return _build_multiproduct_circuit_from_components(
         plan.hamiltonian,
         plan.time,
-        plan.method.term_count,
+        plan.term_count,
         plan.segments,
         plan.method.schedule,
         True,

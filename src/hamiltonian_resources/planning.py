@@ -31,10 +31,12 @@ from .error_models import (
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec, MultiproductMethod, QSVTMethod, TrotterMethod
 from .multiproduct import (
+    MPFBranchCountSelection,
     MPFErrorEstimate,
     MPFLCUStructure,
     mpf_lcu_structure,
     multiproduct_coefficients,
+    resolve_mpf_branch_count,
     select_mpf_segments,
 )
 from .qsvt import estimate_qsvt_degree
@@ -294,6 +296,7 @@ class MPFPlan:
     method: MultiproductMethod
     time: float
     error_budget: ErrorBudget
+    branch_count_selection: MPFBranchCountSelection
     segments: int
     exponents: tuple[int, ...]
     coefficients: tuple[float, ...]
@@ -307,8 +310,21 @@ class MPFPlan:
             raise ValueError("MPF segments must be positive")
         if self.error_estimate.segments != self.segments:
             raise ValueError("MPF error estimate segments do not match the plan")
-        if self.error_estimate.m != self.method.term_count:
-            raise ValueError("MPF error estimate term count does not match the method")
+        selection = self.branch_count_selection
+        if selection.policy != self.method.branch_count_policy:
+            raise ValueError("MPF branch-count selection policy does not match the method")
+        if selection.schedule != self.method.schedule:
+            raise ValueError("MPF branch-count selection schedule does not match the method")
+        if selection.num_qubits != self.hamiltonian.num_qubits:
+            raise ValueError("MPF branch-count selection system size does not match the plan")
+        if selection.time != abs(self.time):
+            raise ValueError("MPF branch-count selection time does not match the plan")
+        if selection.target_error != self.error_budget.algorithm_error:
+            raise ValueError("MPF branch-count selection target does not match the algorithm budget")
+        if self.method.term_count is not None and selection.term_count != self.method.term_count:
+            raise ValueError("fixed MPF term count does not match the branch-count selection")
+        if self.error_estimate.m != selection.term_count:
+            raise ValueError("MPF error estimate term count does not match the resolved selection")
         if self.error_estimate.schedule != self.method.schedule:
             raise ValueError("MPF error estimate schedule does not match the method")
         if self.error_estimate.exponents != self.exponents:
@@ -330,9 +346,21 @@ class MPFPlan:
         return self.time / self.segments
 
     @property
+    def term_count(self) -> int:
+        """Resolved MPF branch count ``J`` used by this plan."""
+        return self.branch_count_selection.term_count
+
+    @property
+    def formal_order(self) -> int:
+        return self.branch_count_selection.formal_order
+
+    @property
     def selected_parameters(self) -> dict[str, object]:
         return {
-            "mpf_m": self.method.term_count,
+            "mpf_m": self.term_count,
+            "mpf_branch_count": self.term_count,
+            "mpf_formal_order": self.formal_order,
+            "mpf_branch_count_policy": self.branch_count_selection.policy,
             "mpf_segments": self.segments,
             "mpf_schedule": self.method.schedule,
             "mpf_error_method": self.method.error_method,
@@ -374,6 +402,12 @@ class MPFPlan:
             target=self.error_budget.algorithm_error,
             segments=error.segments,
             term_count=error.m,
+            formal_order=self.formal_order,
+            branch_count_policy=self.branch_count_selection.policy,
+            branch_count_policy_extensiveness_g=(
+                self.branch_count_selection.extensiveness_g
+            ),
+            branch_count_policy_target_error=self.branch_count_selection.target_error,
             schedule=error.schedule,
             exponents=error.exponents,
             coefficient_l1_norm=error.coefficient_l1_norm,
@@ -920,11 +954,20 @@ def _plan_simulation(
         )
 
     if isinstance(method, MultiproductMethod):
+        branch_count_selection = resolve_mpf_branch_count(
+            canonical,
+            evolution_time,
+            budget.algorithm_error,
+            policy=method.branch_count_policy,
+            term_count=method.term_count,
+            schedule=method.schedule,
+        )
+        term_count = branch_count_selection.term_count
         selected_error = select_mpf_segments(
             canonical,
             evolution_time,
             budget.algorithm_error,
-            method.term_count,
+            term_count,
             schedule=method.schedule,
             method=method.error_method,
             workers=execution.workers,
@@ -934,7 +977,7 @@ def _plan_simulation(
         coefficients = tuple(
             float(value)
             for value in multiproduct_coefficients(
-                method.term_count,
+                term_count,
                 schedule=method.schedule,
             )
         )
@@ -943,10 +986,11 @@ def _plan_simulation(
             method=method,
             time=evolution_time,
             error_budget=budget,
+            branch_count_selection=branch_count_selection,
             segments=selected_error.segments,
             exponents=exponents,
             coefficients=coefficients,
-            lcu_structure=mpf_lcu_structure(method.term_count, schedule=method.schedule),
+            lcu_structure=mpf_lcu_structure(term_count, schedule=method.schedule),
             base_formula_group_term_indices=tuple(
                 (index,) for index in range(canonical.term_count)
             ),
