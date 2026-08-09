@@ -104,6 +104,7 @@ def test_summary_can_select_by_t_count_for_cnot_plot_and_annotate_orders(
     mpf_j5["method_id"] = "mpf-j5"
     mpf_j5["method_label"] = "MPF J=5"
     mpf_j5["mpf_term_count"] = 5
+    mpf_j5["mpf_formal_order"] = 10
     frame = pd.concat([frame, trotter_p4, mpf_j5], ignore_index=True)
 
     values = {
@@ -133,7 +134,12 @@ def test_summary_can_select_by_t_count_for_cnot_plot_and_annotate_orders(
 
     assert lines["Trotter"].get_ydata().tolist() == [100, 100]
     assert lines["MPF"].get_ydata().tolist() == [120, 120]
-    assert {text.get_text() for text in axis.texts} == {"p=2", "p=4", "J=3", "J=5"}
+    assert {text.get_text() for text in axis.texts} == {
+        "p=2",
+        "p=4",
+        "J=3, 2J=6",
+        "J=5, 2J=10",
+    }
     assert "best by T count" in axis.get_title()
 
     default_figure = plot_benchmark(
@@ -274,6 +280,16 @@ def test_compare_mpf_bounds_pairs_only_identical_circuit_structures(paired_mpf_f
     unmatched.loc[mizuta, "rotation_synthesis_error"] *= 2
     with pytest.raises(ValueError, match="no matched"):
         compare_mpf_bounds(unmatched)
+
+    mixed_policy = paired_mpf_frame.copy()
+    mizuta = mixed_policy["bound_method"] == (
+        "mizuta2026-commutator-ideal-rigorous"
+    )
+    mixed_policy.loc[mizuta, "mpf_branch_count_policy"] = (
+        "mizuta2026-theorem6"
+    )
+    with pytest.raises(ValueError, match="no matched"):
+        compare_mpf_bounds(mixed_policy)
 
 
 def test_plot_mpf_crossover_marks_constraints_and_fallback(paired_mpf_frame):

@@ -1,3 +1,6 @@
+import json
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -97,6 +100,63 @@ def test_method_selection_and_progress_order_are_explicit():
     assert frame["method_id"].tolist() == ["qsvt", "trotter-p4"]
     assert [event.method_id for event in events] == ["qsvt", "trotter-p4"]
     assert events[-1].completed == events[-1].total == 2
+
+
+def test_dynamic_mpf_rows_store_the_resolved_policy_order_and_inputs():
+    config = BenchmarkConfig(
+        hamiltonian=HamiltonianSpec(
+            parameters={"coupling": 1.0, "field": 3.0, "periodic": False}
+        ),
+        system_sizes=[4],
+        time=TimeScaling("fixed", 4.0),
+        fixed_target_error=1e-3,
+        methods=[
+            MultiproductMethod(
+                None,
+                branch_count_policy="mizuta2026-theorem6",
+            )
+        ],
+    )
+
+    row = run_benchmark(config, sweeps="system-size").iloc[0]
+
+    assert row["status"] == "ok"
+    assert row["mpf_branch_count_policy"] == "mizuta2026-theorem6"
+    assert row["mpf_term_count"] == 6
+    assert row["mpf_formal_order"] == 12
+    assert row["mpf_branch_count_policy_extensiveness_g"] == pytest.approx(5.0)
+    assert row["mpf_branch_count_policy_target_error"] == pytest.approx(9e-4)
+    assert row["query_count"] == 3 * row["segment_count"] * sum(
+        json.loads(row["mpf_exponents_json"])
+    )
+
+
+def test_unsupported_dynamic_order_is_an_explicit_benchmark_error_row():
+    from hamiltonian_resources import PauliHamiltonian
+
+    config = BenchmarkConfig(
+        hamiltonian=HamiltonianSpec(
+            "unit-z",
+            factory=lambda size: PauliHamiltonian.from_terms(size, [("Z", 1.0)]),
+        ),
+        system_sizes=[1],
+        time=TimeScaling("fixed", 1.0),
+        fixed_target_error=math.exp(-31.0) / 0.9,
+        methods=[
+            MultiproductMethod(
+                None,
+                branch_count_policy="mizuta2026-theorem6",
+            )
+        ],
+    )
+
+    row = run_benchmark(config, sweeps="system-size").iloc[0]
+
+    assert row["status"] == "error"
+    assert row["error_type"] == "ValueError"
+    assert "unsupported J=16" in row["error_message"]
+    assert "N=1" in row["error_message"]
+    assert "2 <= J <= 15" in row["error_message"]
 
 
 def test_config_is_mutable_and_revalidated_before_run():

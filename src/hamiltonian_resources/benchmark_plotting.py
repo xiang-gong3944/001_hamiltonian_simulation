@@ -69,6 +69,8 @@ def _mpf_comparison_keys(frame: pd.DataFrame) -> list[str]:
         "target_error",
         "algorithm_error_budget",
         "mpf_term_count",
+        "mpf_formal_order",
+        "mpf_branch_count_policy",
         "mpf_schedule",
         "rotation_synthesis_error",
     ]
@@ -97,6 +99,11 @@ def compare_mpf_bounds(
         values["mpf_active_constraints_json"] = "[]"
     if "commutator_cap_fallback" not in values:
         values["commutator_cap_fallback"] = False
+    if "mpf_branch_count_policy" not in values:
+        values["mpf_branch_count_policy"] = "fixed"
+    values["mpf_branch_count_policy"] = values["mpf_branch_count_policy"].fillna(
+        "fixed"
+    )
     values[metric] = _metric_values(values, metric)
     policy = values["mpf_bound_policy"]
     concrete = {
@@ -191,12 +198,14 @@ def plot_mpf_crossover(
 
     colors = itertools.cycle(("#D55E00", "#0072B2", "#009E73", "#CC79A7"))
     marker_labels: set[tuple[str, bool]] = set()
-    for (term_count, schedule), values in paired.groupby(
-        ["mpf_term_count", "mpf_schedule"], dropna=False, sort=True
+    for (policy, schedule), values in paired.groupby(
+        ["mpf_branch_count_policy", "mpf_schedule"],
+        dropna=False,
+        sort=True,
     ):
         values = values.sort_values(x_column)
         color = next(colors)
-        label = f"J={int(term_count)}, schedule={schedule}"
+        label = f"policy={policy}, schedule={schedule}"
         axis.plot(
             values[x_column],
             values["mizuta_to_low_ratio"],
@@ -223,6 +232,15 @@ def plot_mpf_crossover(
                 linewidths=1.3,
                 label=marker_label,
                 zorder=3,
+            )
+            axis.annotate(
+                f"J={int(row['mpf_term_count'])}, 2J={int(row['mpf_formal_order'])}",
+                (row[x_column], row["mizuta_to_low_ratio"]),
+                xytext=(4, 4),
+                textcoords="offset points",
+                fontsize=7,
+                color=color,
+                clip_on=True,
             )
     axis.axhline(1.0, color="#333333", linestyle="--", linewidth=1.2, label="crossover")
     axis.set_xscale("log", base=10)
@@ -492,7 +510,10 @@ def plot_benchmark(
                 if family == "trotter" and pd.notna(row.get("trotter_order")):
                     annotation = f"p={int(row['trotter_order'])}"
                 elif family == "multiproduct" and pd.notna(row.get("mpf_term_count")):
-                    annotation = f"J={int(row['mpf_term_count'])}"
+                    annotation = (
+                        f"J={int(row['mpf_term_count'])}, "
+                        f"2J={int(row['mpf_formal_order'])}"
+                    )
                 if annotation is not None:
                     axis.annotate(
                         annotation,

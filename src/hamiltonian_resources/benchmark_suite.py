@@ -32,6 +32,7 @@ from .method_specs import (
     default_methods,
 )
 from .planning import MPFPlan, QSVTPlan, TrotterPlan
+from .trotter import pauli_locality_parameters
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
@@ -60,6 +61,9 @@ BENCHMARK_COLUMNS = (
     "trotter_order",
     "mpf_term_count",
     "mpf_formal_order",
+    "mpf_branch_count_policy",
+    "mpf_branch_count_policy_extensiveness_g",
+    "mpf_branch_count_policy_target_error",
     "segment_count",
     "mpf_r_error",
     "mpf_r_time_1",
@@ -152,6 +156,9 @@ BENCHMARK_COLUMNS = (
 )
 
 _SCHEMA2_EXTENSION_COLUMNS = {
+    "mpf_branch_count_policy",
+    "mpf_branch_count_policy_extensiveness_g",
+    "mpf_branch_count_policy_target_error",
     "bound_reference",
     "bound_theorem_or_equations",
     "bound_components_json",
@@ -506,6 +513,15 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
             local_error_dominance = "tie"
         result.update(
             segment_count=plan.segments,
+            mpf_term_count=plan.term_count,
+            mpf_formal_order=plan.formal_order,
+            mpf_branch_count_policy=plan.branch_count_selection.policy,
+            mpf_branch_count_policy_extensiveness_g=(
+                plan.branch_count_selection.extensiveness_g
+            ),
+            mpf_branch_count_policy_target_error=(
+                plan.branch_count_selection.target_error
+            ),
             mpf_r_error=(diagnostics.r_error if diagnostics is not None else None),
             mpf_r_time_1=(diagnostics.r_time_1 if diagnostics is not None else None),
             mpf_r_time_2=(diagnostics.r_time_2 if diagnostics is not None else None),
@@ -723,7 +739,19 @@ def _base_record(
         trotter_order=method.order if isinstance(method, TrotterMethod) else None,
         mpf_term_count=(method.term_count if isinstance(method, MultiproductMethod) else None),
         mpf_formal_order=(
-            2 * method.term_count if isinstance(method, MultiproductMethod) else None
+            2 * method.term_count
+            if isinstance(method, MultiproductMethod) and method.term_count is not None
+            else None
+        ),
+        mpf_branch_count_policy=(
+            method.branch_count_policy
+            if isinstance(method, MultiproductMethod)
+            else None
+        ),
+        mpf_branch_count_policy_target_error=(
+            target_error * (1 - config.synthesis_error_fraction)
+            if isinstance(method, MultiproductMethod)
+            else None
         ),
         algorithm_error_budget=target_error * (1 - config.synthesis_error_fraction),
         **run_metadata["software"],
@@ -784,6 +812,12 @@ def _run_benchmark(
                     hamiltonian_alpha=hamiltonian.alpha,
                     hamiltonian_term_count=hamiltonian.term_count,
                 )
+                if (
+                    isinstance(method, MultiproductMethod)
+                    and method.branch_count_policy == "mizuta2026-theorem6"
+                ):
+                    _, extensiveness_g = pauli_locality_parameters(hamiltonian)
+                    record["mpf_branch_count_policy_extensiveness_g"] = extensiveness_g
                 report = _evaluate_method(
                     hamiltonian,
                     config,
@@ -916,17 +950,27 @@ def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
             raise ValueError("Trotter method requires only family and order")
         return TrotterMethod(raw["order"])
     if family == "multiproduct":
-        unknown = set(raw) - {"family", "term_count", "schedule", "error_method"}
-        if unknown or "term_count" not in raw:
+        unknown = set(raw) - {
+            "family",
+            "term_count",
+            "schedule",
+            "error_method",
+            "branch_count_policy",
+        }
+        policy = raw.get("branch_count_policy", "fixed")
+        if unknown or (policy == "fixed" and "term_count" not in raw):
             raise ValueError(
-                "multiproduct method requires family, term_count, and optional "
+                "fixed multiproduct method requires family, term_count, and optional "
                 "schedule/error_method"
             )
-        return MultiproductMethod(
-            raw["term_count"],
+        method = MultiproductMethod(
+            raw.get("term_count"),
             raw.get("schedule", "new"),
             raw.get("error_method", "low2019-l1-ideal-rigorous"),
+            policy,
         )
+        method.validate()
+        return method
     if family == "qsvt":
         if set(raw) != {"family"}:
             raise ValueError("QSVT method accepts only the family field")
@@ -1050,6 +1094,11 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
         frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf & ~is_qsvt
         for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
             frame[column] = None
+    mpf_rows = frame["method_family"] == "multiproduct"
+    frame.loc[
+        mpf_rows & frame["mpf_branch_count_policy"].isna(),
+        "mpf_branch_count_policy",
+    ] = "fixed"
     legacy_qsvt_claim = (frame["method_family"] == "qsvt") & (
         frame["bound_scope"] == "implemented-algorithm"
     )

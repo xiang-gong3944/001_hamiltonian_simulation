@@ -153,6 +153,56 @@ def test_load_benchmark_upgrades_early_schema2_scope_columns(
     assert mpf["bound_scope"] == "ideal-mpf"
     assert mpf["circuit_bound_scope"] == "repeated-shared-ancilla-good-block"
     assert not bool(mpf["circuit_bound_rigorous"])
+    assert mpf["mpf_branch_count_policy"] == "fixed"
+
+
+def test_dynamic_mpf_configuration_round_trips(tmp_path):
+    method = MultiproductMethod(
+        None,
+        branch_count_policy="mizuta2026-theorem6",
+        error_method="mizuta2026-commutator-ideal-rigorous",
+    )
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        target_errors=[1e-2],
+        time=TimeScaling("fixed", 0.1),
+        methods=[method],
+    )
+    job_path = tmp_path / "dynamic.json"
+    job_path.write_text(
+        json.dumps({"benchmark": config.as_dict()}),
+        encoding="utf-8",
+    )
+
+    loaded = load_benchmark_job(job_path).benchmark
+
+    assert loaded.as_dict() == config.as_dict()
+    assert loaded.methods == [method]
+    serialized = loaded.as_dict()["methods"][0]
+    assert "term_count" not in serialized
+    assert serialized["branch_count_policy"] == "mizuta2026-theorem6"
+
+
+def test_fixed_mpf_configuration_digest_and_json_remain_stable():
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        target_errors=[0.01],
+        fixed_system_size=2,
+        fixed_target_error=0.01,
+        methods=[MultiproductMethod(3)],
+    )
+
+    serialized = config.as_dict()["methods"][0]
+
+    assert serialized == {
+        "family": "multiproduct",
+        "schedule": "new",
+        "error_method": "low2019-l1-ideal-rigorous",
+        "term_count": 3,
+    }
+    assert config.digest == (
+        "5e65b0083415938de1d63496040ffa1852f09d64fb23b116a13291c8eb3cd7eb"
+    )
 
 
 def test_load_benchmark_downgrades_withdrawn_qsvt_circuit_claim(
