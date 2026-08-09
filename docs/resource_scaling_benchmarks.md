@@ -108,6 +108,33 @@ estimators, selects the one requiring fewer segments, and records all three
 candidate results alongside the selected bound provenance. It never considers
 the historical W2 proxy and does not optimize across different branch counts.
 
+MPF branch count has a separate deterministic policy:
+
+```python
+# Existing fixed-J configuration; JSON and digest are unchanged.
+MultiproductMethod(term_count=3, branch_count_policy="fixed")
+
+# Resolve J once per benchmark point from Mizuta Theorem 6, Eq. (84).
+MultiproductMethod(
+    term_count=None,
+    branch_count_policy="mizuta2026-theorem6",
+    error_method="mizuta2026-commutator-ideal-rigorous",
+)
+```
+
+The dynamic form uses the row's `algorithm_error_budget` and the shared
+outward-rounded Pauli extensiveness \(g\), then passes the same selected
+schedule to any requested Low, legacy Mizuta, refined Mizuta, or best-bound
+estimator. It never minimizes segment count over candidate orders. Fixed JSON
+continues to contain `term_count` and omit `branch_count_policy`; dynamic JSON
+omits `term_count` and stores
+`"branch_count_policy": "mizuta2026-theorem6"`.
+
+The registered schedules cover \(2\le J\le15\). A dynamic point requiring a
+larger order remains a fault-isolated benchmark row with `status="error"` and
+the full unsupported-order message; direct planning calls propagate the
+exception.
+
 `TimeScaling("proportional", tau)` means `t(n) = tau * n`; the checked-in
 default has `tau=1`. This gives each one-dimensional local Hamiltonian enough
 simulated time to scale with the distance over which interactions spread. It is
@@ -167,6 +194,10 @@ are:
 | `target_error` | Total simulation-error target. |
 | `method_id` | Stable method identity such as `trotter-p4` or `mpf-m5`. |
 | `method_family` / `method_label` | Plot grouping and human-readable name. |
+| `mpf_term_count`, `mpf_formal_order` | Resolved row-specific \(J\) and \(2J\), including dynamic rows. |
+| `mpf_branch_count_policy` | `fixed` or `mizuta2026-theorem6`; missing historical schema-2 values load as `fixed`. |
+| `mpf_branch_count_policy_extensiveness_g` | Outward-rounded unweighted Pauli extensiveness used by the dynamic formula. |
+| `mpf_branch_count_policy_target_error` | Algorithm-error budget supplied to branch-count resolution. |
 | `t_count`, `cnot_count`, `total_qubits` | Primary resource estimates. |
 | `query_count`, `rotation_count`, `toffoli_count`, `depth` | Additional metrics. |
 | `bound_method`, `bound_rigorous` | Parameter-selection provenance and rigor at the declared scope. |
@@ -195,9 +226,12 @@ an early schema-2 CSV without the scoped-bound extension columns fills them
 conservatively; historical MPF rows are never upgraded to circuit-rigorous.
 
 `compare_mpf_bounds(data, metric="segment_count")` pairs Low and Mizuta rows
-only when their Hamiltonian, time, target, branch count, schedule, and synthesis
-allocation agree. `plot_mpf_crossover` plots the resulting Mizuta/Low ratio,
-with the active Mizuta constraint and commutator fallback shown explicitly.
+only when their Hamiltonian, time, target, branch-count policy, selected branch
+count, schedule, and synthesis allocation agree. A fixed row cannot cross-pair
+with a dynamic row that happens to select the same \(J\).
+`plot_mpf_crossover` groups dynamic curves by policy and schedule, annotates
+points with \(J\) and \(2J\), and shows the active Mizuta constraint and
+commutator fallback explicitly.
 
 `select_best_by_family(data, metric=..., sweep=...)` uses
 `certification_policy="implemented-circuit"` by default. It therefore excludes

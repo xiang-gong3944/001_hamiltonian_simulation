@@ -70,6 +70,58 @@ m_{\mathrm{formal}}=2J.
 Existing public API parameter names (including the legacy `m` spelling), method
 IDs, and serialized keys are retained for backward compatibility.
 
+### Deterministic Mizuta Theorem-6 branch count
+
+Fixed-order construction remains the default:
+
+```python
+MultiproductMethod(
+    term_count=3,
+    branch_count_policy="fixed",
+    error_method="mizuta2026-commutator-ideal-rigorous",
+)
+```
+
+The explicit variable-order policy uses `term_count=None` and
+`branch_count_policy="mizuta2026-theorem6"`. Before selecting an error
+estimator, planning resolves
+
+\[
+J=\max\left(2,\left\lceil
+\frac12\log\frac{Ng|t|}{\varepsilon_{\rm alg}}
+\right\rceil\right),
+\qquad m_{\rm paper}=2J.
+\]
+
+This is the repository's even-order realization of Mizuta Theorem 6,
+Eq. (84), whose paper order is
+\(m=\lceil\log(Ng|t|/\varepsilon)\rceil\). The logarithm is natural.
+Here \(N\) is the number of qubits, \(t\) is the requested evolution time,
+and \(\varepsilon_{\rm alg}\) is `ErrorBudget.algorithm_error` after the
+user's synthesis allocation. It is neither the raw total target nor the
+legacy auxiliary BCH error. The extensiveness is the same outward-rounded
+Mizuta Eq. (2)/(5) quantity used by the commutator bounds,
+
+\[
+g=\max_i\sum_{\gamma:i\in\operatorname{supp}(P_\gamma)}|h_\gamma|,
+\]
+
+provided by `pauli_locality_parameters`. It is not the Hamiltonian 1-norm or
+the schedule-weighted \(g_\alpha\).
+
+The policy is evaluated in the log domain. If \(g|t|=0\), or the ratio is at
+most one, it returns \(J=2\). It resolves the selected schedule without
+clamping or testing nearby orders. The registered `new` and `legacy` tables
+support only \(2\le J\le15\); a larger prescribed order raises a `ValueError`
+recording \(J,N,g,|t|,\varepsilon_{\rm alg}\), policy, schedule, and the
+supported interval.
+
+Resolution occurs once per planning point. Low, legacy Mizuta, refined
+Mizuta, and `best-rigorous-ideal` consequently consume identical exponents,
+coefficients, and LCU structure. The policy never optimizes over \(J\).
+Theorem 6 assumes well-conditioned schedules at asymptotically growing order;
+the repository can study only points resolving to \(J\le15\).
+
 ## Notation map
 
 | Concept | LKW 2019 | AAT 2024 | Mizuta 2026 | Repository |
@@ -474,7 +526,7 @@ The refined local bound is
 \]
 
 subject to the unchanged second time hypothesis. For each \(r\), the code
-enumerates \(p_0\geq3\), chooses the certified order with the smallest
+enumerates \(p_0\geq2J\), chooses the certified order with the smallest
 repeated error, then selects the smallest passing integer \(r\) and verifies
 that \(r-1\) fails. The printed first time limit is diagnostic unless it is
 needed for the fallback. Refined auxiliary diagnostics are `None`.

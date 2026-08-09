@@ -367,7 +367,7 @@ only when the printed first condition
 holds. The candidate is marked `legacy-theorem3-tail`. If neither proof is
 available, the candidate is rejected.
 
-For every segment candidate, production enumerates \(p_0\geq3\), computes
+For every segment candidate, production enumerates \(p_0\geq2J\), computes
 (1)--(4), and chooses the certified \(p_0\) with the smallest repeated error.
 The search stops only when monotonic data prove that higher orders cannot
 pass or improve the result: the second time condition has failed, the
@@ -396,19 +396,32 @@ weights, active constraint, exact commutator cutoff/locality fallback, and
 tail-fallback status. The legacy row retains its auxiliary fields.
 
 The executed [comparison notebook](../notebooks/mpf_bound_comparison.ipynb)
-uses \(J=3\), \(t=N\), and \(\epsilon=10^{-3}\). Representative rows are:
+first fixes \(J=3\), \(t=N\), and \(\epsilon=10^{-3}\). Representative rows
+after enforcing \(p_0\ge2J\) are:
 
 | Model | \(N\) | Low 2019 | Legacy Mizuta | Refined Mizuta | Refined \(p_0\) | Refined active/dominant | Locality fallback |
 | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| open TFIM, \(J=1,h=3\) | 4 | 123 | 321,369 | 1,156 | 5 | error / commutator | no |
-| open TFIM, \(J=1,h=3\) | 50 | 45,617 | 4,820,529 | 51,824 | 5 | error / commutator | no |
-| open TFIM, \(J=1,h=3\) | 100 | 228,890 | 10,283,795 | 147,004 | 5 | error / commutator | no |
+| open TFIM, \(J=1,h=3\) | 4 | 123 | 321,369 | 1,180 | 6 | error / commutator | no |
+| open TFIM, \(J=1,h=3\) | 50 | 45,617 | 4,820,529 | 52,204 | 6 | error / commutator | no |
+| open TFIM, \(J=1,h=3\) | 100 | 228,890 | 10,283,795 | 147,593 | 6 | error / commutator | no |
 | open XXX, \(J=1,h_z=0\) | 4 | 69 | 385,643 | 978 | 8 | error / commutator | no |
-| open XXX, \(J=1,h_z=0\) | 50 | 32,096 | 5,977,456 | 67,460 | 4 | error / BCH | no |
-| open XXX, \(J=1,h_z=0\) | 100 | 162,427 | 12,340,554 | 374,991 | 4 | error / commutator | yes |
+| open XXX, \(J=1,h_z=0\) | 50 | 32,096 | 5,977,456 | 175,081 | 6 | error / commutator | yes |
+| open XXX, \(J=1,h_z=0\) | 100 | 162,427 | 12,340,554 | 498,220 | 6 | error / commutator | yes |
 
 The notebook also contains all 66 rows of the two-model, 11-point
 \(10^{-1}\)--\(10^{-6}\) target-error sweep at \(N=t=50\), with the same
-constraint and fallback columns. On every representative refined row above,
+constraint and fallback columns. Its small-error fitted slopes are
+\(-0.164\) for Low and \(-0.16666\) for refined Mizuta on both models,
+approaching the formal-order prediction \(-1/6\).
+
+The second experiment resolves the deterministic Theorem-6 policy once per
+Hamiltonian point. At \(\epsilon=10^{-3}\), it selects \(J=6\) at \(N=4\)
+and \(J=9\) at \(N=50,100\) for both models. Representative refined segment
+counts are 434, 8,193, and 92,421 for TFIM and 494, 51,893, and 113,043 for
+XXX at those sizes; the matching \(p_0\) values are exactly \(2J\). Every
+estimator row at a point records the same \(J\), \(2J\), \(g\), exponent sum,
+coefficient norm, and exact query count \(3r\sum_jk_j\).
+
+On every representative refined row above,
 the printed first condition fails; the direct remainder certificate is what
 makes the candidate rigorous.

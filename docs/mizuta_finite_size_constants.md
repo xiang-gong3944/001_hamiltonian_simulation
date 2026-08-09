@@ -536,6 +536,24 @@ r_{\mathrm{coarse}}=\left\lceil\max(r_{1,m},r_{2,m})\right\rceil.
 \tag{34}
 \]
 
+For the optional deterministic branch-count policy, the repository implements
+Theorem 6, Eq. (84), in the even-order schedule family as
+
+\[
+J=\max\left(2,\left\lceil\frac12
+\log\frac{Ng|t|}{\varepsilon_{\rm alg}}\right\rceil\right),
+\qquad m=2J.
+\]
+
+The natural logarithm is evaluated in the log domain. The input error is the
+ideal-algorithm budget after synthesis allocation, not the auxiliary \(\eta\)
+in Eq. (32). The policy uses the unweighted Eq. (2)/(5) extensiveness \(g\),
+resolves \(J\) once before any Low/Mizuta estimator is chosen, and performs no
+order optimization. The finite registered schedule tables restrict this
+study to \(2\le J\le15\); larger prescribed values are reported as unsupported
+rather than clamped. This finite implementation should not be read as proving
+the paper's assumed well-conditioned schedules at arbitrarily growing order.
+
 The derivation of \(r_{2,m}\) uses published Eq. (78), which explicitly
 requires
 

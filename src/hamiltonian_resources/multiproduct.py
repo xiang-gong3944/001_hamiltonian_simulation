@@ -2480,7 +2480,7 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
 
     if not isinstance(plan, MPFPlan):
         raise TypeError("plan must be an MPFPlan")
-    return _build_multiproduct_circuit_from_components(
+    circuit = _build_multiproduct_circuit_from_components(
         plan.hamiltonian,
         plan.time,
         plan.term_count,
@@ -2491,3 +2491,15 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
         plan.coefficients,
         plan.lcu_structure,
     )
+    circuit.metadata = {
+        **(circuit.metadata or {}),
+        "branch_count_policy": plan.branch_count_selection.policy,
+        "selected_branch_count": plan.term_count,
+        "branch_count_policy_extensiveness_g": (
+            plan.branch_count_selection.extensiveness_g
+        ),
+        "branch_count_policy_target_error": (
+            plan.branch_count_selection.target_error
+        ),
+    }
+    return circuit

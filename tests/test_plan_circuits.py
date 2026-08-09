@@ -74,6 +74,12 @@ def test_dynamic_mpf_plan_builder_uses_the_resolved_branch_count():
     assert plan.method.term_count is None
     assert plan.term_count == 3
     assert circuit.metadata["formal_order"] == 6
+    assert circuit.metadata["selected_branch_count"] == 3
+    assert circuit.metadata["branch_count_policy"] == "mizuta2026-theorem6"
+    assert circuit.metadata["branch_count_policy_extensiveness_g"] == pytest.approx(
+        1.0
+    )
+    assert circuit.metadata["branch_count_policy_target_error"] == pytest.approx(0.09)
     assert circuit.metadata["exponents"] == plan.exponents
     assert circuit.metadata["physical_branch_count"] == (
         plan.lcu_structure.physical_branch_count
