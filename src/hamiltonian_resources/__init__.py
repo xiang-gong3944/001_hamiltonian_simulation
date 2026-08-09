@@ -56,6 +56,8 @@ from .evaluation import (
     estimate_resources,
 )
 from .multiproduct import (
+    MPFBranchCountPolicy,
+    MPFBranchCountSelection,
     MPFErrorEstimate,
     MPFErrorMethod,
     MPFErrorScope,
@@ -68,6 +70,7 @@ from .multiproduct import (
     mpf_lcu_structure,
     multiproduct_coefficients,
     optimal_mpf_exponents,
+    resolve_mpf_branch_count,
     select_mpf_segments,
 )
 from .planning import (
@@ -97,6 +100,7 @@ from .trotter import (
     TrotterPartition,
     build_trotter_circuit,
     estimate_suzuki_error,
+    pauli_locality_parameters,
     pauli_nested_commutator_bounds,
     suzuki_commutator_bounds,
 )
@@ -123,6 +127,8 @@ __all__ = [
     "InitialStateRecord",
     "MetricObservation",
     "MPFErrorEstimate",
+    "MPFBranchCountPolicy",
+    "MPFBranchCountSelection",
     "MPFErrorMethod",
     "MPFErrorScope",
     "MPFBoundCandidateSummary",
@@ -178,6 +184,8 @@ __all__ = [
     "multiproduct_coefficients",
     "mpf_lcu_structure",
     "optimal_mpf_exponents",
+    "pauli_locality_parameters",
+    "resolve_mpf_branch_count",
     "pauli_nested_commutator_bounds",
     "plan_simulation",
     "plot_benchmark",

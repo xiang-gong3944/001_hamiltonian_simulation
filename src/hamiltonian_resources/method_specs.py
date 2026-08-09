@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from numbers import Integral
 from typing import TypeAlias
 
-from .multiproduct import MPFErrorMethod, MPFSchedule, optimal_mpf_exponents
+from .multiproduct import (
+    MPFBranchCountPolicy,
+    MPFErrorMethod,
+    MPFSchedule,
+    optimal_mpf_exponents,
+)
 
 
 @dataclass(frozen=True)
@@ -37,9 +42,10 @@ class TrotterMethod:
 
 @dataclass(frozen=True)
 class MultiproductMethod:
-    term_count: int
+    term_count: int | None
     schedule: MPFSchedule = "new"
     error_method: MPFErrorMethod = "low2019-l1-ideal-rigorous"
+    branch_count_policy: MPFBranchCountPolicy = "fixed"
 
     @property
     def family(self) -> str:
@@ -53,7 +59,9 @@ class MultiproductMethod:
             "low-rigorous",
         ):
             suffix += f"-{self.error_method}"
-        return f"mpf-m{self.term_count}{suffix}"
+        if self.branch_count_policy == "fixed":
+            return f"mpf-m{self.term_count}{suffix}"
+        return f"mpf-j-mizuta2026-theorem6{suffix}"
 
     @property
     def label(self) -> str:
@@ -68,12 +76,26 @@ class MultiproductMethod:
             suffix += " [Mizuta 2026 legacy Theorem 3]"
         elif self.error_method == "best-rigorous-ideal":
             suffix += " [best rigorous ideal bound]"
-        return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
+        if self.branch_count_policy == "fixed":
+            return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
+        return f"MPF J=Mizuta Theorem 6 (resolved per point){suffix}"
 
     def validate(self) -> None:
-        if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
-            raise ValueError("MPF term count must be an integer")
-        optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+        if self.branch_count_policy == "fixed":
+            if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
+                raise ValueError("fixed MPF branch-count policy requires an integer term_count")
+            optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+        elif self.branch_count_policy == "mizuta2026-theorem6":
+            if self.term_count is not None:
+                raise ValueError(
+                    "mizuta2026-theorem6 branch-count policy requires term_count=None"
+                )
+            # Validate the schedule name before point-dependent J is available.
+            optimal_mpf_exponents(2, schedule=self.schedule)
+        else:
+            raise ValueError(
+                "branch_count_policy must be 'fixed' or 'mizuta2026-theorem6'"
+            )
         if self.error_method not in (
             "low2019-l1-ideal-rigorous",
             "childs2021-w2-triangle-ideal-rigorous",
@@ -93,12 +115,16 @@ class MultiproductMethod:
             )
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "family": self.family,
-            "term_count": int(self.term_count),
             "schedule": self.schedule,
             "error_method": self.error_method,
         }
+        if self.branch_count_policy == "fixed":
+            result["term_count"] = int(self.term_count)  # type: ignore[arg-type]
+        else:
+            result["branch_count_policy"] = self.branch_count_policy
+        return result
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,7 @@ from .hamiltonians import PauliHamiltonian
 from .trotter import (
     PauliNestedCommutatorBounds,
     build_trotter_circuit,
+    pauli_locality_parameters,
     pauli_nested_commutator_bounds,
     suzuki_commutator_bounds,
 )
@@ -45,6 +46,7 @@ from .trotter import (
 
 _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
+MPFBranchCountPolicy: TypeAlias = Literal["fixed", "mizuta2026-theorem6"]
 MPFErrorMethod: TypeAlias = Literal[
     "low2019-l1-ideal-rigorous",
     "childs2021-w2-triangle-ideal-rigorous",
@@ -102,6 +104,20 @@ class MPFErrorEstimate:
     segment_diagnostics: MPFSegmentDiagnostics | None = None
     requested_method: MPFErrorMethod | None = None
     bound_candidates: tuple[MPFBoundCandidateSummary, ...] = ()
+
+
+@dataclass(frozen=True)
+class MPFBranchCountSelection:
+    """Resolved physical MPF order and the inputs used to select it."""
+
+    policy: MPFBranchCountPolicy
+    term_count: int
+    formal_order: int
+    num_qubits: int
+    extensiveness_g: float | None
+    time: float
+    target_error: float
+    schedule: MPFSchedule
 
 
 @dataclass(frozen=True)
@@ -238,6 +254,78 @@ def optimal_mpf_exponents(
         return table[int(m)]
     except KeyError as error:
         raise ValueError("m must lie between 2 and 15") from error
+
+
+def resolve_mpf_branch_count(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    target_error: float,
+    *,
+    policy: MPFBranchCountPolicy = "fixed",
+    term_count: int | None = None,
+    schedule: MPFSchedule = "new",
+) -> MPFBranchCountSelection:
+    """Resolve fixed or Mizuta-Theorem-6-prescribed MPF branch count ``J``.
+
+    ``target_error`` is the ideal-algorithm budget used by the subsequent MPF
+    bound.  It is intentionally unrelated to the auxiliary BCH error used by
+    the legacy printed-Theorem-3 estimator.
+    """
+    if not isinstance(hamiltonian, PauliHamiltonian):
+        raise TypeError("hamiltonian must be a PauliHamiltonian")
+    if not math.isfinite(time):
+        raise ValueError("time must be finite")
+    if not math.isfinite(target_error) or not 0.0 < target_error <= 1.0:
+        raise ValueError("target_error must lie in (0, 1]")
+    if policy == "fixed":
+        if term_count is None:
+            raise ValueError("fixed MPF branch-count policy requires term_count")
+        selected = term_count
+        extensiveness_g = None
+    elif policy == "mizuta2026-theorem6":
+        if term_count is not None:
+            raise ValueError(
+                "mizuta2026-theorem6 branch-count policy requires term_count=None"
+            )
+        _, extensiveness_g = pauli_locality_parameters(hamiltonian)
+        absolute_time = abs(float(time))
+        if extensiveness_g == 0.0 or absolute_time == 0.0:
+            selected = 2
+        else:
+            log_ratio = (
+                math.log(hamiltonian.num_qubits)
+                + math.log(extensiveness_g)
+                + math.log(absolute_time)
+                - math.log(target_error)
+            )
+            selected = max(2, math.ceil(0.5 * log_ratio))
+    else:
+        raise ValueError(
+            "branch_count_policy must be 'fixed' or 'mizuta2026-theorem6'"
+        )
+
+    try:
+        optimal_mpf_exponents(selected, schedule=schedule)
+    except (TypeError, ValueError) as error:
+        if policy == "mizuta2026-theorem6":
+            raise ValueError(
+                "mizuta2026-theorem6 branch-count policy selected unsupported "
+                f"J={selected} from N={hamiltonian.num_qubits}, "
+                f"g={extensiveness_g!r}, |t|={abs(float(time))!r}, "
+                f"epsilon={float(target_error)!r}, schedule={schedule!r}; "
+                "registered schedules support only 2 <= J <= 15"
+            ) from error
+        raise
+    return MPFBranchCountSelection(
+        policy=policy,
+        term_count=int(selected),
+        formal_order=2 * int(selected),
+        num_qubits=hamiltonian.num_qubits,
+        extensiveness_g=extensiveness_g,
+        time=abs(float(time)),
+        target_error=float(target_error),
+        schedule=schedule,
+    )
 
 
 def multiproduct_coefficients(
@@ -1223,7 +1311,8 @@ def _evaluate_refined_mizuta_candidate(
     second_satisfied = False
     full_satisfied = False
 
-    for truncation_order in range(3, 513):
+    formal_order = 2 * term_count
+    for truncation_order in range(formal_order, 513):
         candidate = _refined_mizuta_candidate(
             hamiltonian,
             time,

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
@@ -16,6 +18,8 @@ from hamiltonian_resources import (
     compare_with_exact,
     multiproduct_coefficients,
     optimal_mpf_exponents,
+    pauli_locality_parameters,
+    resolve_mpf_branch_count,
     run_benchmark,
     transverse_field_ising,
 )
@@ -176,6 +180,146 @@ def test_optimal_mpf_exponents_rejects_unsupported_orders(m):
 def test_optimal_mpf_exponents_rejects_nonintegers(m):
     with pytest.raises(TypeError, match="integer"):
         optimal_mpf_exponents(m)
+
+
+def test_fixed_mpf_branch_count_selection_preserves_the_requested_order():
+    hamiltonian = transverse_field_ising(4, coupling=1.0, field=3.0)
+
+    selection = resolve_mpf_branch_count(
+        hamiltonian,
+        4.0,
+        1e-3,
+        term_count=3,
+    )
+
+    assert selection.policy == "fixed"
+    assert selection.term_count == 3
+    assert selection.formal_order == 6
+    assert selection.extensiveness_g is None
+
+
+def test_mizuta_theorem6_branch_count_uses_natural_log_and_local_g():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 1.0)])
+    _, extensiveness_g = pauli_locality_parameters(hamiltonian)
+    target_error = 1e-3
+    time = math.exp(7.0) * target_error
+
+    selection = resolve_mpf_branch_count(
+        hamiltonian,
+        time,
+        target_error,
+        policy="mizuta2026-theorem6",
+    )
+
+    expected = max(
+        2,
+        math.ceil(
+            0.5
+            * (
+                math.log(hamiltonian.num_qubits)
+                + math.log(extensiveness_g)
+                + math.log(time)
+                - math.log(target_error)
+            )
+        ),
+    )
+    assert expected == 4
+    assert selection.term_count == expected
+    assert selection.formal_order == 2 * expected
+    assert selection.extensiveness_g == extensiveness_g
+
+
+@pytest.mark.parametrize(("time", "target_error"), [(0.0, 1e-3), (0.5, 1.0)])
+def test_mizuta_theorem6_branch_count_has_minimum_two(time, target_error):
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 1.0)])
+    selection = resolve_mpf_branch_count(
+        hamiltonian,
+        time,
+        target_error,
+        policy="mizuta2026-theorem6",
+    )
+    assert selection.term_count == 2
+
+
+def test_mizuta_theorem6_branch_count_is_monotone_in_policy_inputs():
+    small = transverse_field_ising(2, coupling=1.0, field=1.0)
+    large = transverse_field_ising(4, coupling=2.0, field=1.0)
+
+    baseline = resolve_mpf_branch_count(
+        small, 1.0, 1e-2, policy="mizuta2026-theorem6"
+    ).term_count
+    changes = (
+        resolve_mpf_branch_count(
+            large, 1.0, 1e-2, policy="mizuta2026-theorem6"
+        ).term_count,
+        resolve_mpf_branch_count(
+            small, 2.0, 1e-2, policy="mizuta2026-theorem6"
+        ).term_count,
+        resolve_mpf_branch_count(
+            small, 1.0, 1e-3, policy="mizuta2026-theorem6"
+        ).term_count,
+    )
+    assert all(selected >= baseline for selected in changes)
+
+
+def test_mizuta_theorem6_supports_fifteen_and_rejects_sixteen():
+    from hamiltonian_resources import PauliHamiltonian
+
+    hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 1.0)])
+    supported = resolve_mpf_branch_count(
+        hamiltonian,
+        1.0,
+        math.exp(-29.0),
+        policy="mizuta2026-theorem6",
+        schedule="legacy",
+    )
+    assert supported.term_count == 15
+
+    with pytest.raises(
+        ValueError,
+        match=r"unsupported J=16.*N=1.*schedule='new'.*2 <= J <= 15",
+    ):
+        resolve_mpf_branch_count(
+            hamiltonian,
+            1.0,
+            math.exp(-31.0),
+            policy="mizuta2026-theorem6",
+        )
+
+
+def test_mpf_branch_count_policy_validation_and_serialization():
+    fixed = MultiproductMethod(3)
+    fixed.validate()
+    assert fixed.as_dict() == {
+        "family": "multiproduct",
+        "term_count": 3,
+        "schedule": "new",
+        "error_method": "low2019-l1-ideal-rigorous",
+    }
+
+    dynamic = MultiproductMethod(
+        term_count=None,
+        branch_count_policy="mizuta2026-theorem6",
+        error_method="mizuta2026-commutator-ideal-rigorous",
+    )
+    dynamic.validate()
+    assert dynamic.as_dict() == {
+        "family": "multiproduct",
+        "schedule": "new",
+        "error_method": "mizuta2026-commutator-ideal-rigorous",
+        "branch_count_policy": "mizuta2026-theorem6",
+    }
+
+    with pytest.raises(ValueError, match="requires term_count=None"):
+        MultiproductMethod(
+            3, branch_count_policy="mizuta2026-theorem6"
+        ).validate()
+    with pytest.raises(ValueError, match="requires an integer term_count"):
+        MultiproductMethod(None).validate()
 
 
 @pytest.mark.parametrize("schedule", ["new", "legacy"])

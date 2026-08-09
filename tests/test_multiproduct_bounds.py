@@ -694,7 +694,7 @@ def test_refined_mizuta_selects_p0_directly_and_reports_branchwise_remainders():
     assert estimate.segments == 2
     assert estimate.error <= 1e-4
     assert diagnostics is not None
-    assert diagnostics.truncation_order_p0 == 4
+    assert diagnostics.truncation_order_p0 == 2 * estimate.m == 6
     assert diagnostics.auxiliary_error is None
     assert diagnostics.auxiliary_allocation_fraction is None
     assert diagnostics.allocation_strategy == "direct-p0-remainder-optimization"

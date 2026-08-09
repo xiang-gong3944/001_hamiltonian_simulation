@@ -164,10 +164,10 @@ def _paulis_anticommute(left: tuple[int, int], right: tuple[int, int]) -> bool:
     return bool(parity_mask.bit_count() & 1)
 
 
-def _locality_parameters(
+def pauli_locality_parameters(
     hamiltonian: PauliHamiltonian,
 ) -> tuple[int, float]:
-    """Return the exact Pauli support size ``k`` and extensiveness ``g``."""
+    """Return the outward-rounded Pauli locality ``k`` and extensiveness ``g``."""
     site_weights = [0.0] * hamiltonian.num_qubits
     locality_k = 0
     for label, coefficient in hamiltonian.terms:
@@ -385,7 +385,7 @@ def _pauli_commutator_recurrence(
             np.nextafter(aggregated.get(pauli, 0.0) + abs(float(coefficient)), np.inf)
         )
     encoded_terms = tuple(aggregated.items())
-    locality_k, extensiveness_g = _locality_parameters(hamiltonian)
+    locality_k, extensiveness_g = pauli_locality_parameters(hamiltonian)
     return _PauliCommutatorRecurrence(
         hamiltonian=hamiltonian,
         transition_cap=transition_cap,
