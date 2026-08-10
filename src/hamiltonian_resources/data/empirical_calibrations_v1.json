@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "empirical-operator-norm-1d-v1",
+  "calibrations": [
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p2",
+      "key": {"method": "trotter", "formal_order": 2, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "individual", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 0.9660001035, "intercept": -0.7602307823}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.0625, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9999241250, "rmse": 0.0217268805, "slope_standard_error": 0.0031804896, "intercept_standard_error": 0.0267362990}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p4",
+      "key": {"method": "trotter", "formal_order": 4, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "commuting", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 0.4252299911, "intercept": -0.3567275051}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.125, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9998566909, "rmse": 0.0131445647, "slope_standard_error": 0.0019241672, "intercept_standard_error": 0.0161752172}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p6",
+      "key": {"method": "trotter", "formal_order": 6, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "commuting", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 0.0065063233, "intercept": 0.0253370433}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.125, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.8699906345, "rmse": 0.0064941160, "slope_standard_error": 0.0009506412, "intercept_standard_error": 0.0079914200}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m2",
+      "key": {"method": "multiproduct", "formal_order": 4, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 3.6071431150, "intercept": -4.0389274532}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.125, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9998718077, "rmse": 0.1054572647, "slope_standard_error": 0.0154373628, "intercept_standard_error": 0.1297718259}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m3",
+      "key": {"method": "multiproduct", "formal_order": 6, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 1.0790059890, "intercept": -1.1555532088}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.1666666667, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9998929074, "rmse": 0.0288324339, "slope_standard_error": 0.0042206361, "intercept_standard_error": 0.0354801312}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m4",
+      "key": {"method": "multiproduct", "formal_order": 8, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.1153293710, "intercept": 0.0188559758}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.4, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9905157030, "rmse": 0.0291384324, "slope_standard_error": 0.0042654298, "intercept_standard_error": 0.0358566818}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m5",
+      "key": {"method": "multiproduct", "formal_order": 10, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0090977155, "intercept": -0.0089474144}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.5, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9715108810, "rmse": 0.0040225588, "slope_standard_error": 0.0005888423, "intercept_standard_error": 0.0049500127}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m6",
+      "key": {"method": "multiproduct", "formal_order": 12, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0014115823, "intercept": -0.0028829422}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.6666666667, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9313394698, "rmse": 0.0009896010, "slope_standard_error": 0.0001448628, "intercept_standard_error": 0.0012177666}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m7",
+      "key": {"method": "multiproduct", "formal_order": 14, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0000700701, "intercept": -0.0001799053}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.8, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9606934706, "rmse": 0.0000365955, "slope_standard_error": 0.0000053570, "intercept_standard_error": 0.0000450330}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m8",
+      "key": {"method": "multiproduct", "formal_order": 16, "model": "transverse_field_ising", "parameters": {"coupling": 1.0, "field": 3.0, "periodic": false}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0000052484, "intercept": -0.0000184525}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.8, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9727393177, "rmse": 0.0000022686, "slope_standard_error": 0.0000003321, "intercept_standard_error": 0.0000027916}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p2",
+      "key": {"method": "trotter", "formal_order": 2, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "individual", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 1.1196038130, "intercept": -1.8067365799}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.0625, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9952081270, "rmse": 0.2005923802, "slope_standard_error": 0.0293637178, "intercept_standard_error": 0.2468415952}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p4",
+      "key": {"method": "trotter", "formal_order": 4, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "commuting", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 0.2869395721, "intercept": -0.8341627504}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.125, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9908442711, "rmse": 0.0712178039, "slope_standard_error": 0.0104252190, "intercept_standard_error": 0.0876380065}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p6",
+      "key": {"method": "trotter", "formal_order": 6, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": "commuting", "schedule": null, "formula": "repository-suzuki-v1"},
+      "coefficient": {"slope": 0.0041652782, "intercept": -0.0120399404}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.1666666667, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9790215330, "rmse": 0.0015743059, "slope_standard_error": 0.0002304548, "intercept_standard_error": 0.0019372829}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m2",
+      "key": {"method": "multiproduct", "formal_order": 4, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.3842865401, "intercept": -1.0278657270}, "size_range": [4, 11], "time_range": [4.0, 12.0], "max_step_size": 0.125, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9628769847, "rmse": 0.1728904657, "slope_standard_error": 0.0308046137, "intercept_standard_error": 0.2415757436}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m3",
+      "key": {"method": "multiproduct", "formal_order": 6, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0488064737, "intercept": -0.1632281362}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.1666666667, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9679671377, "rmse": 0.0229244734, "slope_standard_error": 0.0033557993, "intercept_standard_error": 0.0282100126}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m4",
+      "key": {"method": "multiproduct", "formal_order": 8, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0030699963, "intercept": -0.0093295680}, "size_range": [4, 12], "time_range": [4.0, 12.0], "max_step_size": 0.25, "sample_sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9672213491, "rmse": 0.0014592336, "slope_standard_error": 0.0002136099, "intercept_standard_error": 0.0017956791}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m5",
+      "key": {"method": "multiproduct", "formal_order": 10, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0001372834, "intercept": -0.0005261246}, "size_range": [4, 8], "time_range": [4.0, 12.0], "max_step_size": 0.5, "sample_sizes": [4, 5, 6, 7, 8], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9875258001, "rmse": 0.0000218205, "slope_standard_error": 0.0000089082, "intercept_standard_error": 0.0000549138}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m6",
+      "key": {"method": "multiproduct", "formal_order": 12, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0000071136, "intercept": -0.0000268030}, "size_range": [4, 8], "time_range": [4.0, 12.0], "max_step_size": 0.6666666667, "sample_sizes": [4, 5, 6, 7, 8], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9372846010, "rmse": 0.0000029513, "slope_standard_error": 0.0000006024, "intercept_standard_error": 0.0000024098}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m7",
+      "key": {"method": "multiproduct", "formal_order": 14, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0000001462, "intercept": -0.0000005760}, "size_range": [4, 8], "time_range": [4.0, 12.0], "max_step_size": 0.8, "sample_sizes": [4, 5, 6, 7, 8], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.9156533817, "rmse": 0.0000000709, "slope_standard_error": 0.0000000145, "intercept_standard_error": 0.0000000579}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m8",
+      "key": {"method": "multiproduct", "formal_order": 16, "model": "heisenberg_chain", "parameters": {"coupling": 1.0, "field_z": 0.3}, "geometry": "1d-chain", "boundary_condition": "open", "partition": null, "schedule": "new", "formula": "ordered-individual-pauli-strang-mpf-v1"},
+      "coefficient": {"slope": 0.0000000032069, "intercept": -0.0000000125494}, "size_range": [4, 8], "time_range": [4.0, 12.0], "max_step_size": 1.0, "sample_sizes": [4, 5, 6, 7, 8], "sample_times": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+      "fit_diagnostics": {"r_squared": 0.8966280696, "rmse": 0.0000000017745, "slope_standard_error": 0.0000000003622, "intercept_standard_error": 0.0000000014489}, "error_metric": "spectral operator 2-norm", "source": "docs/calibration_data/empirical_1d_v1_accepted.json", "source_digest": "f4688f9e31c929b33bb8031afd035d7ca563de7876ce050b8ee0b3aa1033003d", "reference": "Repository empirical operator-norm calibration study v1 (2026-08-10)", "review_status": "reviewed"
+    }
+  ]
+}

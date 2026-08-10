@@ -1,0 +1,62 @@
+{
+  "acceptance": {
+    "consecutive_observation_points_required": true,
+    "floating_point_floor": 1e-11,
+    "relative_formal_order_tolerance": 0.05,
+    "random_state_errors_allowed": false
+  },
+  "algorithms": {
+    "multiproduct": {
+      "branch_counts": [2, 3, 4, 5, 6, 7, 8],
+      "formula": "ordered-individual-pauli-strang-mpf-v1",
+      "schedule": "new"
+    },
+    "trotter": {
+      "formula": "repository-suzuki-v1",
+      "orders": [2, 4, 6],
+      "partition": "auto-resolved"
+    }
+  },
+  "dense_backend": "explicit exact/approximate matrices and spectral SVD",
+  "dense_through_qubits": 8,
+  "error_metric": "spectral operator 2-norm",
+  "generated_at_utc": "2026-08-10T00:00:00+00:00",
+  "models": [
+    {
+      "boundary_condition": "open",
+      "geometry": "1d-chain",
+      "model": "transverse_field_ising",
+      "parameters": {
+        "coupling": 1.0,
+        "field": 3.0,
+        "periodic": false
+      }
+    },
+    {
+      "boundary_condition": "open",
+      "geometry": "1d-chain",
+      "model": "heisenberg_chain",
+      "parameters": {
+        "coupling": 1.0,
+        "field_z": 0.3
+      }
+    }
+  ],
+  "power_iteration": {
+    "operator": "D-dagger-D",
+    "production_default_max_iterations": 80,
+    "production_default_restarts": 3,
+    "reviewed_observation_max_iterations_range": [3, 15],
+    "reviewed_observation_restarts": 1,
+    "reviewed_observation_tolerance": 1e-5,
+    "seed": 2026,
+    "tolerance": 1e-8
+  },
+  "schema_version": "1.0",
+  "sizes": [4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "sparse_backend": "expm_multiply exact evolution and deterministic power iteration",
+  "study_id": "empirical-operator-norm-1d-v1",
+  "time_checks": "empirical_1d_v1_time_checks.json",
+  "time_rule": "T=N",
+  "utility": "scripts/calibrate_empirical_errors.py"
+}

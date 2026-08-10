@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "study_id": "empirical-operator-norm-1d-v1",
+  "purpose": "Independent representative-size checks of the fixed T^(q+1) law; these observations are not coefficient-fit inputs.",
+  "method": "For each row, consecutive time points at fixed N and r give log(error_2/error_1)/log(T_2/T_1). Values near formal_order+1 confirm the prescribed time power. Floor-affected alternatives were excluded.",
+  "checks": [
+    {"model": "transverse_field_ising", "method_family": "trotter", "formal_order": 2, "observed_time_exponents": [2.9912789091, 2.9961295251]},
+    {"model": "transverse_field_ising", "method_family": "trotter", "formal_order": 4, "observed_time_exponents": [4.9179948046, 4.8458675021]},
+    {"model": "transverse_field_ising", "method_family": "trotter", "formal_order": 6, "observed_time_exponents": [7.2155889381, 6.6824129151]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 4, "observed_time_exponents": [4.9954127130, 5.0270221759]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 6, "observed_time_exponents": [6.9653711353, 6.9450517033]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 8, "observed_time_exponents": [9.0586906839, 8.4046169271]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 10, "observed_time_exponents": [11.3325166057, 10.6210085903]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 12, "observed_time_exponents": [13.3876344549, 12.5015821374]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 14, "observed_time_exponents": [14.0396344540, 15.4967989200]},
+    {"model": "transverse_field_ising", "method_family": "multiproduct", "formal_order": 16, "observed_time_exponents": [16.4384791555, 16.5424456176]},
+    {"model": "heisenberg_chain", "method_family": "trotter", "formal_order": 2, "observed_time_exponents": [2.9881182904, 2.9885698846]},
+    {"model": "heisenberg_chain", "method_family": "trotter", "formal_order": 4, "observed_time_exponents": [4.9232681824, 4.8621306616]},
+    {"model": "heisenberg_chain", "method_family": "trotter", "formal_order": 6, "observed_time_exponents": [7.0882400847, 6.5092920724]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 4, "observed_time_exponents": [4.9747927984, 4.9586398561]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 6, "observed_time_exponents": [6.9260907794, 6.9966527394]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 8, "observed_time_exponents": [8.9965092078, 9.2558140222]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 10, "observed_time_exponents": [11.1985347346, 11.2565654225]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 12, "observed_time_exponents": [12.9574565136, 12.9494308542]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 14, "observed_time_exponents": [14.8731690292, 15.1126721962]},
+    {"model": "heisenberg_chain", "method_family": "multiproduct", "formal_order": 16, "observed_time_exponents": [16.8304821572, 17.4112525021]}
+  ]
+}
