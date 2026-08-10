@@ -4,19 +4,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from numbers import Integral
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from .multiproduct import (
     MPFBranchCountPolicy,
     MPFErrorMethod,
     MPFSchedule,
+    mpf_exponent_cost,
     optimal_mpf_exponents,
 )
+
+
+TrotterErrorPolicy: TypeAlias = Literal[
+    "analytical",
+    "empirical-operator-norm",
+]
 
 
 @dataclass(frozen=True)
 class TrotterMethod:
     order: int
+    error_policy: TrotterErrorPolicy = "analytical"
 
     @property
     def family(self) -> str:
@@ -24,20 +32,32 @@ class TrotterMethod:
 
     @property
     def method_id(self) -> str:
-        return f"trotter-p{self.order}"
+        suffix = "" if self.error_policy == "analytical" else "-empirical"
+        return f"trotter-p{self.order}{suffix}"
 
     @property
     def label(self) -> str:
-        return f"Trotter p={self.order}"
+        suffix = "" if self.error_policy == "analytical" else " [empirical]"
+        return f"Trotter p={self.order}{suffix}"
 
     def validate(self) -> None:
         if isinstance(self.order, bool) or not isinstance(self.order, Integral):
             raise ValueError("Trotter order must be 1 or a positive even integer")
         if self.order != 1 and (self.order < 2 or self.order % 2):
             raise ValueError("Trotter order must be 1 or a positive even integer")
+        if self.error_policy not in {"analytical", "empirical-operator-norm"}:
+            raise ValueError(
+                "Trotter error_policy must be 'analytical' or "
+                "'empirical-operator-norm'"
+            )
+        if self.error_policy == "empirical-operator-norm" and self.order not in {2, 4, 6}:
+            raise ValueError("empirical Trotter calibrations support orders 2, 4, and 6")
 
     def as_dict(self) -> dict[str, object]:
-        return {"family": self.family, "order": int(self.order)}
+        result: dict[str, object] = {"family": self.family, "order": int(self.order)}
+        if self.error_policy != "analytical":
+            result["error_policy"] = self.error_policy
+        return result
 
 
 @dataclass(frozen=True)
@@ -76,6 +96,8 @@ class MultiproductMethod:
             suffix += " [Mizuta 2026 legacy Theorem 3]"
         elif self.error_method == "best-rigorous-ideal":
             suffix += " [best rigorous ideal bound]"
+        elif self.error_method == "empirical-operator-norm":
+            suffix += " [empirical operator norm]"
         if self.branch_count_policy == "fixed":
             return f"MPF J={self.term_count}, formal order={2 * self.term_count}{suffix}"
         return f"MPF J=Mizuta Theorem 6 (resolved per point){suffix}"
@@ -84,7 +106,10 @@ class MultiproductMethod:
         if self.branch_count_policy == "fixed":
             if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
                 raise ValueError("fixed MPF branch-count policy requires an integer term_count")
-            optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+            if self.error_method == "empirical-operator-norm":
+                mpf_exponent_cost(int(self.term_count), schedule=self.schedule)
+            else:
+                optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
         elif self.branch_count_policy == "mizuta2026-theorem6":
             if self.term_count is not None:
                 raise ValueError(
@@ -104,6 +129,7 @@ class MultiproductMethod:
             "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
+            "empirical-operator-norm",
         ):
             raise ValueError(
                 "MPF error method must be 'low2019-l1-ideal-rigorous' "
@@ -111,7 +137,8 @@ class MultiproductMethod:
                 "'childs2021-w2-triangle-ideal-rigorous', "
                 "'mizuta2026-commutator-ideal-rigorous', "
                 "'mizuta2026-theorem3-legacy-ideal-rigorous', "
-                "'best-rigorous-ideal', or 'legacy-w2-proxy'"
+                "'best-rigorous-ideal', 'legacy-w2-proxy', or "
+                "'empirical-operator-norm'"
             )
 
     def as_dict(self) -> dict[str, object]:

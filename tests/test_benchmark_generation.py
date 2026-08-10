@@ -154,8 +154,9 @@ def test_unsupported_dynamic_order_is_an_explicit_benchmark_error_row():
 
     assert row["status"] == "error"
     assert row["error_type"] == "ValueError"
-    assert "unsupported J=16" in row["error_message"]
+    assert "resolved MPF J=16" in row["error_message"]
     assert "N=1" in row["error_message"]
+    assert "aggregate" in row["error_message"]
     assert "2 <= J <= 15" in row["error_message"]
 
 

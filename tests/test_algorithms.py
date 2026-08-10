@@ -266,7 +266,7 @@ def test_mizuta_theorem6_branch_count_is_monotone_in_policy_inputs():
     assert all(selected >= baseline for selected in changes)
 
 
-def test_mizuta_theorem6_supports_fifteen_and_rejects_sixteen():
+def test_mizuta_theorem6_resolves_sixteen_without_schedule_validation():
     from hamiltonian_resources import PauliHamiltonian
 
     hamiltonian = PauliHamiltonian.from_terms(1, [("Z", 1.0)])
@@ -279,16 +279,13 @@ def test_mizuta_theorem6_supports_fifteen_and_rejects_sixteen():
     )
     assert supported.term_count == 15
 
-    with pytest.raises(
-        ValueError,
-        match=r"unsupported J=16.*N=1.*schedule='new'.*2 <= J <= 15",
-    ):
-        resolve_mpf_branch_count(
-            hamiltonian,
-            1.0,
-            math.exp(-31.0),
-            policy="mizuta2026-theorem6",
-        )
+    aggregate_only = resolve_mpf_branch_count(
+        hamiltonian,
+        1.0,
+        math.exp(-31.0),
+        policy="mizuta2026-theorem6",
+    )
+    assert aggregate_only.term_count == 16
 
 
 def test_mpf_branch_count_policy_validation_and_serialization():
@@ -871,9 +868,14 @@ def test_multiproduct_schedule_propagates_through_consumers():
     assert result["fidelity"] > 0.99
 
 
-def test_benchmark_config_rejects_unsupported_m():
+def test_evaluation_config_allows_aggregate_only_m_only_for_empirical_policy():
     with pytest.raises(ValueError, match="between 2 and 15"):
         _EvaluationConfig(mpf_m=16)
+    config = _EvaluationConfig(
+        mpf_m=16,
+        mpf_error_method="empirical-operator-norm",
+    )
+    assert config.mpf_m == 16
 
 
 def test_suzuki_commutator_bounds_vanish_for_commuting_terms():

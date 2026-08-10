@@ -58,6 +58,8 @@ BENCHMARK_COLUMNS = (
     "method_id",
     "method_family",
     "method_label",
+    "error_policy",
+    "estimate_category",
     "trotter_order",
     "mpf_term_count",
     "mpf_formal_order",
@@ -122,6 +124,9 @@ BENCHMARK_COLUMNS = (
     "mpf_coefficients_json",
     "mpf_coefficient_l1_norm",
     "mpf_padding_weight",
+    "mpf_exponent_sum",
+    "mpf_exponent_sum_source",
+    "mpf_explicit_schedule_available",
     "mpf_physical_branch_count",
     "mpf_negative_coefficient_count",
     "mpf_padding_branch_count",
@@ -145,6 +150,17 @@ BENCHMARK_COLUMNS = (
     "cnot_count",
     "counting_mode",
     "rotation_synthesis_error",
+    "empirical_calibration_id",
+    "empirical_calibration_model",
+    "empirical_coefficient_model",
+    "empirical_coefficient_value",
+    "empirical_calibration_size_min",
+    "empirical_calibration_size_max",
+    "empirical_calibration_time_min",
+    "empirical_calibration_time_max",
+    "empirical_size_extrapolated",
+    "empirical_time_extrapolated",
+    "empirical_active_constraint",
     "package_version",
     "python_version",
     "qiskit_version",
@@ -156,6 +172,8 @@ BENCHMARK_COLUMNS = (
 )
 
 _SCHEMA2_EXTENSION_COLUMNS = {
+    "error_policy",
+    "estimate_category",
     "mpf_branch_count_policy",
     "mpf_branch_count_policy_extensiveness_g",
     "mpf_branch_count_policy_target_error",
@@ -209,6 +227,20 @@ _SCHEMA2_EXTENSION_COLUMNS = {
     "mpf_select_calls_per_segment",
     "mpf_good_reflections_per_segment",
     "mpf_base_lcu_uses_per_segment",
+    "mpf_exponent_sum",
+    "mpf_exponent_sum_source",
+    "mpf_explicit_schedule_available",
+    "empirical_calibration_id",
+    "empirical_calibration_model",
+    "empirical_coefficient_model",
+    "empirical_coefficient_value",
+    "empirical_calibration_size_min",
+    "empirical_calibration_size_max",
+    "empirical_calibration_time_min",
+    "empirical_calibration_time_max",
+    "empirical_size_extrapolated",
+    "empirical_time_extrapolated",
+    "empirical_active_constraint",
     "circuit_bound_scope",
     "circuit_bound_rigorous",
     "circuit_target_satisfied",
@@ -496,9 +528,25 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         )
     elif isinstance(plan, MPFPlan):
         error = plan.error_estimate
-        diagnostics = error.segment_diagnostics
+        diagnostics = getattr(error, "segment_diagnostics", None)
         structure = plan.lcu_structure
         per_segment = plan.logical_counts.as_dict()["per_segment"]
+        physical_branch_count = (
+            structure.physical_branch_count if structure is not None else plan.term_count
+        )
+        negative_coefficient_count = (
+            structure.negative_coefficient_count
+            if structure is not None
+            else plan.term_count // 2
+        )
+        padding_branch_count = structure.padding_branch_count if structure is not None else 2
+        active_branch_count = physical_branch_count + padding_branch_count
+        branch_bits = max(1, int(np.ceil(np.log2(active_branch_count))))
+        sign_branch_count = (
+            structure.sign_branch_count
+            if structure is not None
+            else negative_coefficient_count + 1
+        )
         if (
             diagnostics is None
             or diagnostics.local_commutator_error is None
@@ -597,32 +645,58 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
                 diagnostics.refined_tail_fallback_status if diagnostics is not None else None
             ),
             mpf_local_error_dominance=local_error_dominance,
-            mpf_bound_policy=(error.requested_method or plan.method.error_method),
+            mpf_bound_policy=(
+                getattr(error, "requested_method", None) or plan.method.error_method
+            ),
             mpf_bound_candidates_json=json.dumps(
-                [candidate.as_dict() for candidate in error.bound_candidates],
+                [
+                    candidate.as_dict()
+                    for candidate in getattr(error, "bound_candidates", ())
+                ],
                 sort_keys=True,
                 separators=(",", ":"),
             ),
             query_count=plan.logical_counts.as_dict()["totals"]["controlled_s2"],
             bound_components_json=json.dumps(
-                dict(error.bound_components), sort_keys=True, separators=(",", ":")
+                dict(result.get("bound_components", ())),
+                sort_keys=True,
+                separators=(",", ":"),
             ),
-            bound_assumptions_json=json.dumps(error.assumptions, separators=(",", ":")),
-            commutator_cap_fallback=error.fallback_reason is not None,
+            bound_assumptions_json=json.dumps(
+                result.get("bound_assumptions", ()), separators=(",", ":")
+            ),
+            commutator_cap_fallback=(getattr(error, "fallback_reason", None) is not None),
             commutator_bounds_json=json.dumps(
-                dict(error.commutator_bounds), sort_keys=True, separators=(",", ":")
+                dict(getattr(error, "commutator_bounds", ())),
+                sort_keys=True,
+                separators=(",", ":"),
             ),
             mpf_schedule=plan.method.schedule,
-            mpf_exponents_json=json.dumps(plan.exponents, separators=(",", ":")),
-            mpf_coefficients_json=json.dumps(plan.coefficients, separators=(",", ":")),
-            mpf_coefficient_l1_norm=structure.coefficient_l1_norm,
-            mpf_padding_weight=structure.padding_weight,
-            mpf_physical_branch_count=structure.physical_branch_count,
-            mpf_negative_coefficient_count=structure.negative_coefficient_count,
-            mpf_padding_branch_count=structure.padding_branch_count,
-            mpf_sign_branch_count=structure.sign_branch_count,
-            mpf_active_branch_count=structure.active_branch_count,
-            mpf_unused_branch_state_count=structure.unused_branch_state_count,
+            mpf_exponents_json=(
+                json.dumps(plan.exponents, separators=(",", ":"))
+                if plan.exponents is not None
+                else None
+            ),
+            mpf_coefficients_json=(
+                json.dumps(plan.coefficients, separators=(",", ":"))
+                if plan.coefficients is not None
+                else None
+            ),
+            mpf_coefficient_l1_norm=(
+                structure.coefficient_l1_norm if structure is not None else None
+            ),
+            mpf_padding_weight=(structure.padding_weight if structure is not None else None),
+            mpf_exponent_sum=plan.schedule_cost.exponent_sum,
+            mpf_exponent_sum_source=plan.schedule_cost.source,
+            mpf_explicit_schedule_available=(
+                plan.schedule_cost.explicit_schedule_available
+            ),
+            mpf_physical_branch_count=physical_branch_count,
+            mpf_negative_coefficient_count=negative_coefficient_count,
+            mpf_padding_branch_count=padding_branch_count,
+            mpf_sign_branch_count=sign_branch_count,
+            mpf_active_branch_count=active_branch_count,
+            mpf_unused_branch_state_count=2**branch_bits - active_branch_count,
             mpf_prepare_calls_per_segment=per_segment["prepare"],
             mpf_select_calls_per_segment=per_segment["select"],
             mpf_good_reflections_per_segment=per_segment["good_reflection"],
@@ -736,6 +810,15 @@ def _base_record(
         method_id=method.method_id,
         method_family=method.family,
         method_label=method.label,
+        error_policy=(
+            method.error_policy
+            if isinstance(method, TrotterMethod)
+            else (
+                method.error_method
+                if isinstance(method, MultiproductMethod)
+                else "jacobi-anger-rigorous"
+            )
+        ),
         trotter_order=method.order if isinstance(method, TrotterMethod) else None,
         mpf_term_count=(method.term_count if isinstance(method, MultiproductMethod) else None),
         mpf_formal_order=(
@@ -945,10 +1028,12 @@ class BenchmarkJob:
 def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
     family = raw.get("family")
     if family == "trotter":
-        unknown = set(raw) - {"family", "order"}
+        unknown = set(raw) - {"family", "order", "error_policy"}
         if unknown or "order" not in raw:
-            raise ValueError("Trotter method requires only family and order")
-        return TrotterMethod(raw["order"])
+            raise ValueError(
+                "Trotter method requires family, order, and optional error_policy"
+            )
+        return TrotterMethod(raw["order"], raw.get("error_policy", "analytical"))
     if family == "multiproduct":
         unknown = set(raw) - {
             "family",
@@ -1095,10 +1180,12 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
         for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
             frame[column] = None
     mpf_rows = frame["method_family"] == "multiproduct"
-    frame.loc[
-        mpf_rows & frame["mpf_branch_count_policy"].isna(),
-        "mpf_branch_count_policy",
-    ] = "fixed"
+    missing_mpf_policy = mpf_rows & frame["mpf_branch_count_policy"].isna()
+    if missing_mpf_policy.any():
+        frame["mpf_branch_count_policy"] = frame[
+            "mpf_branch_count_policy"
+        ].astype(object)
+        frame.loc[missing_mpf_policy, "mpf_branch_count_policy"] = "fixed"
     legacy_qsvt_claim = (frame["method_family"] == "qsvt") & (
         frame["bound_scope"] == "implemented-algorithm"
     )
