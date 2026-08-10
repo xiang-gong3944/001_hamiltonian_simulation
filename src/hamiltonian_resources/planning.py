@@ -8,13 +8,35 @@ from typing import TypeAlias
 
 import numpy as np
 
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgressCallback,
+    execution_scope,
+)
+from .error_models import (
+    AssumptionRecord,
+    ErrorAnalysis,
+    ErrorClaim,
+    ErrorComponent,
+    EstimateSupport,
+    FallbackRecord,
+    MPFSizingEstimate,
+    ReferenceRecord,
+    SupportedClaim,
+    assess_claim,
+    good_subspace_leakage_bound,
+    oaa_good_block_error_bound,
+    repeated_block_encoding_error_bound,
+)
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec, MultiproductMethod, QSVTMethod, TrotterMethod
 from .multiproduct import (
+    MPFBranchCountSelection,
     MPFErrorEstimate,
     MPFLCUStructure,
     mpf_lcu_structure,
     multiproduct_coefficients,
+    resolve_mpf_branch_count,
     select_mpf_segments,
 )
 from .qsvt import estimate_qsvt_degree
@@ -101,8 +123,7 @@ class TrotterPlan:
         if self.error_estimate.group_count != len(self.group_term_indices):
             raise ValueError("Trotter error estimate group count does not match the plan")
         if any(
-            group < 0 or group >= len(self.group_term_indices)
-            for group, _ in self.suzuki_factors
+            group < 0 or group >= len(self.group_term_indices) for group, _ in self.suzuki_factors
         ):
             raise ValueError("Suzuki factors must reference resolved Trotter groups")
 
@@ -121,9 +142,7 @@ class TrotterPlan:
 
     @property
     def logical_counts(self) -> LogicalOperationCounts:
-        per_step = sum(
-            len(self.group_term_indices[group]) for group, _ in self.suzuki_factors
-        )
+        per_step = sum(len(self.group_term_indices[group]) for group, _ in self.suzuki_factors)
         pauli_evolutions = self.repetitions * per_step
         return LogicalOperationCounts(
             totals=(
@@ -134,19 +153,140 @@ class TrotterPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        from .error_models import SuzukiSizingEstimate
+
+        error = self.error_estimate
+        scope = "implemented-product-formula"
+        category = "analytical" if error.rigorous else "proxy"
+        certification = "rigorous" if error.rigorous else "nonrigorous"
+        sizing = SuzukiSizingEstimate(
+            value=error.error,
+            method=error.method,
+            category=category,
+            certification=certification,
+            quantity="evolution-operator approximation error",
+            metric="operator-2-norm",
+            scope=scope,
+            target=self.error_budget.algorithm_error,
+            repetitions=error.reps,
+            order=error.order,
+            prefactor=error.prefactor,
+            partition=error.partition,
+            group_count=error.group_count,
+        )
+        fallback = None
+        if error.method == "alpha-proxy":
+            reason = (
+                "commutator evaluation exceeds the configured practical cap"
+                if error.order in {4, 6}
+                else "no rigorous estimator is implemented for this Suzuki order"
+            )
+            fallback = FallbackRecord(
+                requested_method="higher-order-commutator-bound",
+                used_method="alpha-proxy",
+                reason=reason,
+            )
+        references = ()
+        if error.method == "childs-commutator":
+            references = (
+                ReferenceRecord(
+                    "Childs, Su, Tran, Wiebe, and Zhu, arXiv:1912.08854",
+                    "Propositions 9--10",
+                    "https://arxiv.org/abs/1912.08854",
+                ),
+            )
+        elif error.method == "schubert-mendl-commutator":
+            references = (
+                ReferenceRecord(
+                    "Schubert and Mendl, arXiv:2306.10603",
+                    "Theorem 1",
+                    "https://arxiv.org/abs/2306.10603",
+                ),
+            )
+        support = EstimateSupport(
+            components=(ErrorComponent("prefactor", error.prefactor, "operator-error prefactor"),),
+            assumptions=(
+                AssumptionRecord(
+                    "the resolved ordered Hamiltonian groups match the implemented formula",
+                    True,
+                ),
+            ),
+            references=references,
+            fallback=fallback,
+        )
+        claim = (
+            ErrorClaim(
+                value=error.error,
+                category="analytical",
+                certification="rigorous",
+                quantity="evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=scope,
+            )
+            if error.rigorous
+            else None
+        )
+        claims = (
+            (
+                SupportedClaim(
+                    claim,
+                    error.method,
+                    components=support.components,
+                    references=support.references,
+                    assumptions=support.assumptions,
+                ),
+            )
+            if claim is not None
+            else ()
+        )
+        assessment = assess_claim(claim, self.error_budget.algorithm_error, scope)
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=claims,
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=assessment,
+            implemented_circuit_target=assessment,
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
-        target_satisfied = error.rigorous and error.error <= self.error_budget.algorithm_error
+        analysis = self.error_analysis
         return {
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
             "bound_rigorous": error.rigorous,
             "bound_scope": "implemented-product-formula",
-            "bound_target_satisfied": target_satisfied,
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
             "circuit_bound_scope": "implemented-product-formula",
             "circuit_bound_rigorous": error.rigorous,
-            "circuit_target_satisfied": target_satisfied,
+            "circuit_target_satisfied": analysis.implemented_circuit_target_certified,
+            "bound_reference": (
+                analysis.sizing_support.references[0].citation
+                if analysis.sizing_support.references
+                else None
+            ),
+            "bound_theorem_or_equations": (
+                analysis.sizing_support.references[0].locator
+                if analysis.sizing_support.references
+                else None
+            ),
+            "bound_components": tuple(
+                (component.name, component.value)
+                for component in analysis.sizing_support.components
+            ),
+            "bound_assumptions": tuple(
+                assumption.description for assumption in analysis.sizing_support.assumptions
+            ),
+            "bound_fallback_reason": (
+                analysis.sizing_support.fallback.reason
+                if analysis.sizing_support.fallback is not None
+                else None
+            ),
         }
 
 
@@ -156,6 +296,7 @@ class MPFPlan:
     method: MultiproductMethod
     time: float
     error_budget: ErrorBudget
+    branch_count_selection: MPFBranchCountSelection
     segments: int
     exponents: tuple[int, ...]
     coefficients: tuple[float, ...]
@@ -169,8 +310,21 @@ class MPFPlan:
             raise ValueError("MPF segments must be positive")
         if self.error_estimate.segments != self.segments:
             raise ValueError("MPF error estimate segments do not match the plan")
-        if self.error_estimate.m != self.method.term_count:
-            raise ValueError("MPF error estimate term count does not match the method")
+        selection = self.branch_count_selection
+        if selection.policy != self.method.branch_count_policy:
+            raise ValueError("MPF branch-count selection policy does not match the method")
+        if selection.schedule != self.method.schedule:
+            raise ValueError("MPF branch-count selection schedule does not match the method")
+        if selection.num_qubits != self.hamiltonian.num_qubits:
+            raise ValueError("MPF branch-count selection system size does not match the plan")
+        if selection.time != abs(self.time):
+            raise ValueError("MPF branch-count selection time does not match the plan")
+        if selection.target_error != self.error_budget.algorithm_error:
+            raise ValueError("MPF branch-count selection target does not match the algorithm budget")
+        if self.method.term_count is not None and selection.term_count != self.method.term_count:
+            raise ValueError("fixed MPF term count does not match the branch-count selection")
+        if self.error_estimate.m != selection.term_count:
+            raise ValueError("MPF error estimate term count does not match the resolved selection")
         if self.error_estimate.schedule != self.method.schedule:
             raise ValueError("MPF error estimate schedule does not match the method")
         if self.error_estimate.exponents != self.exponents:
@@ -192,9 +346,21 @@ class MPFPlan:
         return self.time / self.segments
 
     @property
+    def term_count(self) -> int:
+        """Resolved MPF branch count ``J`` used by this plan."""
+        return self.branch_count_selection.term_count
+
+    @property
+    def formal_order(self) -> int:
+        return self.branch_count_selection.formal_order
+
+    @property
     def selected_parameters(self) -> dict[str, object]:
         return {
-            "mpf_m": self.method.term_count,
+            "mpf_m": self.term_count,
+            "mpf_branch_count": self.term_count,
+            "mpf_formal_order": self.formal_order,
+            "mpf_branch_count_policy": self.branch_count_selection.policy,
             "mpf_segments": self.segments,
             "mpf_schedule": self.method.schedule,
             "mpf_error_method": self.method.error_method,
@@ -218,9 +384,227 @@ class MPFPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        error = self.error_estimate
+        ideal_scope = "ideal-mpf"
+        local_scope = "one-segment-ideal-mpf"
+        amplified_scope = "one-segment-amplified-good-block"
+        circuit_scope = "repeated-shared-ancilla-good-block"
+        certification = "rigorous" if error.rigorous else "nonrigorous"
+        sizing = MPFSizingEstimate(
+            value=error.error,
+            method=error.method,
+            category="analytical" if error.rigorous else "proxy",
+            certification=certification,
+            quantity="evolution-operator approximation error",
+            metric="operator-2-norm",
+            scope=ideal_scope,
+            target=self.error_budget.algorithm_error,
+            segments=error.segments,
+            term_count=error.m,
+            formal_order=self.formal_order,
+            branch_count_policy=self.branch_count_selection.policy,
+            branch_count_policy_extensiveness_g=(
+                self.branch_count_selection.extensiveness_g
+            ),
+            branch_count_policy_target_error=self.branch_count_selection.target_error,
+            schedule=error.schedule,
+            exponents=error.exponents,
+            coefficient_l1_norm=error.coefficient_l1_norm,
+        )
+        components = tuple(
+            ErrorComponent(name, value, name.replace("_", " "))
+            for name, value in error.bound_components
+            if np.isfinite(value) and value >= 0
+        )
+        reference = ReferenceRecord(
+            error.reference,
+            error.theorem_or_equations,
+        )
+        fallback = (
+            FallbackRecord(
+                requested_method="exact-pauli-commutator-recurrence",
+                used_method="rigorous-locality-commutator-bound",
+                reason=error.fallback_reason,
+            )
+            if error.fallback_reason is not None
+            else None
+        )
+        assumptions = tuple(
+            AssumptionRecord(description, True if error.rigorous else None)
+            for description in error.assumptions
+        )
+        support = EstimateSupport(
+            components=components,
+            references=(reference,),
+            assumptions=assumptions,
+            fallback=fallback,
+        )
+
+        claims: list[SupportedClaim] = []
+        ideal_claim = None
+        if error.rigorous:
+            ideal_claim = ErrorClaim(
+                value=error.error,
+                category="analytical",
+                certification="rigorous",
+                quantity="evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=ideal_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    ideal_claim,
+                    error.method,
+                    components=components,
+                    references=(reference,),
+                    assumptions=assumptions,
+                    warnings=("this claim applies to the repeated ideal MPF operator",),
+                )
+            )
+
+        circuit_claim = None
+        if (
+            error.local_error_rigorous
+            and error.local_error is not None
+            and np.isfinite(error.local_error)
+        ):
+            local_claim = ErrorClaim(
+                value=error.local_error,
+                category="analytical",
+                certification="rigorous",
+                quantity="one-segment evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=local_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    local_claim,
+                    f"{error.method}-local-step",
+                    references=(reference,),
+                    assumptions=assumptions,
+                )
+            )
+            amplified_error = oaa_good_block_error_bound(error.local_error)
+            distortion = amplified_error - error.local_error
+            leakage = good_subspace_leakage_bound(amplified_error)
+            amplified_components = [
+                ErrorComponent(
+                    "mpf-formula-approximation",
+                    error.local_error,
+                    "one-segment operator error",
+                ),
+                ErrorComponent(
+                    "oaa-unitarity-defect-distortion",
+                    distortion,
+                    "one-segment operator error",
+                ),
+            ]
+            if leakage is not None:
+                amplified_components.append(
+                    ErrorComponent(
+                        "good-subspace-leakage-amplitude",
+                        leakage,
+                        "leakage amplitude",
+                    )
+                )
+            amplified_claim = ErrorClaim(
+                value=amplified_error,
+                category="derived",
+                certification="rigorous",
+                quantity="amplified good-block approximation error",
+                metric="operator-2-norm",
+                scope=amplified_scope,
+            )
+            claims.append(
+                SupportedClaim(
+                    amplified_claim,
+                    "exact-cubic-oaa-unitarity-defect",
+                    components=tuple(amplified_components),
+                    assumptions=(
+                        AssumptionRecord("the unamplified good block is exactly M/2", True),
+                        AssumptionRecord("the OAA convention is -U R U-dagger R U", True),
+                    ),
+                )
+            )
+            repeated_error = repeated_block_encoding_error_bound(
+                amplified_error,
+                self.segments,
+            )
+            if repeated_error is not None:
+                circuit_claim = ErrorClaim(
+                    value=repeated_error,
+                    category="derived",
+                    certification="rigorous",
+                    quantity="repeated projected good-block approximation error",
+                    metric="operator-2-norm",
+                    scope=circuit_scope,
+                )
+                claims.append(
+                    SupportedClaim(
+                        circuit_claim,
+                        "gslw2019-reused-ancilla-product",
+                        components=(
+                            ErrorComponent(
+                                "one-segment-amplified-good-block-error",
+                                amplified_error,
+                                "operator error",
+                            ),
+                            ErrorComponent(
+                                "repeated-good-block-error",
+                                repeated_error,
+                                "operator error",
+                            ),
+                        ),
+                        references=(
+                            ReferenceRecord(
+                                "Gilyen, Su, Low, and Wiebe, arXiv:1806.01838",
+                                "Lemma 54 and Corollary 55",
+                                "https://arxiv.org/abs/1806.01838",
+                            ),
+                        ),
+                        assumptions=(
+                            AssumptionRecord(
+                                "each repeated W is a scale-one block encoding of the same unitary step",
+                                True,
+                            ),
+                            AssumptionRecord(
+                                "the same branch register is reused by every segment",
+                                True,
+                            ),
+                        ),
+                        warnings=(
+                            "the claim is for P W^r P, not the full joint unitary",
+                            "postselected normalization and success overhead are outside scope",
+                        ),
+                    )
+                )
+
+        ideal_assessment = assess_claim(
+            ideal_claim,
+            self.error_budget.algorithm_error,
+            ideal_scope,
+        )
+        circuit_assessment = assess_claim(
+            circuit_claim,
+            self.error_budget.algorithm_error,
+            circuit_scope,
+        )
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=tuple(claims),
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=ideal_assessment,
+            implemented_circuit_target=circuit_assessment,
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
-        target_satisfied = error.rigorous and error.error <= self.error_budget.algorithm_error
+        analysis = self.error_analysis
+        circuit_entry = analysis.claim_for_scope("repeated-shared-ancilla-good-block")
         return {
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
@@ -230,10 +614,13 @@ class MPFPlan:
             "bound_components": error.bound_components,
             "bound_rigorous": error.rigorous,
             "bound_scope": error.scope,
-            "bound_target_satisfied": target_satisfied,
-            "circuit_bound_scope": error.circuit_scope,
-            "circuit_bound_rigorous": error.circuit_rigorous,
-            "circuit_target_satisfied": False,
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
+            "circuit_bound_value": (
+                circuit_entry.claim.value if circuit_entry is not None else None
+            ),
+            "circuit_bound_scope": "repeated-shared-ancilla-good-block",
+            "circuit_bound_rigorous": circuit_entry is not None,
+            "circuit_target_satisfied": analysis.implemented_circuit_target_certified,
             "hamiltonian_decomposition": error.hamiltonian_decomposition,
             "bound_assumptions": error.assumptions,
             "bound_fallback_reason": error.fallback_reason,
@@ -337,17 +724,162 @@ class QSVTPlan:
         )
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        from .error_models import QSVTSizingEstimate
+        from .qsvt import qsvt_polynomial_error_bound
+
+        estimate = qsvt_polynomial_error_bound(
+            self.hamiltonian.alpha * abs(self.time),
+            self.error_budget.algorithm_error,
+            self.degree,
+        )
+        polynomial_scope = "ideal-qsvt-scaled-polynomial"
+        ideal_scope = "ideal-qsvt-oaa-good-block"
+        circuit_scope = "implemented-qsvt-floating-phase-circuit"
+        sizing = QSVTSizingEstimate(
+            value=max(estimate.cosine_tail_bound, estimate.sine_tail_bound),
+            method="jacobi-anger-parity-tail",
+            category="analytical",
+            certification="rigorous",
+            quantity="component polynomial truncation error",
+            metric="uniform-scalar-error",
+            scope="ideal-qsvt-jacobi-anger-components",
+            target=self.source_error_budget,
+            truncation_order=self.truncation_order,
+            degree=self.degree,
+            cosine_degree=self.cosine_degree,
+            sine_degree=self.sine_degree,
+            cosine_first_omitted_degree=self.degree + 1,
+            sine_first_omitted_degree=self.degree + 2,
+            scale=estimate.scale,
+            cosine_tail_bound=estimate.cosine_tail_bound,
+            sine_tail_bound=estimate.sine_tail_bound,
+        )
+        reference = ReferenceRecord(
+            "Martyn, Rossi, Tan, and Chuang, arXiv:2105.02859",
+            "Eqs. (76)--(77)",
+            "https://arxiv.org/abs/2105.02859",
+        )
+        components = (
+            ErrorComponent(
+                "boundary-scaling-error",
+                estimate.scaling_error,
+                "uniform scalar error",
+            ),
+            ErrorComponent(
+                "scaled-cosine-tail",
+                estimate.scale * estimate.cosine_tail_bound,
+                "uniform scalar error",
+            ),
+            ErrorComponent(
+                "scaled-sine-tail",
+                estimate.scale * estimate.sine_tail_bound,
+                "uniform scalar error",
+            ),
+        )
+        support = EstimateSupport(
+            components=components[1:],
+            references=(reference,),
+            assumptions=(
+                AssumptionRecord("the encoded Hamiltonian spectrum lies in [-1, 1]", True),
+            ),
+        )
+        polynomial_claim = ErrorClaim(
+            value=estimate.polynomial_error,
+            category="derived",
+            certification="rigorous",
+            quantity="scaled polynomial evolution approximation error",
+            metric="operator-2-norm",
+            scope=polynomial_scope,
+        )
+        ideal_claim = ErrorClaim(
+            value=estimate.amplified_good_block_error,
+            category="derived",
+            certification="rigorous",
+            quantity="ideal amplified good-block approximation error",
+            metric="operator-2-norm",
+            scope=ideal_scope,
+        )
+        claims = (
+            SupportedClaim(
+                polynomial_claim,
+                "scaled-jacobi-anger-polynomial",
+                components=components,
+                references=(reference,),
+                assumptions=support.assumptions,
+            ),
+            SupportedClaim(
+                ideal_claim,
+                "exact-cubic-oaa-unitarity-defect",
+                components=(
+                    ErrorComponent(
+                        "scaled-polynomial-error",
+                        estimate.polynomial_error,
+                        "operator error",
+                    ),
+                    ErrorComponent(
+                        "oaa-unitarity-defect-distortion",
+                        estimate.amplified_good_block_error - estimate.polynomial_error,
+                        "operator error",
+                    ),
+                ),
+                references=(reference,),
+                assumptions=(
+                    AssumptionRecord(
+                        "the cosine and sine polynomials are implemented exactly",
+                        True,
+                    ),
+                    AssumptionRecord("the unamplified good block is exactly Q/2", True),
+                ),
+                warnings=(
+                    "floating-point phase reconstruction is outside this claim",
+                    "the constructed Qiskit circuit is not uniformly certified",
+                ),
+            ),
+        )
+        return ErrorAnalysis(
+            sizing_estimate=sizing,
+            sizing_support=support,
+            claims=claims,
+            observations=(),
+            selection_succeeded=True,
+            ideal_algorithm_target=assess_claim(
+                ideal_claim,
+                self.error_budget.algorithm_error,
+                ideal_scope,
+            ),
+            implemented_circuit_target=assess_claim(
+                None,
+                self.error_budget.algorithm_error,
+                circuit_scope,
+            ),
+        )
+
+    @property
     def error_metadata(self) -> dict[str, object]:
+        analysis = self.error_analysis
+        ideal_entry = analysis.claim_for_scope("ideal-qsvt-oaa-good-block")
+        if ideal_entry is None:
+            raise RuntimeError("QSVT plan is missing its ideal OAA claim")
         return {
-            "bound_value": self.error_budget.algorithm_error,
+            "bound_value": ideal_entry.claim.value,
             "bound_prefactor": None,
-            "bound_method": "jacobi-anger-truncation",
+            "bound_method": "jacobi-anger-polynomial-oaa",
+            "bound_reference": "Martyn et al., arXiv:2105.02859, Eqs. (76)--(77)",
+            "bound_theorem_or_equations": "Jacobi--Anger tails plus exact cubic OAA identity",
+            "bound_components": tuple(
+                (component.name, component.value) for component in ideal_entry.components
+            ),
             "bound_rigorous": True,
-            "bound_scope": "implemented-algorithm",
-            "bound_target_satisfied": True,
-            "circuit_bound_scope": "implemented-algorithm",
-            "circuit_bound_rigorous": True,
-            "circuit_target_satisfied": True,
+            "bound_scope": "ideal-qsvt-oaa-good-block",
+            "bound_target_satisfied": analysis.ideal_algorithm_target_certified,
+            "circuit_bound_scope": "implemented-qsvt-floating-phase-circuit",
+            "circuit_bound_rigorous": False,
+            "circuit_target_satisfied": False,
+            "bound_assumptions": tuple(
+                assumption.description for assumption in ideal_entry.assumptions
+            ),
+            "bound_fallback_reason": None,
         }
 
 
@@ -364,7 +896,7 @@ def _canonical_hamiltonian(hamiltonian: PauliHamiltonian) -> PauliHamiltonian:
     )
 
 
-def plan_simulation(
+def _plan_simulation(
     hamiltonian: PauliHamiltonian,
     method: MethodSpec,
     time: float,
@@ -372,6 +904,7 @@ def plan_simulation(
     *,
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
+    execution: CommutatorExecution,
 ) -> SimulationPlan:
     """Select parameters once and return the complete logical algorithm plan."""
     if not np.isfinite(time) or float(time) <= 0:
@@ -391,6 +924,8 @@ def plan_simulation(
             reps=1,
             order=method.order,
             partition=trotter_partition,
+            workers=execution.workers,
+            _execution=execution,
         )
         repetitions = max(
             1,
@@ -402,6 +937,8 @@ def plan_simulation(
             reps=repetitions,
             order=method.order,
             partition=trotter_partition,
+            workers=execution.workers,
+            _execution=execution,
         )
         return TrotterPlan(
             hamiltonian=canonical,
@@ -417,19 +954,30 @@ def plan_simulation(
         )
 
     if isinstance(method, MultiproductMethod):
+        branch_count_selection = resolve_mpf_branch_count(
+            canonical,
+            evolution_time,
+            budget.algorithm_error,
+            policy=method.branch_count_policy,
+            term_count=method.term_count,
+            schedule=method.schedule,
+        )
+        term_count = branch_count_selection.term_count
         selected_error = select_mpf_segments(
             canonical,
             evolution_time,
             budget.algorithm_error,
-            method.term_count,
+            term_count,
             schedule=method.schedule,
             method=method.error_method,
+            workers=execution.workers,
+            _execution=execution,
         )
         exponents = selected_error.exponents
         coefficients = tuple(
             float(value)
             for value in multiproduct_coefficients(
-                method.term_count,
+                term_count,
                 schedule=method.schedule,
             )
         )
@@ -438,10 +986,11 @@ def plan_simulation(
             method=method,
             time=evolution_time,
             error_budget=budget,
+            branch_count_selection=branch_count_selection,
             segments=selected_error.segments,
             exponents=exponents,
             coefficients=coefficients,
-            lcu_structure=mpf_lcu_structure(method.term_count, schedule=method.schedule),
+            lcu_structure=mpf_lcu_structure(term_count, schedule=method.schedule),
             base_formula_group_term_indices=tuple(
                 (index,) for index in range(canonical.term_count)
             ),
@@ -466,3 +1015,28 @@ def plan_simulation(
         base_lcu_uses=3,
         oaa_rounds=1,
     )
+
+
+def plan_simulation(
+    hamiltonian: PauliHamiltonian,
+    method: MethodSpec,
+    time: float,
+    target_error: float,
+    *,
+    synthesis_error_fraction: float = 0.1,
+    trotter_partition: TrotterPartition = "auto",
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
+) -> SimulationPlan:
+    """Select parameters once and return the complete logical algorithm plan."""
+    with execution_scope(workers, _execution, progress) as execution:
+        return _plan_simulation(
+            hamiltonian,
+            method,
+            time,
+            target_error,
+            synthesis_error_fraction=synthesis_error_fraction,
+            trotter_partition=trotter_partition,
+            execution=execution,
+        )

@@ -44,14 +44,20 @@ class _EvaluationConfig:
         optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
         if self.mpf_error_method not in (
             "low2019-l1-ideal-rigorous",
+            "childs2021-w2-triangle-ideal-rigorous",
             "mizuta2026-commutator-ideal-rigorous",
+            "mizuta2026-theorem3-legacy-ideal-rigorous",
+            "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
         ):
             raise ValueError(
                 "mpf_error_method must be 'low2019-l1-ideal-rigorous' "
                 "(historical alias 'low-rigorous'), "
-                "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+                "'childs2021-w2-triangle-ideal-rigorous', "
+                "'mizuta2026-commutator-ideal-rigorous', "
+                "'mizuta2026-theorem3-legacy-ideal-rigorous', "
+                "'best-rigorous-ideal', or 'legacy-w2-proxy'"
             )
 
 
@@ -67,9 +73,11 @@ def choose_parameters(
     within the practical work cap; other even orders retain the documented
     1-norm proxy.  MPF defaults to the rigorous ideal-operator bound and
     sufficient segment rule of Low, Kliuchnikov, and Wiebe.  The historical
-    W2-calibrated rule remains available as ``legacy-w2-proxy`` but is never
-    certified.  Neither MPF estimator certifies the complete robust-OAA
-    shared-ancilla circuit.  QSVT uses the rigorous Jacobi--Anger
+    W2 triangle estimator composes the rigorous Strang error without using MPF
+    cancellation. The historical W2-calibrated rule remains available as
+    ``legacy-w2-proxy`` but is never certified. No ideal-MPF estimator alone
+    certifies the complete robust-OAA shared-ancilla circuit. QSVT uses the
+    rigorous Jacobi--Anger
     truncation degree.  Mixing loose 1-norm bounds for product formulas with
     the tight QSVT degree would systematically distort crossovers, which is
     why the product-formula rules are commutator-based.  Calibrate small

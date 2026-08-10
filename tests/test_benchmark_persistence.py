@@ -17,6 +17,7 @@ from hamiltonian_resources import (
     save_benchmark_plots,
 )
 from hamiltonian_resources.benchmark_cli import main as benchmark_main
+from hamiltonian_resources.benchmark_cli import _worker_count
 
 
 @pytest.fixture
@@ -48,6 +49,15 @@ def test_default_job_uses_proportional_time_and_resolves_output_root():
     assert job.benchmark.system_sizes == [2, 4, 6, 8, 10, 12]
     assert job.output_root == path.parent / "benchmark_outputs"
     assert job.output_formats == ["png", "pdf"]
+
+
+def test_cli_worker_selection_is_capped_and_validated(monkeypatch):
+    monkeypatch.setattr("hamiltonian_resources.benchmark_cli.os.cpu_count", lambda: 20)
+
+    assert _worker_count(0) == 4
+    assert _worker_count(2) == 2
+    with pytest.raises(ValueError, match="workers"):
+        _worker_count(-1)
 
 
 def test_python_run_is_in_memory_and_explicit_save_is_collision_free(
@@ -89,6 +99,39 @@ def test_load_benchmark_does_not_require_metadata(tmp_path, benchmark_frame):
     assert len(loaded) == len(benchmark_frame)
 
 
+def test_w2_triangle_provenance_round_trips_without_schema_relabeling(tmp_path):
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        time=TimeScaling("fixed", 0.2),
+        methods=[
+            MultiproductMethod(
+                3,
+                error_method="childs2021-w2-triangle-ideal-rigorous",
+            ),
+            MultiproductMethod(3, error_method="legacy-w2-proxy"),
+        ],
+    )
+    frame = run_benchmark(config, sweeps="system-size")
+    _, csv_path, _ = save_benchmark(frame, config, output_root=tmp_path)
+    loaded = load_benchmark(csv_path)
+    rigorous = loaded[
+        loaded["bound_method"] == "childs2021-w2-triangle-ideal-rigorous"
+    ].iloc[0]
+    historical = loaded[loaded["bound_method"] == "legacy-w2-proxy"].iloc[0]
+    components = json.loads(rigorous["bound_components_json"])
+
+    assert set(components) == {
+        "w2",
+        "b2",
+        "local_step_size",
+        "local_step_error",
+        "repeated_ideal_mpf_error",
+    }
+    assert bool(rigorous["bound_rigorous"])
+    assert not bool(historical["bound_rigorous"])
+    assert historical["method_id"] == "mpf-m3-legacy-w2-proxy"
+
+
 def test_load_benchmark_upgrades_early_schema2_scope_columns(
     tmp_path, benchmark_frame
 ):
@@ -108,8 +151,83 @@ def test_load_benchmark_upgrades_early_schema2_scope_columns(
 
     assert set(extension_columns) <= set(loaded.columns)
     assert mpf["bound_scope"] == "ideal-mpf"
-    assert mpf["circuit_bound_scope"] == "amplified-shared-ancilla"
+    assert mpf["circuit_bound_scope"] == "repeated-shared-ancilla-good-block"
     assert not bool(mpf["circuit_bound_rigorous"])
+    assert mpf["mpf_branch_count_policy"] == "fixed"
+
+
+def test_dynamic_mpf_configuration_round_trips(tmp_path):
+    method = MultiproductMethod(
+        None,
+        branch_count_policy="mizuta2026-theorem6",
+        error_method="mizuta2026-commutator-ideal-rigorous",
+    )
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        target_errors=[1e-2],
+        time=TimeScaling("fixed", 0.1),
+        methods=[method],
+    )
+    job_path = tmp_path / "dynamic.json"
+    job_path.write_text(
+        json.dumps({"benchmark": config.as_dict()}),
+        encoding="utf-8",
+    )
+
+    loaded = load_benchmark_job(job_path).benchmark
+
+    assert loaded.as_dict() == config.as_dict()
+    assert loaded.methods == [method]
+    serialized = loaded.as_dict()["methods"][0]
+    assert "term_count" not in serialized
+    assert serialized["branch_count_policy"] == "mizuta2026-theorem6"
+
+
+def test_fixed_mpf_configuration_digest_and_json_remain_stable():
+    config = BenchmarkConfig(
+        system_sizes=[2],
+        target_errors=[0.01],
+        fixed_system_size=2,
+        fixed_target_error=0.01,
+        methods=[MultiproductMethod(3)],
+    )
+
+    serialized = config.as_dict()["methods"][0]
+
+    assert serialized == {
+        "family": "multiproduct",
+        "schedule": "new",
+        "error_method": "low2019-l1-ideal-rigorous",
+        "term_count": 3,
+    }
+    assert config.digest == (
+        "5e65b0083415938de1d63496040ffa1852f09d64fb23b116a13291c8eb3cd7eb"
+    )
+
+
+def test_load_benchmark_downgrades_withdrawn_qsvt_circuit_claim(
+    tmp_path, benchmark_frame
+):
+    legacy = benchmark_frame.copy()
+    qsvt = legacy["method_family"] == "qsvt"
+    legacy.loc[qsvt, "bound_scope"] = "implemented-algorithm"
+    legacy.loc[qsvt, "bound_rigorous"] = True
+    legacy.loc[qsvt, "bound_target_satisfied"] = True
+    legacy.loc[qsvt, "circuit_bound_scope"] = "implemented-algorithm"
+    legacy.loc[qsvt, "circuit_bound_rigorous"] = True
+    legacy.loc[qsvt, "circuit_target_satisfied"] = True
+    csv_path = tmp_path / "legacy-qsvt-claim.csv"
+    legacy.to_csv(csv_path, index=False)
+
+    loaded = load_benchmark(csv_path)
+    row = loaded[loaded["method_family"] == "qsvt"].iloc[0]
+
+    assert row["bound_scope"] == "legacy-qsvt-unscoped"
+    assert not bool(row["bound_rigorous"])
+    assert not bool(row["bound_target_satisfied"])
+    assert row["circuit_bound_scope"] == "implemented-qsvt-floating-phase-circuit"
+    assert not bool(row["circuit_bound_rigorous"])
+    assert not bool(row["circuit_target_satisfied"])
 
 
 def test_save_standard_plots(tmp_path, benchmark_frame):

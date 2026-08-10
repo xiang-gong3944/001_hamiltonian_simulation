@@ -7,6 +7,7 @@ from functools import lru_cache
 from itertools import permutations
 import math
 from collections import defaultdict
+from threading import RLock
 from typing import Literal, TypeAlias
 
 import numpy as np
@@ -15,6 +16,13 @@ from qiskit.circuit.library import PauliEvolutionGate
 from qiskit.quantum_info import SparsePauliOp
 from qiskit.synthesis import LieTrotter, SuzukiTrotter
 
+from ._commutator_execution import (
+    CommutatorProgress,
+    CommutatorProgressCallback,
+    CommutatorExecution,
+    cost_balanced_chunks,
+    execution_scope,
+)
 from .hamiltonians import PauliHamiltonian
 
 
@@ -29,6 +37,7 @@ SuzukiErrorMethod: TypeAlias = Literal[
 
 _MAX_HIGHER_ORDER_COMMUTATORS = 4096
 _MAX_EXACT_PAULI_COMMUTATOR_TRANSITIONS = 250_000
+_TROTTER_PARALLEL_WORK_THRESHOLD = 8_000_000
 
 
 @dataclass(frozen=True)
@@ -155,19 +164,17 @@ def _paulis_anticommute(left: tuple[int, int], right: tuple[int, int]) -> bool:
     return bool(parity_mask.bit_count() & 1)
 
 
-def _locality_parameters(
+def pauli_locality_parameters(
     hamiltonian: PauliHamiltonian,
 ) -> tuple[int, float]:
-    """Return the exact Pauli support size ``k`` and extensiveness ``g``."""
+    """Return the outward-rounded Pauli locality ``k`` and extensiveness ``g``."""
     site_weights = [0.0] * hamiltonian.num_qubits
     locality_k = 0
     for label, coefficient in hamiltonian.terms:
         support = [site for site, symbol in enumerate(reversed(label)) if symbol != "I"]
         locality_k = max(locality_k, len(support))
         for site in support:
-            site_weights[site] = float(
-                np.nextafter(site_weights[site] + abs(coefficient), np.inf)
-            )
+            site_weights[site] = float(np.nextafter(site_weights[site] + abs(coefficient), np.inf))
     return locality_k, max(site_weights, default=0.0)
 
 
@@ -191,20 +198,248 @@ def _locality_commutator_bound(
     return float(np.nextafter(value, np.inf))
 
 
+@dataclass
+class _PauliCommutatorRecurrence:
+    """Incrementally extend one exact Pauli-word recurrence."""
+
+    hamiltonian: PauliHamiltonian
+    transition_cap: int
+    encoded_terms: tuple[tuple[tuple[int, int], float], ...]
+    locality_k: int
+    extensiveness_g: float
+    current: dict[tuple[int, int], float]
+    values: list[float]
+    state_counts: list[int]
+    max_exact_order: int = 1
+    fallback_reason: str | None = None
+    exhausted: bool = False
+
+    def __post_init__(self) -> None:
+        self._neighbors: dict[tuple[int, int], tuple[tuple[tuple[int, int], float], ...]] = {}
+        self._lock = RLock()
+
+    def _outer_neighbors(
+        self, inner_pauli: tuple[int, int]
+    ) -> tuple[tuple[tuple[int, int], float], ...]:
+        neighbors = self._neighbors.get(inner_pauli)
+        if neighbors is None:
+            neighbors = tuple(
+                (outer_pauli, outer_weight)
+                for outer_pauli, outer_weight in self.encoded_terms
+                if _paulis_anticommute(outer_pauli, inner_pauli)
+            )
+            self._neighbors[inner_pauli] = neighbors
+        return neighbors
+
+    def through(
+        self,
+        max_order: int,
+        execution: CommutatorExecution,
+        *,
+        formula_order: int,
+        segment_candidate: int | None,
+        target_error: float | None,
+    ) -> PauliNestedCommutatorBounds:
+        with self._lock:
+            while len(self.values) < max_order - 1:
+                order = len(self.values) + 2
+                if self.exhausted:
+                    self.values.append(0.0)
+                    self.state_counts.append(0)
+                    self.max_exact_order = order
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="exact-zero",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
+                    continue
+
+                transition_count = len(self.current) * len(self.encoded_terms)
+                if self.fallback_reason is not None or transition_count > self.transition_cap:
+                    if self.fallback_reason is None:
+                        self.fallback_reason = (
+                            "exact Pauli recurrence would require "
+                            f"{transition_count} transitions at order {order}, above cap "
+                            f"{self.transition_cap}; remaining orders use Mizuta 2026 Eq. (8)"
+                        )
+                    self.values.append(
+                        _locality_commutator_bound(
+                            order,
+                            self.hamiltonian.num_qubits,
+                            self.locality_k,
+                            self.extensiveness_g,
+                        )
+                    )
+                    self.state_counts.append(len(self.current))
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="locality-fallback",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
+                    continue
+
+                following: dict[tuple[int, int], float] = {}
+                items = tuple(
+                    (inner_pauli, inner_weight, self._outer_neighbors(inner_pauli))
+                    for inner_pauli, inner_weight in self.current.items()
+                )
+                if execution.should_parallelize(transition_count, len(items)):
+                    chunks = cost_balanced_chunks(
+                        items,
+                        [len(item[2]) for item in items],
+                        execution.workers,
+                    )
+                    partials = execution.map_chunks(_pauli_recurrence_chunk, chunks)
+                    for completed, partial in enumerate(partials, start=1):
+                        for result, contribution in partial.items():
+                            following[result] = float(
+                                np.nextafter(
+                                    following.get(result, 0.0) + contribution,
+                                    np.inf,
+                                )
+                            )
+                        execution.report(
+                            CommutatorProgress(
+                                family="multiproduct",
+                                phase="recurrence-chunk",
+                                completed=completed,
+                                total=None,
+                                commutator_order=order,
+                                max_commutator_order=max_order,
+                                formula_order=formula_order,
+                                system_qubits=self.hamiltonian.num_qubits,
+                                segment_candidate=segment_candidate,
+                                target_error=target_error,
+                            )
+                        )
+                else:
+                    following = _pauli_recurrence_chunk(items)
+                    execution.report(
+                        CommutatorProgress(
+                            family="multiproduct",
+                            phase="recurrence-order",
+                            completed=order - 1,
+                            total=None,
+                            commutator_order=order,
+                            max_commutator_order=max_order,
+                            formula_order=formula_order,
+                            system_qubits=self.hamiltonian.num_qubits,
+                            segment_candidate=segment_candidate,
+                            target_error=target_error,
+                        )
+                    )
+                self.current = following
+                value = math.fsum(following.values())
+                self.values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
+                self.state_counts.append(len(following))
+                self.max_exact_order = order
+                self.exhausted = not following
+
+            return PauliNestedCommutatorBounds(
+                values=tuple(self.values[: max_order - 1]),
+                max_order=max_order,
+                max_exact_order=(
+                    max_order if self.exhausted else min(self.max_exact_order, max_order)
+                ),
+                state_counts=tuple(self.state_counts[: max_order - 1]),
+                used_locality_fallback=(
+                    self.fallback_reason is not None and max_order > self.max_exact_order
+                ),
+                fallback_reason=(
+                    self.fallback_reason if max_order > self.max_exact_order else None
+                ),
+                locality_k=self.locality_k,
+                extensiveness_g=self.extensiveness_g,
+            )
+
+
 @lru_cache(maxsize=None)
+def _pauli_commutator_recurrence(
+    hamiltonian: PauliHamiltonian,
+    transition_cap: int,
+) -> _PauliCommutatorRecurrence:
+    aggregated: dict[tuple[int, int], float] = {}
+    for label, coefficient in hamiltonian.terms:
+        if not any(symbol != "I" for symbol in label):
+            continue
+        pauli = _encoded_pauli(label)
+        aggregated[pauli] = float(
+            np.nextafter(aggregated.get(pauli, 0.0) + abs(float(coefficient)), np.inf)
+        )
+    encoded_terms = tuple(aggregated.items())
+    locality_k, extensiveness_g = pauli_locality_parameters(hamiltonian)
+    return _PauliCommutatorRecurrence(
+        hamiltonian=hamiltonian,
+        transition_cap=transition_cap,
+        encoded_terms=encoded_terms,
+        locality_k=locality_k,
+        extensiveness_g=extensiveness_g,
+        current=dict(encoded_terms),
+        values=[],
+        state_counts=[],
+        exhausted=not encoded_terms,
+    )
+
+
+def _pauli_recurrence_chunk(
+    items: tuple[
+        tuple[
+            tuple[int, int],
+            float,
+            tuple[tuple[tuple[int, int], float], ...],
+        ],
+        ...,
+    ],
+) -> dict[tuple[int, int], float]:
+    following: dict[tuple[int, int], float] = {}
+    for inner_pauli, inner_weight, neighbors in items:
+        for outer_pauli, outer_weight in neighbors:
+            result = (
+                outer_pauli[0] ^ inner_pauli[0],
+                outer_pauli[1] ^ inner_pauli[1],
+            )
+            contribution = float(np.nextafter(2 * outer_weight * inner_weight, np.inf))
+            following[result] = float(
+                np.nextafter(following.get(result, 0.0) + contribution, np.inf)
+            )
+    return following
+
+
 def pauli_nested_commutator_bounds(
     hamiltonian: PauliHamiltonian,
     max_order: int,
     *,
     transition_cap: int = _MAX_EXACT_PAULI_COMMUTATOR_TRANSITIONS,
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
+    _formula_order: int = 0,
+    _segment_candidate: int | None = None,
+    _target_error: float | None = None,
 ) -> PauliNestedCommutatorBounds:
     """Return rigorous ``alpha_com,q`` bounds through ``max_order``.
 
-    For individual Pauli summands, every nonzero nested commutator is a
-    scalar times one Pauli word. The recurrence therefore stores total norm
-    weight by resultant Pauli word while retaining the sum over all ordered
-    term sequences required by Aftab 2024 Eq. (10) and Mizuta 2026 Eq. (8).
-    Floating operations are rounded upward with ``nextafter``.
+    The exact prefix is retained and extended across calls for the same
+    Hamiltonian and transition cap. Floating operations are rounded upward
+    with ``nextafter``.
     """
     if isinstance(max_order, bool) or not isinstance(max_order, int):
         raise TypeError("max_order must be an integer")
@@ -214,93 +449,22 @@ def pauli_nested_commutator_bounds(
         raise TypeError("transition_cap must be an integer")
     if transition_cap < 1:
         raise ValueError("transition_cap must be positive")
-
-    encoded_terms = tuple(
-        (_encoded_pauli(label), abs(float(coefficient)))
-        for label, coefficient in hamiltonian.terms
-        if any(symbol != "I" for symbol in label)
-    )
-    locality_k, extensiveness_g = _locality_parameters(hamiltonian)
-    if not encoded_terms:
-        return PauliNestedCommutatorBounds(
-            values=(0.0,) * (max_order - 1),
-            max_order=max_order,
-            max_exact_order=max_order,
-            state_counts=(0,) * (max_order - 1),
-            used_locality_fallback=False,
-            fallback_reason=None,
-            locality_k=locality_k,
-            extensiveness_g=extensiveness_g,
+    with execution_scope(workers, _execution, progress) as execution:
+        return _pauli_commutator_recurrence(hamiltonian, transition_cap).through(
+            max_order,
+            execution,
+            formula_order=_formula_order,
+            segment_candidate=_segment_candidate,
+            target_error=_target_error,
         )
 
-    current: dict[tuple[int, int], float] = {}
-    for pauli, coefficient in encoded_terms:
-        current[pauli] = float(
-            np.nextafter(current.get(pauli, 0.0) + coefficient, np.inf)
-        )
 
-    values: list[float] = []
-    state_counts: list[int] = []
-    max_exact_order = 1
-    fallback_reason: str | None = None
-    for order in range(2, max_order + 1):
-        transition_count = len(current) * len(encoded_terms)
-        if fallback_reason is not None or transition_count > transition_cap:
-            if fallback_reason is None:
-                fallback_reason = (
-                    "exact Pauli recurrence would require "
-                    f"{transition_count} transitions at order {order}, above cap "
-                    f"{transition_cap}; remaining orders use Mizuta 2026 Eq. (8)"
-                )
-            values.append(
-                _locality_commutator_bound(
-                    order,
-                    hamiltonian.num_qubits,
-                    locality_k,
-                    extensiveness_g,
-                )
-            )
-            state_counts.append(len(current))
-            continue
+def _clear_pauli_nested_commutator_cache() -> None:
+    _pauli_commutator_recurrence.cache_clear()
 
-        following: dict[tuple[int, int], float] = {}
-        for inner_pauli, inner_weight in current.items():
-            for outer_pauli, outer_weight in encoded_terms:
-                if not _paulis_anticommute(outer_pauli, inner_pauli):
-                    continue
-                result = (
-                    outer_pauli[0] ^ inner_pauli[0],
-                    outer_pauli[1] ^ inner_pauli[1],
-                )
-                contribution = float(
-                    np.nextafter(2 * outer_weight * inner_weight, np.inf)
-                )
-                following[result] = float(
-                    np.nextafter(following.get(result, 0.0) + contribution, np.inf)
-                )
-        current = following
-        value = math.fsum(current.values())
-        values.append(float(np.nextafter(value, np.inf)) if value else 0.0)
-        state_counts.append(len(current))
-        max_exact_order = order
 
-        if not current:
-            remaining = max_order - order
-            values.extend([0.0] * remaining)
-            state_counts.extend([0] * remaining)
-            max_exact_order = max_order
-            break
-
-    return PauliNestedCommutatorBounds(
-        values=tuple(values),
-        max_order=max_order,
-        max_exact_order=max_exact_order,
-        state_counts=tuple(state_counts),
-        used_locality_fallback=fallback_reason is not None,
-        fallback_reason=fallback_reason,
-        locality_k=locality_k,
-        extensiveness_g=extensiveness_g,
-    )
+# Preserve the useful cache-control hook exposed by the former lru_cache wrapper.
+pauli_nested_commutator_bounds.cache_clear = _clear_pauli_nested_commutator_cache  # type: ignore[attr-defined]
 
 
 def _validate_order(order: int) -> None:
@@ -456,10 +620,7 @@ def _suzuki_group_factors(
         reduction = 1 / (4 - 4 ** (1 / (order - 1)))
         previous = _suzuki_group_factors(group_count, order - 2)
         outer = tuple((group, coefficient * reduction) for group, coefficient in previous)
-        inner = tuple(
-            (group, coefficient * (1 - 4 * reduction))
-            for group, coefficient in previous
-        )
+        inner = tuple((group, coefficient * (1 - 4 * reduction)) for group, coefficient in previous)
         factors = outer + outer + inner + outer + outer
 
     if not merge_adjacent:
@@ -495,9 +656,7 @@ def count_suzuki_term_occurrences(
     if reps < 1:
         raise ValueError("reps must be positive")
     sizes = structure.group_sizes
-    per_step = sum(
-        sizes[group] for group, _ in _suzuki_group_factors(len(sizes), order)
-    )
+    per_step = sum(sizes[group] for group, _ in _suzuki_group_factors(len(sizes), order))
     return reps * per_step
 
 
@@ -523,16 +682,15 @@ def _extend_word_polynomial(
     for outer_word, outer_weight in outer.items():
         for power in range(minimum_power, order - len(outer_word) + 1):
             word = (group,) * power + outer_word
-            extended[word] += (
-                outer_weight * magnitude**power / math.factorial(power)
-            )
+            extended[word] += outer_weight * magnitude**power / math.factorial(power)
     return dict(extended)
 
 
+@lru_cache(maxsize=None)
 def _theorem_word_weights(
     factors: tuple[tuple[int, float], ...],
     order: int,
-) -> list[tuple[tuple[float, ...], dict[tuple[int, ...], float]]]:
+) -> tuple[tuple[tuple[float, ...], dict[tuple[int, ...], float]], ...]:
     """Collapse Schubert--Mendl weak compositions into repeated group words."""
     factor_count = len(factors)
     center = math.ceil(factor_count / 2)
@@ -563,7 +721,11 @@ def _theorem_word_weights(
         entries.append(
             (
                 prefixes[j],
-                {word: factorial * weight for word, weight in positive.items() if len(word) == order},
+                {
+                    word: factorial * weight
+                    for word, weight in positive.items()
+                    if len(word) == order
+                },
             )
         )
         outer = _extend_word_polynomial(
@@ -589,7 +751,11 @@ def _theorem_word_weights(
         entries.append(
             (
                 prefixes[j],
-                {word: factorial * weight for word, weight in positive.items() if len(word) == order},
+                {
+                    word: factorial * weight
+                    for word, weight in positive.items()
+                    if len(word) == order
+                },
             )
         )
         outer = _extend_word_polynomial(
@@ -599,51 +765,89 @@ def _theorem_word_weights(
             order,
             minimum_power=0,
         )
-    return entries
+    return tuple(entries)
 
 
 def _nested_commutator_basis(
     groups: tuple[SparsePauliOp, ...],
     order: int,
+    execution: CommutatorExecution | None = None,
+    system_qubits: int = 0,
 ) -> dict[tuple[tuple[int, ...], int], SparsePauliOp]:
-    """Precompute ad-word(H_base) for all group words through ``order``."""
-    basis = {((), base): group for base, group in enumerate(groups)}
+    """Return the nonzero depth-``order`` ad-word frontier."""
+    frontier = {((), base): group for base, group in enumerate(groups)}
     for depth in range(1, order + 1):
-        previous = [
-            (word, base, operator)
-            for (word, base), operator in basis.items()
-            if len(word) == depth - 1
-        ]
-        for word, base, operator in previous:
-            for outer, group in enumerate(groups):
-                basis[(word + (outer,), base)] = _commutator(group, operator)
-    return basis
+        following: dict[tuple[tuple[int, ...], int], SparsePauliOp] = {}
+        items = tuple(
+            (word, base, operator, outer, group)
+            for (word, base), operator in frontier.items()
+            for outer, group in enumerate(groups)
+        )
+        work = sum(int(operator.size) * int(group.size) for _, _, operator, _, group in items)
+        expensive = work >= _TROTTER_PARALLEL_WORK_THRESHOLD
+        if execution is not None and expensive:
+            chunks = cost_balanced_chunks(
+                items,
+                [int(operator.size) * int(group.size) for _, _, operator, _, group in items],
+                execution.workers,
+            )
+            for completed, partial in enumerate(
+                execution.map_chunks(_trotter_frontier_chunk, chunks),
+                start=1,
+            ):
+                following.update(partial)
+                execution.report(
+                    CommutatorProgress(
+                        family="trotter",
+                        phase="basis-frontier",
+                        completed=completed,
+                        total=len(chunks),
+                        commutator_order=depth,
+                        max_commutator_order=order,
+                        formula_order=order,
+                        system_qubits=system_qubits,
+                    )
+                )
+        else:
+            following.update(_trotter_frontier_chunk(items))
+        frontier = following
+        if not frontier:
+            break
+    return frontier
 
 
-def _higher_order_commutator_prefactor(
-    groups: tuple[SparsePauliOp, ...],
-    order: Literal[4, 6],
-) -> float:
-    """Evaluate Schubert--Mendl Theorem 1 using Pauli 1-norms."""
-    factors = _suzuki_group_factors(len(groups), order, merge_adjacent=True)
-    if len(factors) == 1:
-        return 0.0
-    entries = _theorem_word_weights(factors, order)
-    basis = _nested_commutator_basis(groups, order)
+def _trotter_frontier_chunk(
+    items: tuple[
+        tuple[tuple[int, ...], int, SparsePauliOp, int, SparsePauliOp],
+        ...,
+    ],
+) -> dict[tuple[tuple[int, ...], int], SparsePauliOp]:
+    following: dict[tuple[tuple[int, ...], int], SparsePauliOp] = {}
+    for word, base, operator, outer, group in items:
+        commutator = _commutator(group, operator)
+        if np.any(commutator.coeffs != 0):
+            following[(word + (outer,), base)] = commutator
+    return following
 
-    contributions: defaultdict[
-        tuple[int, ...], list[tuple[tuple[float, ...], float]]
-    ] = defaultdict(list)
-    for prefix, weights in entries:
-        for word, weight in weights.items():
-            contributions[word].append((prefix, weight))
 
-    total = 0.0
-    group_count = len(groups)
-    for word, weighted_prefixes in contributions.items():
+def _trotter_contribution_chunk(
+    items: tuple[
+        tuple[
+            tuple[int, ...],
+            tuple[tuple[tuple[float, ...], float], ...],
+            tuple[SparsePauliOp | None, ...],
+        ],
+        ...,
+    ],
+) -> tuple[tuple[tuple[int, ...], float], ...]:
+    results: list[tuple[tuple[int, ...], float]] = []
+    for word, weighted_prefixes, operators in items:
+        group_count = len(operators)
         coefficient_rows: dict[str, np.ndarray] = {}
-        for base in range(group_count):
-            for label, coefficient in basis[(word, base)].to_list():
+        for base, operator in enumerate(operators):
+            if operator is None:
+                continue
+            for label, coefficient in operator.to_list():
                 if coefficient == 0:
                     continue
                 row = coefficient_rows.setdefault(
@@ -652,6 +856,7 @@ def _higher_order_commutator_prefactor(
                 )
                 row[base] += coefficient
         if not coefficient_rows:
+            results.append((word, 0.0))
             continue
 
         coefficients = np.stack(tuple(coefficient_rows.values()))
@@ -660,18 +865,93 @@ def _higher_order_commutator_prefactor(
             dtype=float,
         ).T
         norms = np.sum(np.abs(coefficients @ prefixes), axis=0)
-        weights = np.asarray([weight for _, weight in weighted_prefixes], dtype=float)
-        total += float(norms @ weights)
+        weights = np.asarray(
+            [weight for _, weight in weighted_prefixes],
+            dtype=float,
+        )
+        results.append((word, float(norms @ weights)))
+    return tuple(results)
+
+
+def _higher_order_commutator_prefactor(
+    groups: tuple[SparsePauliOp, ...],
+    order: Literal[4, 6],
+    execution: CommutatorExecution | None = None,
+    system_qubits: int = 0,
+) -> float:
+    """Evaluate Schubert--Mendl Theorem 1 using Pauli 1-norms."""
+    factors = _suzuki_group_factors(len(groups), order, merge_adjacent=True)
+    if len(factors) == 1:
+        return 0.0
+    entries = _theorem_word_weights(factors, order)
+    basis = _nested_commutator_basis(
+        groups,
+        order,
+        execution,
+        system_qubits,
+    )
+
+    contributions: defaultdict[tuple[int, ...], list[tuple[tuple[float, ...], float]]] = (
+        defaultdict(list)
+    )
+    for prefix, weights in entries:
+        for word, weight in weights.items():
+            contributions[word].append((prefix, weight))
+
+    group_count = len(groups)
+    items = tuple(
+        (
+            word,
+            tuple(weighted_prefixes),
+            tuple(basis.get((word, base)) for base in range(group_count)),
+        )
+        for word, weighted_prefixes in contributions.items()
+    )
+    work = sum(
+        sum(int(operator.size) for operator in operators if operator is not None)
+        * max(1, len(weighted_prefixes))
+        for _, weighted_prefixes, operators in items
+    )
+    expensive = work >= _TROTTER_PARALLEL_WORK_THRESHOLD
+    if execution is not None and expensive:
+        chunks = cost_balanced_chunks(
+            items,
+            [
+                sum(int(operator.size) for operator in operators if operator is not None)
+                * max(1, len(weighted_prefixes))
+                for _, weighted_prefixes, operators in items
+            ],
+            execution.workers,
+        )
+        partials = execution.map_chunks(_trotter_contribution_chunk, chunks)
+        ordered = []
+        for completed, partial in enumerate(partials, start=1):
+            ordered.extend(value for _, value in partial)
+            execution.report(
+                CommutatorProgress(
+                    family="trotter",
+                    phase="theorem-reduction",
+                    completed=completed,
+                    total=len(chunks),
+                    commutator_order=order,
+                    max_commutator_order=order,
+                    formula_order=order,
+                    system_qubits=system_qubits,
+                )
+            )
+    else:
+        ordered = [value for _, value in _trotter_contribution_chunk(items)]
+    total = math.fsum(ordered)
 
     value = total / math.factorial(order + 1)
     return float(np.nextafter(value, np.inf)) if value else 0.0
 
 
-@lru_cache(maxsize=None)
-def _suzuki_error_prefactor(
+def _compute_suzuki_error_prefactor(
     hamiltonian: PauliHamiltonian,
     order: int,
     partition: TrotterPartition = "auto",
+    execution: CommutatorExecution | None = None,
 ) -> _SuzukiPrefactor:
     specification = _resolve_suzuki_specification(hamiltonian, order, partition)
     group_count = len(specification.groups)
@@ -693,7 +973,12 @@ def _suzuki_error_prefactor(
             True,
         )
     if order in (4, 6) and group_count ** (order + 1) <= _MAX_HIGHER_ORDER_COMMUTATORS:
-        value = _higher_order_commutator_prefactor(specification.groups, order)
+        value = _higher_order_commutator_prefactor(
+            specification.groups,
+            order,
+            execution,
+            hamiltonian.num_qubits,
+        )
         return _SuzukiPrefactor(
             value,
             specification.partition,
@@ -710,6 +995,34 @@ def _suzuki_error_prefactor(
     )
 
 
+@lru_cache(maxsize=None)
+def _serial_suzuki_error_prefactor(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+) -> _SuzukiPrefactor:
+    return _compute_suzuki_error_prefactor(hamiltonian, order, partition)
+
+
+def _suzuki_error_prefactor(
+    hamiltonian: PauliHamiltonian,
+    order: int,
+    partition: TrotterPartition = "auto",
+    execution: CommutatorExecution | None = None,
+) -> _SuzukiPrefactor:
+    if execution is None or (execution.workers == 1 and execution.progress is None):
+        return _serial_suzuki_error_prefactor(hamiltonian, order, partition)
+    return execution.cached(
+        ("suzuki-prefactor", hamiltonian, order, partition),
+        lambda: _compute_suzuki_error_prefactor(
+            hamiltonian,
+            order,
+            partition,
+            execution,
+        ),
+    )
+
+
 def estimate_suzuki_error(
     hamiltonian: PauliHamiltonian,
     time: float,
@@ -717,6 +1030,9 @@ def estimate_suzuki_error(
     order: int = 2,
     *,
     partition: TrotterPartition = "auto",
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
 ) -> SuzukiErrorEstimate:
     """Estimate the operator-norm error of a partitioned Suzuki formula.
 
@@ -729,7 +1045,13 @@ def estimate_suzuki_error(
         raise ValueError("reps must be positive")
     if not np.isfinite(time):
         raise ValueError("time must be finite")
-    prefactor = _suzuki_error_prefactor(hamiltonian, order, partition)
+    with execution_scope(workers, _execution, progress) as execution:
+        prefactor = _suzuki_error_prefactor(
+            hamiltonian,
+            order,
+            partition,
+            execution,
+        )
     value = prefactor.value * abs(float(time)) ** (order + 1) / reps**order
     if value:
         value = float(np.nextafter(value, np.inf))

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 
+from ._commutator_execution import CommutatorExecution, CommutatorProgressCallback
+from ._progress import TqdmProgressRenderer, combine_callbacks
 from .analytical import ResourceModelProvenance, compile_resources_analytically
+from .error_models import ErrorAnalysis, MetricObservation
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec
 from .multiproduct import build_multiproduct_circuit_from_plan
@@ -29,6 +33,7 @@ class EvaluationReport:
     plan: SimulationPlan
     resources: ResourceEstimate
     resource_provenance: ResourceModelProvenance
+    observations: tuple[MetricObservation, ...] = ()
 
     @property
     def logical_counts(self) -> LogicalOperationCounts:
@@ -43,8 +48,31 @@ class EvaluationReport:
         return self.plan.error_metadata
 
     @property
+    def error_analysis(self) -> ErrorAnalysis:
+        return replace(self.plan.error_analysis, observations=self.observations)
+
+    @property
+    def parameter_selection_succeeded(self) -> bool:
+        return self.error_analysis.parameter_selection_succeeded
+
+    @property
+    def ideal_algorithm_target_certified(self) -> bool:
+        return self.error_analysis.ideal_algorithm_target_certified
+
+    @property
+    def implemented_circuit_target_certified(self) -> bool:
+        return self.error_analysis.implemented_circuit_target_certified
+
+    @property
     def error_budget(self) -> ErrorBudget:
         return self.plan.error_budget
+
+    def with_observations(
+        self,
+        observations: Iterable[MetricObservation],
+    ) -> EvaluationReport:
+        """Return this analytical report with empirical observations attached."""
+        return replace(self, observations=tuple(observations))
 
 
 def estimate_plan_resources(plan: SimulationPlan) -> EvaluationReport:
@@ -61,16 +89,32 @@ def estimate_resources(
     *,
     synthesis_error_fraction: float = 0.1,
     trotter_partition: TrotterPartition = "auto",
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    show_progress: bool = False,
+    _execution: CommutatorExecution | None = None,
 ) -> EvaluationReport:
     """Select one logical algorithm plan and estimate its analytical resources."""
-    plan = plan_simulation(
-        hamiltonian,
-        method,
-        time,
-        target_error,
-        synthesis_error_fraction=synthesis_error_fraction,
-        trotter_partition=trotter_partition,
-    )
+    renderer = TqdmProgressRenderer() if show_progress else None
+    try:
+        callback = combine_callbacks(
+            progress,
+            renderer.commutator if renderer is not None else None,
+        )
+        plan = plan_simulation(
+            hamiltonian,
+            method,
+            time,
+            target_error,
+            synthesis_error_fraction=synthesis_error_fraction,
+            trotter_partition=trotter_partition,
+            workers=workers,
+            progress=callback,
+            _execution=_execution,
+        )
+    finally:
+        if renderer is not None:
+            renderer.close()
     return estimate_plan_resources(plan)
 
 
@@ -93,6 +137,7 @@ def build_simulation_circuit(plan: SimulationPlan):
 
 def serialize_plan_metadata(plan: SimulationPlan) -> dict[str, object]:
     """Return a derived metadata view without introducing another data owner."""
+    analysis = plan.error_analysis
     return {
         "method_id": plan.method.method_id,
         "method_family": plan.family,
@@ -106,6 +151,13 @@ def serialize_plan_metadata(plan: SimulationPlan) -> dict[str, object]:
             "synthesis_error": plan.error_budget.synthesis_error,
         },
         "error_metadata": plan.error_metadata,
+        "certification_status": {
+            "parameter_selection_succeeded": analysis.parameter_selection_succeeded,
+            "ideal_algorithm_target": analysis.ideal_algorithm_target.outcome,
+            "ideal_algorithm_target_certified": (analysis.ideal_algorithm_target_certified),
+            "implemented_circuit_target": analysis.implemented_circuit_target.outcome,
+            "implemented_circuit_target_certified": (analysis.implemented_circuit_target_certified),
+        },
     }
 
 

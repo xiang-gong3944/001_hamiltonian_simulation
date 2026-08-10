@@ -16,6 +16,7 @@ notebook>=7.1,<8
 ipykernel>=6.29,<7
 nbconvert>=7.16,<8
 nbformat>=5.10,<6
+tqdm>=4.66,<5
 
 # QSP phase synthesis
 pyqsp>=0.1.6,<0.3

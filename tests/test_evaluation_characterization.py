@@ -1,7 +1,7 @@
-"""Behavior-preservation checks for the c88df30 structural-refactor baseline.
+"""Numerical parameter/resource checks for the c88df30 baseline.
 
-These tests intentionally characterize existing values and certification scopes.
-They do not assert that the underlying mathematical models are permanently correct.
+Error-certification semantics are tested separately because this session
+intentionally corrects their object and scope.
 """
 
 import json
@@ -58,6 +58,10 @@ def test_c88df30_structural_refactor_baseline(case):
 
     assert row["status"] == "ok"
     for field, expected in case["expected"].items():
+        if field.startswith(("bound_", "circuit_")) or field == (
+            "nominal_success_probability"
+        ):
+            continue
         if isinstance(expected, float):
             assert row[field] == pytest.approx(expected), field
         else:

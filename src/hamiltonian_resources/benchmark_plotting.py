@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -39,7 +40,222 @@ _METRIC_LABELS = {
     "rotation_count": "Rotation count",
     "toffoli_count": "Toffoli count",
     "depth": "Depth",
+    "segment_count": "Segment count",
+    "mpf_r_error": "MPF error-predicate segment threshold",
+    "mpf_r_time_1": "Mizuta first-time-condition segment threshold",
+    "mpf_r_time_2": "Mizuta mu-time-condition segment threshold",
 }
+_MPF_CONSTRAINT_MARKERS = {
+    "error": "o",
+    "time_1": "^",
+    "time_2": "s",
+    "joint_p0": "D",
+    "commuting_exact": "P",
+    "zero_time_exact": "P",
+    "multiple": "D",
+    "unknown": "X",
+}
+
+
+def _mpf_comparison_keys(frame: pd.DataFrame) -> list[str]:
+    keys = [
+        "sweep",
+        "hamiltonian_model",
+        "model_parameters_json",
+        "system_qubits",
+        "evolution_time",
+        "time_scaling_mode",
+        "time_scaling_coefficient",
+        "target_error",
+        "algorithm_error_budget",
+        "mpf_term_count",
+        "mpf_formal_order",
+        "mpf_branch_count_policy",
+        "mpf_schedule",
+        "rotation_synthesis_error",
+    ]
+    missing = set(keys) - set(frame.columns)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise ValueError(f"benchmark data cannot pair MPF bounds without: {names}")
+    return keys
+
+
+def compare_mpf_bounds(
+    frame: pd.DataFrame,
+    metric: str = "segment_count",
+) -> pd.DataFrame:
+    """Pair rigorous Low and Mizuta rows for the same implemented MPF.
+
+    The comparison is deliberately limited to concrete estimator rows. Policy
+    rows are excluded so that a selected best-bound row cannot be paired with
+    one of its own candidates.
+    """
+    validate_benchmark_frame(frame)
+    values = frame.copy()
+    if "mpf_bound_policy" not in values:
+        values["mpf_bound_policy"] = values["bound_method"]
+    if "mpf_active_constraints_json" not in values:
+        values["mpf_active_constraints_json"] = "[]"
+    if "commutator_cap_fallback" not in values:
+        values["commutator_cap_fallback"] = False
+    if "mpf_branch_count_policy" not in values:
+        values["mpf_branch_count_policy"] = "fixed"
+    values["mpf_branch_count_policy"] = values["mpf_branch_count_policy"].fillna(
+        "fixed"
+    )
+    values[metric] = _metric_values(values, metric)
+    policy = values["mpf_bound_policy"]
+    concrete = {
+        "low2019-l1-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+    }
+    values = values[
+        (values["status"] == "ok")
+        & (values["method_family"] == "multiproduct")
+        & values["bound_method"].isin(concrete)
+        & policy.isin(concrete)
+        & values["bound_rigorous"].fillna(False).astype(bool)
+        & values[metric].notna()
+        & (values[metric] > 0)
+    ].copy()
+    keys = _mpf_comparison_keys(values)
+    if values.duplicated([*keys, "bound_method"]).any():
+        raise ValueError("benchmark data contains duplicate concrete MPF bound rows")
+
+    shared = [
+        *keys,
+        "method_id",
+        "bound_method",
+        metric,
+        "mpf_active_constraints_json",
+        "commutator_cap_fallback",
+    ]
+    low = values[values["bound_method"] == "low2019-l1-ideal-rigorous"][shared]
+    mizuta = values[
+        values["bound_method"] == "mizuta2026-commutator-ideal-rigorous"
+    ][shared]
+    paired = low.merge(mizuta, on=keys, how="inner", suffixes=("_low", "_mizuta"))
+    if paired.empty:
+        raise ValueError("benchmark data contains no matched rigorous Low/Mizuta MPF rows")
+    paired = paired.rename(
+        columns={
+            f"{metric}_low": "low_value",
+            f"{metric}_mizuta": "mizuta_value",
+            "method_id_low": "low_method_id",
+            "method_id_mizuta": "mizuta_method_id",
+            "mpf_active_constraints_json_mizuta": "mizuta_active_constraints_json",
+            "commutator_cap_fallback_mizuta": "mizuta_commutator_cap_fallback",
+        }
+    )
+    paired["mizuta_to_low_ratio"] = paired["mizuta_value"] / paired["low_value"]
+    paired["tighter_bound_method"] = "tie"
+    paired.loc[
+        paired["low_value"] < paired["mizuta_value"], "tighter_bound_method"
+    ] = "low2019-l1-ideal-rigorous"
+    paired.loc[
+        paired["mizuta_value"] < paired["low_value"], "tighter_bound_method"
+    ] = "mizuta2026-commutator-ideal-rigorous"
+    return paired.sort_values(keys).reset_index(drop=True)
+
+
+def _active_constraint_label(raw: object) -> str:
+    try:
+        constraints = tuple(json.loads(str(raw)))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "unknown"
+    if len(constraints) == 1:
+        return str(constraints[0])
+    if len(constraints) > 1:
+        return "multiple"
+    return "unknown"
+
+
+def plot_mpf_crossover(
+    frame: pd.DataFrame,
+    *,
+    sweep: BenchmarkSweep,
+    metric: str = "segment_count",
+    ax: Axes | None = None,
+) -> Figure:
+    """Plot the matched Mizuta/Low resource ratio for fixed MPF structures."""
+    paired = compare_mpf_bounds(frame, metric)
+    if sweep not in {"system-size", "target-error"}:
+        raise ValueError("sweep must be 'system-size' or 'target-error'")
+    paired = paired[paired["sweep"] == sweep].copy()
+    if paired.empty:
+        raise ValueError(f"benchmark data contains no matched {sweep!r} MPF rows")
+    x_column = "system_qubits" if sweep == "system-size" else "target_error"
+    paired["active_constraint"] = paired["mizuta_active_constraints_json"].map(
+        _active_constraint_label
+    )
+
+    if ax is None:
+        figure, axis = plt.subplots(figsize=(9.2, 5.8))
+    else:
+        axis = ax
+        figure = axis.figure
+
+    colors = itertools.cycle(("#D55E00", "#0072B2", "#009E73", "#CC79A7"))
+    marker_labels: set[tuple[str, bool]] = set()
+    for (policy, schedule), values in paired.groupby(
+        ["mpf_branch_count_policy", "mpf_schedule"],
+        dropna=False,
+        sort=True,
+    ):
+        values = values.sort_values(x_column)
+        color = next(colors)
+        label = f"policy={policy}, schedule={schedule}"
+        axis.plot(
+            values[x_column],
+            values["mizuta_to_low_ratio"],
+            color=color,
+            linewidth=1.8,
+            label=label,
+        )
+        for _, row in values.iterrows():
+            constraint = str(row["active_constraint"])
+            fallback = bool(row["mizuta_commutator_cap_fallback"])
+            marker = _MPF_CONSTRAINT_MARKERS.get(constraint, "X")
+            marker_key = (constraint, fallback)
+            marker_label = None
+            if marker_key not in marker_labels:
+                marker_labels.add(marker_key)
+                marker_label = f"active={constraint}" + (" [fallback]" if fallback else "")
+            axis.scatter(
+                [row[x_column]],
+                [row["mizuta_to_low_ratio"]],
+                marker=marker,
+                s=55,
+                facecolors="none" if fallback else color,
+                edgecolors=color,
+                linewidths=1.3,
+                label=marker_label,
+                zorder=3,
+            )
+            axis.annotate(
+                f"J={int(row['mpf_term_count'])}, 2J={int(row['mpf_formal_order'])}",
+                (row[x_column], row["mizuta_to_low_ratio"]),
+                xytext=(4, 4),
+                textcoords="offset points",
+                fontsize=7,
+                color=color,
+                clip_on=True,
+            )
+    axis.axhline(1.0, color="#333333", linestyle="--", linewidth=1.2, label="crossover")
+    axis.set_xscale("log", base=10)
+    axis.set_yscale("log", base=10)
+    if sweep == "target-error":
+        axis.invert_xaxis()
+        axis.set_xlabel("Target simulation error epsilon")
+    else:
+        axis.set_xlabel("Number of system qubits")
+    axis.set_ylabel(f"Mizuta / Low {_METRIC_LABELS.get(metric, metric)}")
+    axis.set_title("Rigorous MPF finite-resource crossover")
+    axis.grid(True, which="both", alpha=0.28)
+    axis.legend(fontsize="small")
+    figure.tight_layout()
+    return figure
 
 
 def _sweep_frame(frame: pd.DataFrame, sweep: BenchmarkSweep) -> pd.DataFrame:
@@ -147,14 +363,8 @@ def select_best_by_family(
     result["selected_method_id"] = result["method_id"]
     result["selected_method_label"] = result["method_label"]
     family_labels = {
-        "trotter": "Best evaluated Trotter",
-        "multiproduct": (
-            "Best implemented-circuit-certified MPF"
-            if certification_policy == "implemented-circuit"
-            else "Best ideal-operator-certified MPF (circuit unproven)"
-            if certification_policy == "declared-bound-scope"
-            else "Best unconstrained MPF"
-        ),
+        "trotter": "Trotter",
+        "multiproduct": "MPF",
         "qsvt": "QSVT",
     }
     result["summary_label"] = result["method_family"].map(family_labels).fillna(
@@ -219,17 +429,25 @@ def plot_benchmark(
     yscale: str = "log",
     ybase: float = 10,
     summary: bool = False,
+    selection_metric: str | None = None,
     certification_policy: CertificationPolicy = "implemented-circuit",
     series_by: str | Sequence[str] = "method_label",
     ax: Axes | None = None,
 ) -> Figure:
-    """Plot any positive numeric benchmark metric with configurable axes and grouping."""
+    """Plot a benchmark metric in detailed or best-by-family summary form.
+
+    When ``summary`` is true, ``selection_metric`` chooses the resource used
+    to select one method per family and x value. It defaults to ``metric`` for
+    backward compatibility, while allowing (for example) a CNOT plot to show
+    the same methods selected for a T-count summary.
+    """
     selected = _sweep_frame(frame, sweep)
     selected[metric] = _metric_values(selected, metric)
     if summary:
+        resolved_selection_metric = selection_metric or metric
         selected = select_best_by_family(
             selected,
-            metric,
+            resolved_selection_metric,
             sweep=sweep,
             certification_policy=certification_policy,
         )
@@ -264,9 +482,9 @@ def plot_benchmark(
         family_variant[family] = variant + 1
         label = _series_label(key, columns)
         heuristic = not bool(_bound_target_satisfied(values).all())
-        if heuristic and "heuristic" not in label.lower():
+        if not summary and heuristic and "heuristic" not in label.lower():
             label += " [heuristic/non-certified]"
-        if family == "multiproduct":
+        if not summary and family == "multiproduct":
             circuit_rigorous = (
                 values["circuit_bound_rigorous"].fillna(False).astype(bool)
                 if "circuit_bound_rigorous" in values
@@ -274,10 +492,6 @@ def plot_benchmark(
             )
             if not bool(circuit_rigorous.all()):
                 label += " [ideal bound; circuit unproven]"
-        if summary and "selected_method_label" in values:
-            methods = list(dict.fromkeys(values["selected_method_label"].astype(str)))
-            if len(methods) > 1:
-                label += " [" + " → ".join(methods) + "]"
         axis.plot(
             values[x_column],
             values[metric],
@@ -290,6 +504,26 @@ def plot_benchmark(
             linewidth=2.0 if summary else 1.7,
             alpha=0.7 if heuristic else 1.0,
         )
+        if summary:
+            for _, row in values.iterrows():
+                annotation = None
+                if family == "trotter" and pd.notna(row.get("trotter_order")):
+                    annotation = f"p={int(row['trotter_order'])}"
+                elif family == "multiproduct" and pd.notna(row.get("mpf_term_count")):
+                    annotation = (
+                        f"J={int(row['mpf_term_count'])}, "
+                        f"2J={int(row['mpf_formal_order'])}"
+                    )
+                if annotation is not None:
+                    axis.annotate(
+                        annotation,
+                        (row[x_column], row[metric]),
+                        xytext=(4, 4),
+                        textcoords="offset points",
+                        fontsize=7,
+                        color=color,
+                        clip_on=True,
+                    )
 
     resolved_xscale = xscale or "log"
     if resolved_xscale not in {"linear", "log"}:
@@ -313,7 +547,9 @@ def plot_benchmark(
         sweep_title = "System-size scaling"
     axis.set_ylabel(_METRIC_LABELS.get(metric, metric.replace("_", " ")))
     qualifier = (
-        f"best of evaluated methods; policy={certification_policy}"
+        "best by "
+        f"{_METRIC_LABELS.get(selection_metric or metric, selection_metric or metric)}; "
+        f"policy={certification_policy}"
         if summary
         else "all methods; certification scope shown in labels"
     )

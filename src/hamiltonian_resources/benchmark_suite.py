@@ -17,6 +17,11 @@ from typing import Any, Callable, Literal, Mapping, Sequence, TypeAlias
 import numpy as np
 import pandas as pd
 
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgressCallback,
+)
+from ._progress import TqdmProgressRenderer, combine_callbacks
 from .evaluation import EvaluationReport, estimate_resources
 from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
 from .method_specs import (
@@ -27,6 +32,7 @@ from .method_specs import (
     default_methods,
 )
 from .planning import MPFPlan, QSVTPlan, TrotterPlan
+from .trotter import pauli_locality_parameters
 
 
 BenchmarkSweep: TypeAlias = Literal["system-size", "target-error"]
@@ -55,7 +61,37 @@ BENCHMARK_COLUMNS = (
     "trotter_order",
     "mpf_term_count",
     "mpf_formal_order",
+    "mpf_branch_count_policy",
+    "mpf_branch_count_policy_extensiveness_g",
+    "mpf_branch_count_policy_target_error",
     "segment_count",
+    "mpf_r_error",
+    "mpf_r_time_1",
+    "mpf_r_time_2",
+    "mpf_active_constraints_json",
+    "mpf_mu_upper",
+    "mpf_truncation_order_p0",
+    "mpf_auxiliary_error",
+    "mpf_auxiliary_allocation_fraction",
+    "mpf_local_commutator_error",
+    "mpf_local_truncated_bch_error",
+    "mpf_refined_lemma9_remainder",
+    "mpf_refined_lemma10_remainder",
+    "mpf_total_branchwise_bch_remainder",
+    "mpf_local_step_error",
+    "mpf_repeated_global_error",
+    "mpf_legacy_first_time_limit",
+    "mpf_legacy_first_condition_passed",
+    "mpf_second_time_limit",
+    "mpf_schedule_weights_json",
+    "mpf_schedule_weighted_extensiveness",
+    "mpf_exact_commutator_cutoff",
+    "mpf_locality_fallback",
+    "mpf_locality_fallback_reason",
+    "mpf_refined_tail_fallback_status",
+    "mpf_local_error_dominance",
+    "mpf_bound_policy",
+    "mpf_bound_candidates_json",
     "query_count",
     "qsvt_degree",
     "trotter_partition",
@@ -120,6 +156,9 @@ BENCHMARK_COLUMNS = (
 )
 
 _SCHEMA2_EXTENSION_COLUMNS = {
+    "mpf_branch_count_policy",
+    "mpf_branch_count_policy_extensiveness_g",
+    "mpf_branch_count_policy_target_error",
     "bound_reference",
     "bound_theorem_or_equations",
     "bound_components_json",
@@ -133,6 +172,33 @@ _SCHEMA2_EXTENSION_COLUMNS = {
     "locality_compatible",
     "commutator_cap_fallback",
     "commutator_bounds_json",
+    "mpf_r_error",
+    "mpf_r_time_1",
+    "mpf_r_time_2",
+    "mpf_active_constraints_json",
+    "mpf_mu_upper",
+    "mpf_truncation_order_p0",
+    "mpf_auxiliary_error",
+    "mpf_auxiliary_allocation_fraction",
+    "mpf_local_commutator_error",
+    "mpf_local_truncated_bch_error",
+    "mpf_refined_lemma9_remainder",
+    "mpf_refined_lemma10_remainder",
+    "mpf_total_branchwise_bch_remainder",
+    "mpf_local_step_error",
+    "mpf_repeated_global_error",
+    "mpf_legacy_first_time_limit",
+    "mpf_legacy_first_condition_passed",
+    "mpf_second_time_limit",
+    "mpf_schedule_weights_json",
+    "mpf_schedule_weighted_extensiveness",
+    "mpf_exact_commutator_cutoff",
+    "mpf_locality_fallback",
+    "mpf_locality_fallback_reason",
+    "mpf_refined_tail_fallback_status",
+    "mpf_local_error_dominance",
+    "mpf_bound_policy",
+    "mpf_bound_candidates_json",
     "mpf_physical_branch_count",
     "mpf_negative_coefficient_count",
     "mpf_padding_branch_count",
@@ -167,9 +233,7 @@ class HamiltonianSpec:
 
     model: str = "transverse_field_ising"
     parameters: Mapping[str, Any] = field(default_factory=dict)
-    factory: Callable[..., PauliHamiltonian] | None = field(
-        default=None, repr=False, compare=False
-    )
+    factory: Callable[..., PauliHamiltonian] | None = field(default=None, repr=False, compare=False)
 
     def validate(self) -> None:
         self.parameters = dict(self.parameters)
@@ -239,9 +303,7 @@ class BenchmarkConfig:
         )
     )
     system_sizes: Sequence[int] = field(default_factory=lambda: [2, 4, 6, 8, 10, 12])
-    target_errors: Sequence[float] = field(
-        default_factory=lambda: [0.1, 0.03, 0.01, 0.003, 0.001]
-    )
+    target_errors: Sequence[float] = field(default_factory=lambda: [0.1, 0.03, 0.01, 0.003, 0.001])
     time: TimeScaling = field(default_factory=TimeScaling)
     fixed_system_size: int = 8
     fixed_target_error: float = 1e-3
@@ -275,9 +337,7 @@ class BenchmarkConfig:
             raise ValueError("synthesis_error_fraction must lie in (0, 1)")
         self.synthesis_error_fraction = float(self.synthesis_error_fraction)
         if self.trotter_partition not in {"auto", "individual", "commuting"}:
-            raise ValueError(
-                "trotter_partition must be 'auto', 'individual', or 'commuting'"
-            )
+            raise ValueError("trotter_partition must be 'auto', 'individual', or 'commuting'")
         self.methods = list(self.methods)
         if not self.methods:
             raise ValueError("methods must not be empty")
@@ -305,9 +365,7 @@ class BenchmarkConfig:
 
     @property
     def digest(self) -> str:
-        payload = json.dumps(
-            self.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False
-        )
+        payload = json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -408,6 +466,7 @@ def _evaluate_method(
     evolution_time: float,
     target_error: float,
     method: MethodSpec,
+    execution: CommutatorExecution,
 ) -> EvaluationReport:
     return estimate_resources(
         hamiltonian,
@@ -416,6 +475,8 @@ def _evaluate_method(
         target_error,
         synthesis_error_fraction=config.synthesis_error_fraction,
         trotter_partition=config.trotter_partition,
+        workers=execution.workers,
+        _execution=execution,
     )
 
 
@@ -435,10 +496,113 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         )
     elif isinstance(plan, MPFPlan):
         error = plan.error_estimate
+        diagnostics = error.segment_diagnostics
         structure = plan.lcu_structure
         per_segment = plan.logical_counts.as_dict()["per_segment"]
+        if (
+            diagnostics is None
+            or diagnostics.local_commutator_error is None
+            or diagnostics.total_branchwise_bch_remainder is None
+        ):
+            local_error_dominance = None
+        elif diagnostics.local_commutator_error > diagnostics.total_branchwise_bch_remainder:
+            local_error_dominance = "commutator"
+        elif diagnostics.local_commutator_error < diagnostics.total_branchwise_bch_remainder:
+            local_error_dominance = "bch"
+        else:
+            local_error_dominance = "tie"
         result.update(
             segment_count=plan.segments,
+            mpf_term_count=plan.term_count,
+            mpf_formal_order=plan.formal_order,
+            mpf_branch_count_policy=plan.branch_count_selection.policy,
+            mpf_branch_count_policy_extensiveness_g=(
+                plan.branch_count_selection.extensiveness_g
+            ),
+            mpf_branch_count_policy_target_error=(
+                plan.branch_count_selection.target_error
+            ),
+            mpf_r_error=(diagnostics.r_error if diagnostics is not None else None),
+            mpf_r_time_1=(diagnostics.r_time_1 if diagnostics is not None else None),
+            mpf_r_time_2=(diagnostics.r_time_2 if diagnostics is not None else None),
+            mpf_active_constraints_json=json.dumps(
+                diagnostics.active_constraints if diagnostics is not None else (),
+                separators=(",", ":"),
+            ),
+            mpf_mu_upper=(diagnostics.mu_upper if diagnostics is not None else None),
+            mpf_truncation_order_p0=(
+                diagnostics.truncation_order_p0 if diagnostics is not None else None
+            ),
+            mpf_auxiliary_error=(
+                diagnostics.auxiliary_error if diagnostics is not None else None
+            ),
+            mpf_auxiliary_allocation_fraction=(
+                diagnostics.auxiliary_allocation_fraction
+                if diagnostics is not None
+                else None
+            ),
+            mpf_local_commutator_error=(
+                diagnostics.local_commutator_error if diagnostics is not None else None
+            ),
+            mpf_local_truncated_bch_error=(
+                diagnostics.local_truncated_bch_error if diagnostics is not None else None
+            ),
+            mpf_refined_lemma9_remainder=(
+                diagnostics.refined_lemma9_remainder if diagnostics is not None else None
+            ),
+            mpf_refined_lemma10_remainder=(
+                diagnostics.refined_lemma10_remainder if diagnostics is not None else None
+            ),
+            mpf_total_branchwise_bch_remainder=(
+                diagnostics.total_branchwise_bch_remainder
+                if diagnostics is not None
+                else None
+            ),
+            mpf_local_step_error=(
+                diagnostics.local_step_error if diagnostics is not None else None
+            ),
+            mpf_repeated_global_error=(
+                diagnostics.repeated_global_error if diagnostics is not None else None
+            ),
+            mpf_legacy_first_time_limit=(
+                diagnostics.legacy_first_time_limit if diagnostics is not None else None
+            ),
+            mpf_legacy_first_condition_passed=(
+                diagnostics.legacy_first_condition_passed if diagnostics is not None else None
+            ),
+            mpf_second_time_limit=(
+                diagnostics.second_time_limit if diagnostics is not None else None
+            ),
+            mpf_schedule_weights_json=json.dumps(
+                diagnostics.schedule_weights if diagnostics is not None else (),
+                separators=(",", ":"),
+            ),
+            mpf_schedule_weighted_extensiveness=(
+                diagnostics.schedule_weighted_extensiveness
+                if diagnostics is not None
+                else None
+            ),
+            mpf_exact_commutator_cutoff=(
+                diagnostics.max_exact_nested_commutator_order
+                if diagnostics is not None
+                else None
+            ),
+            mpf_locality_fallback=(
+                diagnostics.used_locality_fallback if diagnostics is not None else None
+            ),
+            mpf_locality_fallback_reason=(
+                diagnostics.locality_fallback_reason if diagnostics is not None else None
+            ),
+            mpf_refined_tail_fallback_status=(
+                diagnostics.refined_tail_fallback_status if diagnostics is not None else None
+            ),
+            mpf_local_error_dominance=local_error_dominance,
+            mpf_bound_policy=(error.requested_method or plan.method.error_method),
+            mpf_bound_candidates_json=json.dumps(
+                [candidate.as_dict() for candidate in error.bound_candidates],
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
             query_count=plan.logical_counts.as_dict()["totals"]["controlled_s2"],
             bound_components_json=json.dumps(
                 dict(error.bound_components), sort_keys=True, separators=(",", ":")
@@ -471,15 +635,33 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
         )
     elif isinstance(plan, QSVTPlan):
         result.update(
-            query_count=plan.logical_counts.as_dict()["totals"][
-                "block_encoding_query_slot"
-            ],
+            query_count=plan.logical_counts.as_dict()["totals"]["block_encoding_query_slot"],
             qsvt_degree=plan.degree,
             lcu_normalization=2.0,
             amplitude_amplification="one robust OAA round",
             amplitude_amplification_rounds=plan.oaa_rounds,
             good_subspace="component, quadrature, and index registers all-zero",
-            nominal_success_probability=1.0,
+            nominal_success_probability=None,
+            bound_components_json=json.dumps(
+                dict(result["bound_components"]),
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            bound_assumptions_json=json.dumps(
+                result["bound_assumptions"],
+                separators=(",", ":"),
+            ),
+        )
+    if "bound_components" in result and "bound_components_json" not in result:
+        result["bound_components_json"] = json.dumps(
+            dict(result["bound_components"]),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    if "bound_assumptions" in result and "bound_assumptions_json" not in result:
+        result["bound_assumptions_json"] = json.dumps(
+            result["bound_assumptions"],
+            separators=(",", ":"),
         )
     resource = report.resources
     result.update(
@@ -555,11 +737,21 @@ def _base_record(
         method_family=method.family,
         method_label=method.label,
         trotter_order=method.order if isinstance(method, TrotterMethod) else None,
-        mpf_term_count=(
-            method.term_count if isinstance(method, MultiproductMethod) else None
-        ),
+        mpf_term_count=(method.term_count if isinstance(method, MultiproductMethod) else None),
         mpf_formal_order=(
-            2 * method.term_count if isinstance(method, MultiproductMethod) else None
+            2 * method.term_count
+            if isinstance(method, MultiproductMethod) and method.term_count is not None
+            else None
+        ),
+        mpf_branch_count_policy=(
+            method.branch_count_policy
+            if isinstance(method, MultiproductMethod)
+            else None
+        ),
+        mpf_branch_count_policy_target_error=(
+            target_error * (1 - config.synthesis_error_fraction)
+            if isinstance(method, MultiproductMethod)
+            else None
         ),
         algorithm_error_budget=target_error * (1 - config.synthesis_error_fraction),
         **run_metadata["software"],
@@ -567,13 +759,15 @@ def _base_record(
     return record
 
 
-def run_benchmark(
+def _run_benchmark(
     config: BenchmarkConfig,
     sweeps: Sequence[BenchmarkSweep] | BenchmarkSweep = (
         "system-size",
         "target-error",
     ),
     progress: ProgressCallback | None = None,
+    *,
+    execution: CommutatorExecution,
 ) -> pd.DataFrame:
     """Run analytical sweeps in memory without writing files."""
     if not isinstance(config, BenchmarkConfig):
@@ -618,12 +812,19 @@ def run_benchmark(
                     hamiltonian_alpha=hamiltonian.alpha,
                     hamiltonian_term_count=hamiltonian.term_count,
                 )
+                if (
+                    isinstance(method, MultiproductMethod)
+                    and method.branch_count_policy == "mizuta2026-theorem6"
+                ):
+                    _, extensiveness_g = pauli_locality_parameters(hamiltonian)
+                    record["mpf_branch_count_policy_extensiveness_g"] = extensiveness_g
                 report = _evaluate_method(
                     hamiltonian,
                     config,
                     evolution_time,
                     target_error,
                     method,
+                    execution,
                 )
                 record.update(_report_metadata(report))
             except Exception as exc:
@@ -649,6 +850,41 @@ def run_benchmark(
     frame = pd.DataFrame.from_records(records, columns=BENCHMARK_COLUMNS)
     validate_benchmark_frame(frame)
     return frame
+
+
+def run_benchmark(
+    config: BenchmarkConfig,
+    sweeps: Sequence[BenchmarkSweep] | BenchmarkSweep = (
+        "system-size",
+        "target-error",
+    ),
+    progress: ProgressCallback | None = None,
+    *,
+    workers: int = 1,
+    commutator_progress: CommutatorProgressCallback | None = None,
+    show_progress: bool = False,
+) -> pd.DataFrame:
+    """Run analytical sweeps in memory without writing files."""
+    renderer = TqdmProgressRenderer() if show_progress else None
+    try:
+        outer_callback = combine_callbacks(
+            progress,
+            renderer.benchmark if renderer is not None else None,
+        )
+        inner_callback = combine_callbacks(
+            commutator_progress,
+            renderer.commutator if renderer is not None else None,
+        )
+        with CommutatorExecution(workers, inner_callback) as execution:
+            return _run_benchmark(
+                config,
+                sweeps=sweeps,
+                progress=outer_callback,
+                execution=execution,
+            )
+    finally:
+        if renderer is not None:
+            renderer.close()
 
 
 def validate_benchmark_frame(frame: pd.DataFrame) -> None:
@@ -714,17 +950,27 @@ def _method_from_dict(raw: Mapping[str, Any]) -> MethodSpec:
             raise ValueError("Trotter method requires only family and order")
         return TrotterMethod(raw["order"])
     if family == "multiproduct":
-        unknown = set(raw) - {"family", "term_count", "schedule", "error_method"}
-        if unknown or "term_count" not in raw:
+        unknown = set(raw) - {
+            "family",
+            "term_count",
+            "schedule",
+            "error_method",
+            "branch_count_policy",
+        }
+        policy = raw.get("branch_count_policy", "fixed")
+        if unknown or (policy == "fixed" and "term_count" not in raw):
             raise ValueError(
-                "multiproduct method requires family, term_count, and optional "
+                "fixed multiproduct method requires family, term_count, and optional "
                 "schedule/error_method"
             )
-        return MultiproductMethod(
-            raw["term_count"],
+        method = MultiproductMethod(
+            raw.get("term_count"),
             raw.get("schedule", "new"),
             raw.get("error_method", "low2019-l1-ideal-rigorous"),
+            policy,
         )
+        method.validate()
+        return method
     if family == "qsvt":
         if set(raw) != {"family"}:
             raise ValueError("QSVT method accepts only the family field")
@@ -825,22 +1071,46 @@ def load_benchmark(path: str | Path) -> pd.DataFrame:
     validate_benchmark_frame(frame)
     if _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
         is_mpf = frame["method_family"] == "multiproduct"
+        is_qsvt = frame["method_family"] == "qsvt"
         rigorous = frame["bound_rigorous"].fillna(False).astype(bool)
-        within_bound = (
-            pd.to_numeric(frame["bound_value"], errors="coerce")
-            <= pd.to_numeric(frame["algorithm_error_budget"], errors="coerce")
+        within_bound = pd.to_numeric(frame["bound_value"], errors="coerce") <= pd.to_numeric(
+            frame["algorithm_error_budget"], errors="coerce"
         )
-        frame["bound_scope"] = np.where(
-            is_mpf, "ideal-mpf", "implemented-algorithm"
+        frame["bound_scope"] = np.select(
+            [is_mpf, is_qsvt],
+            ["ideal-mpf", "legacy-qsvt-unscoped"],
+            default="implemented-product-formula",
         )
-        frame["bound_target_satisfied"] = rigorous & within_bound
-        frame["circuit_bound_scope"] = np.where(
-            is_mpf, "amplified-shared-ancilla", "implemented-algorithm"
+        frame["bound_target_satisfied"] = rigorous & within_bound & ~is_qsvt
+        frame["circuit_bound_scope"] = np.select(
+            [is_mpf, is_qsvt],
+            [
+                "repeated-shared-ancilla-good-block",
+                "implemented-qsvt-floating-phase-circuit",
+            ],
+            default="implemented-product-formula",
         )
-        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf
-        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf
+        frame["circuit_bound_rigorous"] = rigorous & ~is_mpf & ~is_qsvt
+        frame["circuit_target_satisfied"] = rigorous & within_bound & ~is_mpf & ~is_qsvt
         for column in _SCHEMA2_EXTENSION_COLUMNS - set(frame.columns):
             frame[column] = None
+    mpf_rows = frame["method_family"] == "multiproduct"
+    frame.loc[
+        mpf_rows & frame["mpf_branch_count_policy"].isna(),
+        "mpf_branch_count_policy",
+    ] = "fixed"
+    legacy_qsvt_claim = (frame["method_family"] == "qsvt") & (
+        frame["bound_scope"] == "implemented-algorithm"
+    )
+    frame.loc[legacy_qsvt_claim, "bound_scope"] = "legacy-qsvt-unscoped"
+    frame.loc[legacy_qsvt_claim, "bound_rigorous"] = False
+    frame.loc[legacy_qsvt_claim, "bound_target_satisfied"] = False
+    frame.loc[
+        frame["method_family"] == "qsvt",
+        "circuit_bound_scope",
+    ] = "implemented-qsvt-floating-phase-circuit"
+    frame.loc[frame["method_family"] == "qsvt", "circuit_bound_rigorous"] = False
+    frame.loc[frame["method_family"] == "qsvt", "circuit_target_satisfied"] = False
     return frame
 
 
@@ -860,8 +1130,7 @@ def save_benchmark(
         raise ValueError("save_benchmark requires exactly one generated run")
     timestamp = datetime.fromisoformat(generated[0]).astimezone(timezone.utc)
     directory_name = (
-        f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{digests[0][:8]}_"
-        f"{run_ids[0].replace('-', '')[:8]}"
+        f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{digests[0][:8]}_{run_ids[0].replace('-', '')[:8]}"
     )
     run_directory = Path(output_root).resolve() / directory_name
     run_directory.mkdir(parents=True, exist_ok=False)

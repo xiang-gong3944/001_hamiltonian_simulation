@@ -25,6 +25,7 @@ from .circuit_utils import (
     build_three_step_oaa,
     zero_projector_phase_gate,
 )
+from .error_models import CalibrationMetadata, MetricObservation, oaa_good_block_error_bound
 from .hamiltonians import PauliHamiltonian
 
 
@@ -55,6 +56,45 @@ class HamiltonianSimulationPhases:
     @property
     def sine_degree(self) -> int:
         return len(self.sine) - 1
+
+    @property
+    def observations(self) -> tuple[MetricObservation, MetricObservation]:
+        context = CalibrationMetadata(
+            domain=(-1.0, 1.0),
+            sample_count=2049,
+            sampling_rule="Chebyshev extrema",
+            tolerance=self.epsilon / 18,
+        )
+        return (
+            MetricObservation(
+                self.cosine_phase_residual,
+                "cosine-phase-residual",
+                "maximum-grid-response-residual",
+                "floating-pyqsp-phase-reconstruction",
+                context,
+            ),
+            MetricObservation(
+                self.sine_phase_residual,
+                "sine-phase-residual",
+                "maximum-grid-response-residual",
+                "floating-pyqsp-phase-reconstruction",
+                context,
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class QSVTPolynomialError:
+    """Rigorous errors for the exact scaled Jacobi--Anger polynomials."""
+
+    truncation_order: int
+    degree: int
+    scale: float
+    cosine_tail_bound: float
+    sine_tail_bound: float
+    scaling_error: float
+    polynomial_error: float
+    amplified_good_block_error: float
 
 
 def _bessel_parity_tail_bound(abs_time: float, first_omitted_degree: int) -> float:
@@ -193,6 +233,41 @@ def estimate_qsvt_degree(alpha_time: float, epsilon: float) -> int:
     return 2 * upper + 1
 
 
+def qsvt_polynomial_error_bound(
+    alpha_time: float,
+    epsilon: float,
+    degree: int,
+) -> QSVTPolynomialError:
+    """Bound the exact scaled polynomial and its ideal cubic-OAA image.
+
+    ``degree`` is the odd sine degree ``2K+1``.  The corresponding cosine
+    degree is ``2K`` and the first omitted parity degrees are ``2K+2`` and
+    ``2K+3``.  Floating-point phase synthesis is deliberately outside scope.
+    """
+    if not np.isfinite(alpha_time) or alpha_time < 0:
+        raise ValueError("alpha_time must be finite and nonnegative")
+    if not 0 < epsilon < 0.5:
+        raise ValueError("epsilon must lie in (0, 1/2)")
+    if degree < 1 or degree % 2 != 1:
+        raise ValueError("QSVT degree must be a positive odd integer")
+    truncation_order = (degree - 1) // 2
+    cosine_tail = _bessel_parity_tail_bound(abs(alpha_time), degree + 1)
+    sine_tail = _bessel_parity_tail_bound(abs(alpha_time), degree + 2)
+    scale = 1 - epsilon / 18
+    scaling_error = 1 - scale
+    polynomial_error = scaling_error + scale * (cosine_tail + sine_tail)
+    return QSVTPolynomialError(
+        truncation_order=truncation_order,
+        degree=degree,
+        scale=scale,
+        cosine_tail_bound=cosine_tail,
+        sine_tail_bound=sine_tail,
+        scaling_error=scaling_error,
+        polynomial_error=polynomial_error,
+        amplified_good_block_error=oaa_good_block_error_bound(polynomial_error),
+    )
+
+
 def synthesize_hamsim_phases(
     alpha_time: float,
     epsilon: float,
@@ -201,9 +276,10 @@ def synthesize_hamsim_phases(
 ) -> HamiltonianSimulationPhases:
     """Synthesize a common-scale cosine/sine phase pair.
 
-    The total target error is split between Jacobi--Anger truncation, the
-    boundary safety scale, and numerical phase reconstruction.  The resulting
-    scalar response is checked a posteriori before the phase set is returned.
+    The synthesis tolerance is split between Jacobi--Anger truncation, the
+    boundary safety scale, and numerical phase reconstruction. The scalar
+    response is checked on a finite grid before return; that residual remains
+    an empirical observation rather than a uniform circuit certificate.
     """
     if not np.isfinite(alpha_time) or alpha_time == 0:
         raise ValueError("alpha_time must be finite and nonzero")

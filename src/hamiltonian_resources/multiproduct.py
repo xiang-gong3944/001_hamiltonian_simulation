@@ -9,7 +9,8 @@ before the same branch register is reused for the next simulation segment.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import lru_cache
 from numbers import Integral
 from typing import Literal, TypeAlias
 
@@ -17,6 +18,17 @@ import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
 
+from ._commutator_execution import (
+    CommutatorExecution,
+    CommutatorProgress,
+    CommutatorProgressCallback,
+    execution_scope,
+)
+from ._mizuta_bch import (
+    MizutaRefinedRemainder,
+    mizuta_schedule_weights,
+    refined_mizuta_remainder,
+)
 from .circuit_utils import (
     build_three_step_oaa,
     index_state_phase_gate,
@@ -26,6 +38,7 @@ from .hamiltonians import PauliHamiltonian
 from .trotter import (
     PauliNestedCommutatorBounds,
     build_trotter_circuit,
+    pauli_locality_parameters,
     pauli_nested_commutator_bounds,
     suzuki_commutator_bounds,
 )
@@ -33,9 +46,13 @@ from .trotter import (
 
 _OAA_NORMALIZATION = 2.0
 MPFSchedule = Literal["new", "legacy"]
+MPFBranchCountPolicy: TypeAlias = Literal["fixed", "mizuta2026-theorem6"]
 MPFErrorMethod: TypeAlias = Literal[
     "low2019-l1-ideal-rigorous",
+    "childs2021-w2-triangle-ideal-rigorous",
     "mizuta2026-commutator-ideal-rigorous",
+    "mizuta2026-theorem3-legacy-ideal-rigorous",
+    "best-rigorous-ideal",
     "low-rigorous",
     "legacy-w2-proxy",
 ]
@@ -44,12 +61,17 @@ MPFErrorScope: TypeAlias = Literal["ideal-mpf", "amplified-shared-ancilla"]
 
 @dataclass(frozen=True)
 class MPFErrorEstimate:
-    """An MPF error estimate with explicit theorem and circuit scope.
+    """Compatibility view of one family-specific MPF sizing estimate.
+
+    ``m`` is the repository's backward-compatible name for the MPF branch
+    count ``J``; ``formal_order`` is the paper's MPF order and equals ``2J``
+    for the implemented symmetric second-order schedules.
 
     ``rigorous`` certifies ``error`` only for ``scope``.  In particular, the
     Low--Kliuchnikov--Wiebe bound implemented here applies to the ideal MPF
-    operator.  ``circuit_rigorous`` remains false because the repeated robust-
-    OAA shared-ancilla circuit needs a separate composition proof.
+    operator. The plan's canonical ``ErrorAnalysis`` derives one-segment and
+    repeated-good-block claims separately; the legacy ``circuit_*`` fields on
+    this adapter remain conservative for backward compatibility.
     """
 
     error: float
@@ -64,6 +86,8 @@ class MPFErrorEstimate:
     method: MPFErrorMethod
     scope: MPFErrorScope
     rigorous: bool
+    local_error: float | None = None
+    local_error_rigorous: bool = False
     circuit_scope: MPFErrorScope = "amplified-shared-ancilla"
     circuit_rigorous: bool = False
     reference: str = ""
@@ -77,6 +101,88 @@ class MPFErrorEstimate:
     max_exact_nested_commutator_order: int = 0
     locality_compatible: bool = False
     commutator_bounds: tuple[tuple[int, float], ...] = ()
+    segment_diagnostics: MPFSegmentDiagnostics | None = None
+    requested_method: MPFErrorMethod | None = None
+    bound_candidates: tuple[MPFBoundCandidateSummary, ...] = ()
+
+
+@dataclass(frozen=True)
+class MPFBranchCountSelection:
+    """Resolved physical MPF order and the inputs used to select it."""
+
+    policy: MPFBranchCountPolicy
+    term_count: int
+    formal_order: int
+    num_qubits: int
+    extensiveness_g: float | None
+    time: float
+    target_error: float
+    schedule: MPFSchedule
+
+    @property
+    def branch_count(self) -> int:
+        """Selected theorem notation ``J`` (the number of MPF branches)."""
+        return self.term_count
+
+
+@dataclass(frozen=True)
+class MPFBoundCandidateSummary:
+    """Compact provenance for one estimator considered by a bound policy."""
+
+    method: MPFErrorMethod
+    segments: int
+    error: float
+    rigorous: bool
+    fallback_reason: str | None = None
+    max_exact_nested_commutator_order: int = 0
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "method": self.method,
+            "segments": self.segments,
+            "error": self.error,
+            "rigorous": self.rigorous,
+            "fallback_reason": self.fallback_reason,
+            "max_exact_nested_commutator_order": self.max_exact_nested_commutator_order,
+        }
+
+
+@dataclass(frozen=True)
+class MPFSegmentDiagnostics:
+    """Exact lower-bound decomposition used by MPF segment selection.
+
+    Each reported threshold is obtained by rerunning the corresponding
+    candidate predicate.  In particular, Mizuta diagnostics recompute the
+    candidate-dependent truncation order and commutator parameter rather than
+    freezing their values at the selected row.
+    """
+
+    r_error: int
+    r_time_1: int | None
+    r_time_2: int | None
+    active_constraints: tuple[str, ...]
+    truncation_order_p0: int | None = None
+    mu_upper: float | None = None
+    auxiliary_error: float | None = None
+    auxiliary_allocation_fraction: float | None = None
+    local_commutator_error: float | None = None
+    local_truncated_bch_error: float | None = None
+    allocation_strategy: str = "not-applicable"
+    additional_constraints: tuple[tuple[str, int], ...] = ()
+    refined_lemma9_remainder: float | None = None
+    refined_lemma10_remainder: float | None = None
+    total_branchwise_bch_remainder: float | None = None
+    local_step_error: float | None = None
+    repeated_global_error: float | None = None
+    legacy_first_time_limit: float | None = None
+    legacy_first_condition_passed: bool | None = None
+    second_time_limit: float | None = None
+    schedule_weights: tuple[float, ...] = ()
+    schedule_weighted_extensiveness: float | None = None
+    max_exact_nested_commutator_order: int | None = None
+    used_locality_fallback: bool | None = None
+    locality_fallback_reason: str | None = None
+    refined_tail_fallback_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +259,78 @@ def optimal_mpf_exponents(
         return table[int(m)]
     except KeyError as error:
         raise ValueError("m must lie between 2 and 15") from error
+
+
+def resolve_mpf_branch_count(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    target_error: float,
+    *,
+    policy: MPFBranchCountPolicy = "fixed",
+    term_count: int | None = None,
+    schedule: MPFSchedule = "new",
+) -> MPFBranchCountSelection:
+    """Resolve fixed or Mizuta-Theorem-6-prescribed MPF branch count ``J``.
+
+    ``target_error`` is the ideal-algorithm budget used by the subsequent MPF
+    bound.  It is intentionally unrelated to the auxiliary BCH error used by
+    the legacy printed-Theorem-3 estimator.
+    """
+    if not isinstance(hamiltonian, PauliHamiltonian):
+        raise TypeError("hamiltonian must be a PauliHamiltonian")
+    if not math.isfinite(time):
+        raise ValueError("time must be finite")
+    if not math.isfinite(target_error) or not 0.0 < target_error <= 1.0:
+        raise ValueError("target_error must lie in (0, 1]")
+    if policy == "fixed":
+        if term_count is None:
+            raise ValueError("fixed MPF branch-count policy requires term_count")
+        selected = term_count
+        extensiveness_g = None
+    elif policy == "mizuta2026-theorem6":
+        if term_count is not None:
+            raise ValueError(
+                "mizuta2026-theorem6 branch-count policy requires term_count=None"
+            )
+        _, extensiveness_g = pauli_locality_parameters(hamiltonian)
+        absolute_time = abs(float(time))
+        if extensiveness_g == 0.0 or absolute_time == 0.0:
+            selected = 2
+        else:
+            log_ratio = (
+                math.log(hamiltonian.num_qubits)
+                + math.log(extensiveness_g)
+                + math.log(absolute_time)
+                - math.log(target_error)
+            )
+            selected = max(2, math.ceil(0.5 * log_ratio))
+    else:
+        raise ValueError(
+            "branch_count_policy must be 'fixed' or 'mizuta2026-theorem6'"
+        )
+
+    try:
+        optimal_mpf_exponents(selected, schedule=schedule)
+    except (TypeError, ValueError) as error:
+        if policy == "mizuta2026-theorem6":
+            raise ValueError(
+                "mizuta2026-theorem6 branch-count policy selected unsupported "
+                f"J={selected} from N={hamiltonian.num_qubits}, "
+                f"g={extensiveness_g!r}, |t|={abs(float(time))!r}, "
+                f"epsilon={float(target_error)!r}, schedule={schedule!r}; "
+                "registered schedules support only 2 <= J <= 15"
+            ) from error
+        raise
+    return MPFBranchCountSelection(
+        policy=policy,
+        term_count=int(selected),
+        formal_order=2 * int(selected),
+        num_qubits=hamiltonian.num_qubits,
+        extensiveness_g=extensiveness_g,
+        time=abs(float(time)),
+        target_error=float(target_error),
+        schedule=schedule,
+    )
 
 
 def multiproduct_coefficients(
@@ -258,6 +436,27 @@ def _low_ideal_mpf_bound(
     return error, prefactor
 
 
+def _low_local_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    m: int,
+    segments: int,
+    coefficient_l1_norm: float,
+) -> float:
+    """Evaluate the one-step Low--Kliuchnikov--Wiebe Eq. (14) bound."""
+    formal_order = 2 * m
+    scaled_time = hamiltonian.alpha * abs(float(time)) / segments
+    if scaled_time == 0:
+        return 0.0
+    log_error = (
+        math.log(2 * coefficient_l1_norm)
+        + (formal_order + 1) * math.log(scaled_time)
+        - math.lgamma(formal_order + 2)
+        + scaled_time
+    )
+    return math.exp(log_error) if log_error < 709 else math.inf
+
+
 def _log1p_exp(value: float) -> float:
     """Return ``log(1 + exp(value))`` without overflow."""
     if value > 0:
@@ -293,9 +492,7 @@ def _low_log_ideal_mpf_bound(
         + scaled_time
     )
     log_global_error = (
-        log_step_error
-        + math.log(segments)
-        + (segments - 1) * _log1p_exp(log_step_error)
+        log_step_error + math.log(segments) + (segments - 1) * _log1p_exp(log_step_error)
     )
     return log_global_error, prefactor_log
 
@@ -308,18 +505,28 @@ def _logsumexp(values: list[float]) -> float:
     return maximum + math.log(math.fsum(math.exp(value - maximum) for value in values))
 
 
+@lru_cache(maxsize=None)
 def _mizuta_mu_upper_bound(
     commutators: PauliNestedCommutatorBounds,
     *,
     base_order: int = 2,
 ) -> float:
-    """Upper-bound Mizuta 2026 Eq. (61) by a finite polynomial root.
+    """Upper-bound Mizuta 2026 Eq. (47) by a finite polynomial root.
 
     Let ``A(x)=sum_q alpha_com,q x^q`` for ``base_order < q <= p0``.
     If ``A(x_*)=1``, every coefficient of ``A(x_*)^n`` is at most one.
-    Therefore the supremum in Eq. (61) is at most ``1/x_*``. This retains
+    Therefore the supremum in Eq. (47) is at most ``1/x_*``. This retains
     every finite commutator order required by Theorem 4 without enumerating
     its unbounded repetition index ``n``.
+
+    The formal-order restriction in Eq. (47) does not lower this supremum.
+    The normalized weights ``alpha_com,q * x_*^q`` form a finite probability
+    distribution.  A largest coefficient of its ``n``-fold convolution loses
+    only a polynomial factor in ``n``, while its degree grows linearly and is
+    eventually above every fixed formal-order cutoff.  Its degree root thus
+    converges to ``1/x_*``.  The root is consequently sharp for nonzero
+    supplied nonnegative data and remains a rigorous upper bound when some
+    ``alpha_com,q`` values are themselves upper bounds.
     """
     log_terms = [
         (order, math.log(commutators.at(order)))
@@ -337,9 +544,7 @@ def _mizuta_mu_upper_bound(
     upper = lower + math.log(len(log_terms)) / min(order for order, _ in log_terms)
 
     def log_polynomial(log_mu: float) -> float:
-        return _logsumexp(
-            [log_value - order * log_mu for order, log_value in log_terms]
-        )
+        return _logsumexp([log_value - order * log_mu for order, log_value in log_terms])
 
     for _ in range(80):
         midpoint = (lower + upper) / 2
@@ -358,69 +563,222 @@ def _repeated_step_error(step_error: float, segments: int) -> float:
         return 0.0
     if not math.isfinite(step_error):
         return math.inf
-    log_error = (
-        math.log(step_error)
-        + math.log(segments)
-        + (segments - 1) * math.log1p(step_error)
-    )
+    log_error = math.log(step_error) + math.log(segments) + (segments - 1) * math.log1p(step_error)
     return math.exp(log_error) if log_error < 709 else math.inf
 
 
-def _mizuta_ideal_mpf_bound(
-    hamiltonian: PauliHamiltonian,
-    time: float,
-    m: int,
-    segments: int,
-    coefficient_l1_norm: float,
+def _w2_triangle_b2(
+    coefficients: tuple[float, ...] | np.ndarray,
     exponents: tuple[int, ...],
-    target_error: float,
-) -> tuple[
-    float,
-    float,
-    tuple[tuple[str, float], ...],
-    PauliNestedCommutatorBounds,
-    tuple[str, ...],
-    bool,
-]:
-    """Evaluate Mizuta 2026 Theorem 4/Eqs. (61)--(63) for ``p=2``."""
-    formal_order = 2 * m
-    base_order = 2
-    base_repetitions = 2  # c_p for the ordered Strang formula, paper Eq. (6)
-    exponent_l1_norm = float(sum(exponents))
-    step_time = abs(float(time)) / segments
+) -> float:
+    """Return the absolute-value branch factor ``sum_j |a_j| / k_j^2``."""
+    if len(coefficients) != len(exponents) or not exponents:
+        raise ValueError("coefficients and exponents must have the same nonzero length")
+    if any(exponent < 1 for exponent in exponents):
+        raise ValueError("MPF exponents must be positive")
+    if any(not math.isfinite(float(coefficient)) for coefficient in coefficients):
+        raise ValueError("MPF coefficients must be finite")
+    return math.fsum(
+        abs(float(coefficient)) / exponent**2
+        for coefficient, exponent in zip(coefficients, exponents, strict=True)
+    )
 
-    # Allocate half of the exact local budget implied by the repeated-step
-    # target to the truncated-BCH remainder in Theorem 4.
-    local_budget = math.expm1(math.log1p(target_error) / segments)
-    auxiliary_error = local_budget / (2 * coefficient_l1_norm * exponent_l1_norm)
+
+def _w2_triangle_log_ideal_mpf_bound(
+    w2: float,
+    time: float,
+    segments: int,
+    b2: float,
+    *,
+    unitary_single_branch: bool = False,
+) -> tuple[float, float]:
+    """Return log local and repeated W2-triangle errors without overflow."""
+    if segments < 1:
+        raise ValueError("segments must be positive")
+    if w2 < 0 or b2 < 0:
+        raise ValueError("W2 and B2 must be nonnegative")
+    if not math.isfinite(time):
+        raise ValueError("time must be finite")
+    if w2 == 0 or b2 == 0 or time == 0:
+        return -math.inf, -math.inf
+    log_segments = math.log(segments)
+    log_delta = (
+        math.log(w2)
+        + 3 * (math.log(abs(float(time))) - log_segments)
+        + math.log(b2)
+    )
+    if unitary_single_branch:
+        return log_delta, log_segments + log_delta
+    log_error = log_segments + log_delta + (segments - 1) * _log1p_exp(log_delta)
+    return log_delta, log_error
+
+
+def _w2_triangle_ideal_mpf_bound(
+    w2: float,
+    time: float,
+    segments: int,
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+) -> tuple[float, float, float, float]:
+    """Return repeated error, prefactor, local error, and B2.
+
+    A single coefficient-one branch is itself unitary, so its repeated bound
+    uses the sharper unitary telescoping factor ``r * delta``. Registered MPF
+    schedules have at least two branches; the special case supports the
+    ordinary-Strang regression without extending the public LCU schedule API.
+    """
+    b2 = _w2_triangle_b2(coefficients, exponents)
+    unitary_single_branch = len(coefficients) == 1 and float(coefficients[0]) == 1.0
+    log_local, log_error = _w2_triangle_log_ideal_mpf_bound(
+        w2,
+        time,
+        segments,
+        b2,
+        unitary_single_branch=unitary_single_branch,
+    )
+    prefactor = w2 * b2
+    local_error = math.exp(log_local) if log_local < 709 else math.inf
+    error = math.exp(log_error) if log_error < 709 else math.inf
+    return error, prefactor, local_error, b2
+
+
+@dataclass(frozen=True)
+class _MizutaAllocationCandidate:
+    """One exact printed-theorem evaluation at fixed ``(r, p0, rho)``."""
+
+    allocation_fraction: float
+    auxiliary_error: float
+    truncation_order: int
+    mu_upper: float
+    prefactor: float
+    local_commutator_error: float
+    local_truncated_bch_error: float
+    local_step_error: float
+    repeated_error: float
+    first_time_limit: float
+    second_time_limit: float
+    commutators: PauliNestedCommutatorBounds
+    commuting_exact: bool = False
+    zero_time_exact: bool = False
+
+
+@dataclass(frozen=True)
+class _MizutaCandidateEvaluation:
+    """Allocation-aware predicates for one candidate segment count."""
+
+    selected: _MizutaAllocationCandidate
+    error_satisfied: bool
+    first_time_satisfied: bool
+    second_time_satisfied: bool
+    full_satisfied: bool
+    error_and_time_1_satisfied: bool
+    error_and_time_2_satisfied: bool
+    time_1_and_time_2_satisfied: bool
+
+
+def _mizuta_truncation_order(
+    hamiltonian: PauliHamiltonian,
+    local_budget: float,
+    allocation_scale: float,
+    allocation_fraction: float,
+) -> int:
+    auxiliary_error = allocation_fraction * local_budget / allocation_scale
     if auxiliary_error <= 0:
         raise OverflowError("Mizuta auxiliary error underflowed float range")
-    truncation_order = math.ceil(
-        math.log(3 * hamiltonian.num_qubits / auxiliary_error)
-    )
-    truncation_order = max(base_order + 1, truncation_order)
+    return max(3, math.ceil(math.log(3 * hamiltonian.num_qubits / auxiliary_error)))
+
+
+def _mizuta_minimum_fraction_for_order(
+    hamiltonian: PauliHamiltonian,
+    local_budget: float,
+    allocation_scale: float,
+    truncation_order: int,
+) -> float:
+    """Return the smallest floating ``rho`` assigned to one discrete ``p0``."""
+    log_scale = math.log(3 * hamiltonian.num_qubits * allocation_scale / local_budget)
+    # The exact lower endpoint is exp(log_scale-p0).  Move the target exponent
+    # one float below p0 so the production ceil calculation robustly maps the
+    # returned fraction to p0 rather than p0+1 at a rounded boundary.
+    target = float(np.nextafter(float(truncation_order), -np.inf))
+    fraction = math.exp(log_scale - target)
+    if not 0 < fraction < 1:
+        raise ValueError("truncation order has no allocation fraction in (0, 1)")
+    for _ in range(64):
+        derived = _mizuta_truncation_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            fraction,
+        )
+        if derived == truncation_order:
+            return fraction
+        direction = np.inf if derived > truncation_order else 0.0
+        fraction = float(np.nextafter(fraction, direction))
+    raise ArithmeticError("could not reproduce the discrete Mizuta truncation order")
+
+
+def _mizuta_allocation_candidate(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponent_l1_norm: float,
+    target_error: float,
+    allocation_fraction: float,
+    truncation_order: int,
+    execution: CommutatorExecution | None,
+) -> _MizutaAllocationCandidate:
+    """Evaluate Theorem 4 at one allocation without freezing any input."""
+    mizuta_formal_order = 2 * term_count
+    base_order = 2
+    base_repetitions = 2
+    step_time = abs(float(time)) / segments
+    local_budget = math.expm1(math.log1p(target_error) / segments)
+    allocation_scale = coefficient_l1_norm * exponent_l1_norm
+    auxiliary_error = allocation_fraction * local_budget / allocation_scale
+    if execution is not None:
+        execution.report(
+            CommutatorProgress(
+                family="multiproduct",
+                phase="segment-candidate",
+                completed=0,
+                total=None,
+                commutator_order=truncation_order,
+                max_commutator_order=truncation_order,
+                formula_order=mizuta_formal_order,
+                system_qubits=hamiltonian.num_qubits,
+                segment_candidate=segments,
+                target_error=target_error,
+            )
+        )
     commutators = pauli_nested_commutator_bounds(
         hamiltonian,
         truncation_order,
+        workers=execution.workers if execution is not None else 1,
+        _execution=execution,
+        _formula_order=mizuta_formal_order,
+        _segment_candidate=segments,
+        _target_error=target_error,
     )
-
-    if all(value == 0 for value in commutators.values):
-        components = (
-            ("mu_upper", 0.0),
-            ("local_commutator_error", 0.0),
-            ("local_truncated_bch_error", 0.0),
-            ("auxiliary_error", auxiliary_error),
-            ("truncation_order_p0", float(truncation_order)),
-            ("locality_k", float(commutators.locality_k)),
-            ("extensiveness_g", commutators.extensiveness_g),
-        )
-        return (
-            0.0,
-            0.0,
-            components,
-            commutators,
-            ("all individual Pauli summands commute; the ordered Strang formula is exact",),
-            True,
+    commuting_exact = all(value == 0 for value in commutators.values)
+    zero_time_exact = step_time == 0
+    if commuting_exact:
+        return _MizutaAllocationCandidate(
+            allocation_fraction=allocation_fraction,
+            auxiliary_error=auxiliary_error,
+            truncation_order=truncation_order,
+            mu_upper=0.0,
+            prefactor=0.0,
+            local_commutator_error=0.0,
+            local_truncated_bch_error=0.0,
+            local_step_error=0.0,
+            repeated_error=0.0,
+            first_time_limit=math.inf,
+            second_time_limit=math.inf,
+            commutators=commutators,
+            commuting_exact=True,
+            zero_time_exact=zero_time_exact,
         )
 
     mu_upper = _mizuta_mu_upper_bound(commutators, base_order=base_order)
@@ -432,79 +790,674 @@ def _mizuta_ideal_mpf_bound(
             math.log(2)
             + 0.5
             + math.log(coefficient_l1_norm)
-            + (formal_order + 1) * math.log(base_repetitions * mu_upper)
+            + (mizuta_formal_order + 1) * math.log(base_repetitions * mu_upper)
         )
         prefactor = math.exp(log_prefactor) if log_prefactor < 709 else math.inf
         if step_time == 0:
             local_commutator_error = 0.0
         else:
-            log_commutator_error = log_prefactor + (formal_order + 1) * math.log(
+            log_commutator_error = log_prefactor + (mizuta_formal_order + 1) * math.log(
                 step_time
             )
             local_commutator_error = (
-                math.exp(log_commutator_error)
-                if log_commutator_error < 709
-                else math.inf
+                math.exp(log_commutator_error) if log_commutator_error < 709 else math.inf
             )
-    local_truncated_bch_error = coefficient_l1_norm * exponent_l1_norm * auxiliary_error
+    local_truncated_bch_error = allocation_scale * auxiliary_error
+    if zero_time_exact:
+        # The allocation term only bounds a truncated representation. At
+        # tau=0 the product formula, MPF, and exact evolution are identical.
+        local_truncated_bch_error = 0.0
     local_step_error = local_commutator_error + local_truncated_bch_error
-
     k_value = commutators.locality_k
     g_value = commutators.extensiveness_g
     first_time_limit = (
         math.inf
         if k_value == 0 or g_value == 0
-        else 1
-        / (
-            8
-            * math.e**3
-            * base_repetitions
-            * truncation_order
-            * k_value
-            * g_value
+        else 1 / (8 * math.e**3 * base_repetitions * truncation_order * k_value * g_value)
+    )
+    second_time_limit = math.inf if mu_upper == 0 else 1 / (2 * base_repetitions * mu_upper)
+    return _MizutaAllocationCandidate(
+        allocation_fraction=allocation_fraction,
+        auxiliary_error=auxiliary_error,
+        truncation_order=truncation_order,
+        mu_upper=mu_upper,
+        prefactor=prefactor,
+        local_commutator_error=local_commutator_error,
+        local_truncated_bch_error=local_truncated_bch_error,
+        local_step_error=local_step_error,
+        repeated_error=_repeated_step_error(local_step_error, segments),
+        first_time_limit=first_time_limit,
+        second_time_limit=second_time_limit,
+        commutators=commutators,
+        zero_time_exact=zero_time_exact,
+    )
+
+
+def _evaluate_mizuta_candidate(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None,
+    allocation_fraction: float | None,
+) -> _MizutaCandidateEvaluation:
+    """Evaluate fixed or exactly optimized printed-theorem allocations."""
+    exponent_l1_norm = float(sum(exponents))
+    allocation_scale = coefficient_l1_norm * exponent_l1_norm
+    local_budget = math.expm1(math.log1p(target_error) / segments)
+    if local_budget <= 0:
+        raise OverflowError("Mizuta local error budget underflowed float range")
+
+    def evaluate(fraction: float, order: int) -> _MizutaAllocationCandidate:
+        return _mizuta_allocation_candidate(
+            hamiltonian,
+            time,
+            term_count,
+            segments,
+            coefficient_l1_norm,
+            exponent_l1_norm,
+            target_error,
+            fraction,
+            order,
+            execution,
         )
+
+    if allocation_fraction is not None:
+        if not 0 < allocation_fraction < 1:
+            raise ValueError("auxiliary_allocation_fraction must lie in (0, 1)")
+        order = _mizuta_truncation_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            allocation_fraction,
+        )
+        candidate = evaluate(allocation_fraction, order)
+        error_ok = candidate.repeated_error <= target_error
+        first_ok = abs(float(time)) / segments <= candidate.first_time_limit
+        second_ok = abs(float(time)) / segments <= candidate.second_time_limit
+        return _MizutaCandidateEvaluation(
+            selected=candidate,
+            error_satisfied=error_ok,
+            first_time_satisfied=first_ok,
+            second_time_satisfied=second_ok,
+            full_satisfied=error_ok and first_ok and second_ok,
+            error_and_time_1_satisfied=error_ok and first_ok,
+            error_and_time_2_satisfied=error_ok and second_ok,
+            time_1_and_time_2_satisfied=first_ok and second_ok,
+        )
+
+    nearly_one = float(np.nextafter(1.0, 0.0))
+    minimum_order = _mizuta_truncation_order(
+        hamiltonian,
+        local_budget,
+        allocation_scale,
+        nearly_one,
     )
-    second_time_limit = (
-        math.inf
-        if mu_upper == 0
-        else 1 / (2 * base_repetitions * mu_upper)
+    first_candidate = evaluate(
+        _mizuta_minimum_fraction_for_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            minimum_order,
+        ),
+        minimum_order,
     )
-    time_hypothesis_satisfied = step_time <= min(first_time_limit, second_time_limit)
+    if first_candidate.commuting_exact or first_candidate.zero_time_exact:
+        return _MizutaCandidateEvaluation(
+            selected=first_candidate,
+            error_satisfied=True,
+            first_time_satisfied=True,
+            second_time_satisfied=True,
+            full_satisfied=True,
+            error_and_time_1_satisfied=True,
+            error_and_time_2_satisfied=True,
+            time_1_and_time_2_satisfied=True,
+        )
+
+    step_time = abs(float(time)) / segments
+    best_full: _MizutaAllocationCandidate | None = None
+    best_time_feasible: _MizutaAllocationCandidate | None = None
+    first_error: _MizutaAllocationCandidate | None = None
+    first_ok_exists = False
+    second_ok_exists = False
+    error_time_1_exists = False
+    error_time_2_exists = False
+    time_1_time_2_exists = False
+    order = minimum_order
+    candidate = first_candidate
+    while True:
+        error_ok = candidate.repeated_error <= target_error
+        first_ok = step_time <= candidate.first_time_limit
+        second_ok = step_time <= candidate.second_time_limit
+        first_ok_exists = first_ok_exists or first_ok
+        second_ok_exists = second_ok_exists or second_ok
+        error_time_1_exists = error_time_1_exists or (error_ok and first_ok)
+        error_time_2_exists = error_time_2_exists or (error_ok and second_ok)
+        time_1_time_2_exists = time_1_time_2_exists or (first_ok and second_ok)
+        if error_ok and first_error is None:
+            first_error = candidate
+        if first_ok and second_ok and (
+            best_time_feasible is None
+            or candidate.repeated_error < best_time_feasible.repeated_error
+        ):
+            best_time_feasible = candidate
+        if error_ok and first_ok and second_ok and (
+            best_full is None or candidate.repeated_error < best_full.repeated_error
+        ):
+            best_full = candidate
+
+        commutator_only_error = _repeated_step_error(
+            candidate.local_commutator_error,
+            segments,
+        )
+        no_future_error = commutator_only_error > target_error
+        # The first hypothesis makes the full feasible p0 range finite.  Walk
+        # through its first failing order even after a valid allocation is
+        # found so every allowed discrete p0 participates in the minimization.
+        full_search_done = not first_ok
+        error_search_done = first_error is not None or no_future_error
+        error_time_1_done = error_time_1_exists or no_future_error or not first_ok
+        error_time_2_done = error_time_2_exists or no_future_error or not second_ok
+        if full_search_done and error_search_done and error_time_1_done and error_time_2_done:
+            break
+
+        order += 1
+        fraction = _mizuta_minimum_fraction_for_order(
+            hamiltonian,
+            local_budget,
+            allocation_scale,
+            order,
+        )
+        candidate = evaluate(fraction, order)
+
+    selected = best_time_feasible or first_error or first_candidate
+    return _MizutaCandidateEvaluation(
+        selected=selected,
+        error_satisfied=first_error is not None,
+        first_time_satisfied=first_ok_exists,
+        second_time_satisfied=second_ok_exists,
+        full_satisfied=best_full is not None,
+        error_and_time_1_satisfied=error_time_1_exists,
+        error_and_time_2_satisfied=error_time_2_exists,
+        time_1_and_time_2_satisfied=time_1_time_2_exists,
+    )
+
+
+def _legacy_mizuta_ideal_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficient_l1_norm: float,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None = None,
+    allocation_fraction: float | None = None,
+) -> tuple[
+    float,
+    float,
+    tuple[tuple[str, float], ...],
+    PauliNestedCommutatorBounds,
+    tuple[str, ...],
+    bool,
+]:
+    """Reproduce printed Mizuta Theorems 3--4 with auxiliary allocation."""
+    evaluation = _evaluate_mizuta_candidate(
+        hamiltonian,
+        time,
+        term_count,
+        segments,
+        coefficient_l1_norm,
+        exponents,
+        target_error,
+        execution,
+        allocation_fraction,
+    )
+    candidate = evaluation.selected
+    selected_step_time = abs(float(time)) / segments
+    time_hypothesis_satisfied = selected_step_time <= min(
+        candidate.first_time_limit,
+        candidate.second_time_limit,
+    )
     assumptions = (
         "individual Pauli summands define the ordered H_gamma decomposition",
         "Pauli support gives k-locality and per-site coefficient sums give g-extensiveness",
         "base formula is the symmetric second-order formula with c_p=2",
         (
-            "Theorem 4 time hypothesis Eq. (62) is satisfied"
+            "Theorem 4 time hypothesis Eq. (48) is satisfied"
             if time_hypothesis_satisfied
-            else "Theorem 4 time hypothesis Eq. (62) is not satisfied"
+            else "Theorem 4 time hypothesis Eq. (48) is not satisfied"
         ),
         "the repeated ideal MPF is composed with the Eq. (15) telescoping argument",
     )
     components = (
-        ("mu_upper", mu_upper),
-        ("local_commutator_error", local_commutator_error),
-        ("local_truncated_bch_error", local_truncated_bch_error),
-        ("local_step_error", local_step_error),
-        ("auxiliary_error", auxiliary_error),
-        ("truncation_order_p0", float(truncation_order)),
-        ("first_time_limit", first_time_limit),
-        ("second_time_limit", second_time_limit),
-        ("locality_k", float(k_value)),
-        ("extensiveness_g", g_value),
+        ("mu_upper", candidate.mu_upper),
+        ("local_commutator_error", candidate.local_commutator_error),
+        ("local_truncated_bch_error", candidate.local_truncated_bch_error),
+        ("local_step_error", candidate.local_step_error),
+        ("auxiliary_error", candidate.auxiliary_error),
+        ("auxiliary_allocation_fraction", candidate.allocation_fraction),
+        ("truncation_order_p0", float(candidate.truncation_order)),
+        ("first_time_limit", candidate.first_time_limit),
+        ("second_time_limit", candidate.second_time_limit),
+        ("locality_k", float(candidate.commutators.locality_k)),
+        ("extensiveness_g", candidate.commutators.extensiveness_g),
+        ("error_predicate_satisfied", float(evaluation.error_satisfied)),
+        ("time_1_predicate_satisfied", float(evaluation.first_time_satisfied)),
+        ("time_2_predicate_satisfied", float(evaluation.second_time_satisfied)),
+        ("joint_predicate_satisfied", float(evaluation.full_satisfied)),
+        ("error_and_time_1_satisfied", float(evaluation.error_and_time_1_satisfied)),
+        ("error_and_time_2_satisfied", float(evaluation.error_and_time_2_satisfied)),
+        ("time_1_and_time_2_satisfied", float(evaluation.time_1_and_time_2_satisfied)),
     )
-    error = (
-        _repeated_step_error(local_step_error, segments)
-        if time_hypothesis_satisfied
-        else math.inf
-    )
+    if candidate.commuting_exact:
+        assumptions = (
+            "all individual Pauli summands commute; the ordered Strang formula is exact",
+        )
+    elif candidate.zero_time_exact:
+        assumptions = ("zero-time evolution is exact",)
+    error = candidate.repeated_error if time_hypothesis_satisfied else math.inf
     return (
         error,
-        prefactor,
+        candidate.prefactor,
         components,
-        commutators,
+        candidate.commutators,
         assumptions,
         time_hypothesis_satisfied,
+    )
+
+
+@dataclass(frozen=True)
+class _RefinedMizutaCandidate:
+    """One direct remainder evaluation at fixed ``(r, p0)``."""
+
+    truncation_order: int
+    mu_upper: float
+    prefactor: float
+    lemma9_remainder: float
+    lemma10_remainder: float
+    local_commutator_error: float
+    local_truncated_bch_error: float
+    local_step_error: float
+    repeated_error: float
+    legacy_first_time_limit: float
+    second_time_limit: float
+    legacy_first_condition_passed: bool
+    tail_certified: bool
+    used_legacy_tail_fallback: bool
+    commutators: PauliNestedCommutatorBounds
+    schedule_weights: tuple[float, ...]
+    schedule_weighted_extensiveness: float
+    commuting_exact: bool = False
+    zero_time_exact: bool = False
+
+
+@dataclass(frozen=True)
+class _RefinedMizutaEvaluation:
+    """Direct-``p0`` predicates for one candidate segment count."""
+
+    selected: _RefinedMizutaCandidate
+    error_satisfied: bool
+    second_time_satisfied: bool
+    full_satisfied: bool
+
+
+def _positive_add_up(left: float, right: float) -> float:
+    if math.isinf(left) or math.isinf(right):
+        return math.inf
+    value = left + right
+    return float(np.nextafter(value, np.inf)) if value else 0.0
+
+
+def _positive_multiply_up(left: float, right: float) -> float:
+    if left == 0.0 or right == 0.0:
+        return 0.0
+    if math.isinf(left) or math.isinf(right):
+        return math.inf
+    value = left * right
+    return float(np.nextafter(value, np.inf)) if math.isfinite(value) else math.inf
+
+
+def _legacy_tail_components(num_qubits: int, truncation_order: int) -> tuple[float, float]:
+    """Split the printed ``3*N*exp(-p0)`` remainder into Lemmas 9 and 10."""
+    unit = float(np.nextafter(num_qubits * math.exp(-truncation_order), np.inf))
+    return unit, _positive_multiply_up(2.0, unit)
+
+
+def _refined_mizuta_candidate(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+    target_error: float,
+    truncation_order: int,
+    execution: CommutatorExecution | None,
+) -> _RefinedMizutaCandidate:
+    """Evaluate the branchwise BCH and commutator terms at fixed ``(r,p0)``."""
+    formal_order = 2 * term_count
+    base_repetitions = 2
+    coefficient_l1_norm = math.fsum(abs(float(value)) for value in coefficients)
+    step_time = abs(float(time)) / segments
+    if execution is not None:
+        execution.report(
+            CommutatorProgress(
+                family="multiproduct",
+                phase="segment-candidate",
+                completed=0,
+                total=None,
+                commutator_order=truncation_order,
+                max_commutator_order=truncation_order,
+                formula_order=formal_order,
+                system_qubits=hamiltonian.num_qubits,
+                segment_candidate=segments,
+                target_error=target_error,
+            )
+        )
+    commutators = pauli_nested_commutator_bounds(
+        hamiltonian,
+        truncation_order,
+        workers=execution.workers if execution is not None else 1,
+        _execution=execution,
+        _formula_order=formal_order,
+        _segment_candidate=segments,
+        _target_error=target_error,
+    )
+    weights = mizuta_schedule_weights(hamiltonian, suzuki_order=2)
+    commuting_exact = all(value == 0.0 for value in commutators.values)
+    zero_time_exact = step_time == 0.0
+    if commuting_exact or zero_time_exact:
+        return _RefinedMizutaCandidate(
+            truncation_order=truncation_order,
+            mu_upper=0.0 if commuting_exact else _mizuta_mu_upper_bound(commutators),
+            prefactor=0.0,
+            lemma9_remainder=0.0,
+            lemma10_remainder=0.0,
+            local_commutator_error=0.0,
+            local_truncated_bch_error=0.0,
+            local_step_error=0.0,
+            repeated_error=0.0,
+            legacy_first_time_limit=math.inf,
+            second_time_limit=math.inf,
+            legacy_first_condition_passed=True,
+            tail_certified=True,
+            used_legacy_tail_fallback=False,
+            commutators=commutators,
+            schedule_weights=weights.group_weights,
+            schedule_weighted_extensiveness=weights.weighted_extensiveness,
+            commuting_exact=commuting_exact,
+            zero_time_exact=zero_time_exact,
+        )
+
+    mu_upper = _mizuta_mu_upper_bound(commutators)
+    if mu_upper == 0.0:
+        prefactor = 0.0
+        local_commutator_error = 0.0
+    else:
+        log_prefactor = (
+            math.log(2.0)
+            + 0.5
+            + math.log(coefficient_l1_norm)
+            + (formal_order + 1) * math.log(base_repetitions * mu_upper)
+        )
+        prefactor = math.exp(log_prefactor) if log_prefactor < 709.0 else math.inf
+        log_error = log_prefactor + (formal_order + 1) * math.log(step_time)
+        local_commutator_error = math.exp(log_error) if log_error < 709.0 else math.inf
+
+    locality_k = commutators.locality_k
+    extensiveness_g = commutators.extensiveness_g
+    legacy_first_limit = (
+        math.inf
+        if locality_k == 0 or extensiveness_g == 0.0
+        else 1.0
+        / (
+            8.0
+            * math.e**3
+            * base_repetitions
+            * truncation_order
+            * locality_k
+            * extensiveness_g
+        )
+    )
+    second_limit = math.inf if mu_upper == 0.0 else 1.0 / (2.0 * base_repetitions * mu_upper)
+    legacy_first_passed = step_time <= legacy_first_limit
+
+    branch_remainders: list[tuple[float, MizutaRefinedRemainder]] = []
+    refined_tail_failed = False
+    for coefficient, exponent in zip(coefficients, exponents, strict=True):
+        remainder = refined_mizuta_remainder(
+            hamiltonian.num_qubits,
+            locality_k,
+            weights.weighted_extensiveness,
+            truncation_order,
+            step_time / exponent,
+        )
+        if remainder is None:
+            refined_tail_failed = True
+            break
+        branch_remainders.append((abs(float(coefficient)) * exponent, remainder))
+
+    used_legacy_fallback = False
+    if refined_tail_failed:
+        if legacy_first_passed:
+            used_legacy_fallback = True
+            fallback_9, fallback_10 = _legacy_tail_components(
+                hamiltonian.num_qubits,
+                truncation_order,
+            )
+            branch_scale = math.fsum(
+                abs(float(coefficient)) * exponent
+                for coefficient, exponent in zip(coefficients, exponents, strict=True)
+            )
+            lemma9_remainder = _positive_multiply_up(branch_scale, fallback_9)
+            lemma10_remainder = _positive_multiply_up(branch_scale, fallback_10)
+            tail_certified = True
+        else:
+            lemma9_remainder = math.inf
+            lemma10_remainder = math.inf
+            tail_certified = False
+    else:
+        lemma9_remainder = 0.0
+        lemma10_remainder = 0.0
+        for branch_scale, remainder in branch_remainders:
+            lemma9_remainder = _positive_add_up(
+                lemma9_remainder,
+                _positive_multiply_up(branch_scale, remainder.lemma9),
+            )
+            lemma10_remainder = _positive_add_up(
+                lemma10_remainder,
+                _positive_multiply_up(branch_scale, remainder.lemma10),
+            )
+        tail_certified = True
+
+    local_bch_error = _positive_add_up(lemma9_remainder, lemma10_remainder)
+    local_step_error = _positive_add_up(local_commutator_error, local_bch_error)
+    return _RefinedMizutaCandidate(
+        truncation_order=truncation_order,
+        mu_upper=mu_upper,
+        prefactor=prefactor,
+        lemma9_remainder=lemma9_remainder,
+        lemma10_remainder=lemma10_remainder,
+        local_commutator_error=local_commutator_error,
+        local_truncated_bch_error=local_bch_error,
+        local_step_error=local_step_error,
+        repeated_error=_repeated_step_error(local_step_error, segments),
+        legacy_first_time_limit=legacy_first_limit,
+        second_time_limit=second_limit,
+        legacy_first_condition_passed=legacy_first_passed,
+        tail_certified=tail_certified,
+        used_legacy_tail_fallback=used_legacy_fallback,
+        commutators=commutators,
+        schedule_weights=weights.group_weights,
+        schedule_weighted_extensiveness=weights.weighted_extensiveness,
+    )
+
+
+def _evaluate_refined_mizuta_candidate(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None,
+) -> _RefinedMizutaEvaluation:
+    """Enumerate truncation orders directly and select the best certified bound."""
+    step_time = abs(float(time)) / segments
+    best_certified: _RefinedMizutaCandidate | None = None
+    best_tail: _RefinedMizutaCandidate | None = None
+    first_candidate: _RefinedMizutaCandidate | None = None
+    error_satisfied = False
+    second_satisfied = False
+    full_satisfied = False
+
+    formal_order = 2 * term_count
+    for truncation_order in range(formal_order, 513):
+        candidate = _refined_mizuta_candidate(
+            hamiltonian,
+            time,
+            term_count,
+            segments,
+            coefficients,
+            exponents,
+            target_error,
+            truncation_order,
+            execution,
+        )
+        if first_candidate is None:
+            first_candidate = candidate
+        if candidate.commuting_exact or candidate.zero_time_exact:
+            return _RefinedMizutaEvaluation(candidate, True, True, True)
+
+        second_ok = step_time <= candidate.second_time_limit
+        error_ok = candidate.tail_certified and candidate.repeated_error <= target_error
+        full_ok = error_ok and second_ok
+        error_satisfied |= error_ok
+        second_satisfied |= second_ok
+        full_satisfied |= full_ok
+        if candidate.tail_certified and (
+            best_tail is None or candidate.repeated_error < best_tail.repeated_error
+        ):
+            best_tail = candidate
+        if candidate.tail_certified and second_ok and (
+            best_certified is None
+            or candidate.repeated_error < best_certified.repeated_error
+        ):
+            best_certified = candidate
+
+        commutator_only_error = _repeated_step_error(
+            candidate.local_commutator_error,
+            segments,
+        )
+        if not second_ok or commutator_only_error > target_error:
+            break
+        if not candidate.tail_certified:
+            break
+        if best_certified is not None and commutator_only_error >= best_certified.repeated_error:
+            break
+    else:
+        raise OverflowError("refined Mizuta p0 search exceeded the certified order cap")
+
+    if first_candidate is None:
+        raise AssertionError("refined Mizuta p0 enumeration produced no candidates")
+    return _RefinedMizutaEvaluation(
+        selected=best_certified or best_tail or first_candidate,
+        error_satisfied=error_satisfied,
+        second_time_satisfied=second_satisfied,
+        full_satisfied=full_satisfied,
+    )
+
+
+def _refined_mizuta_ideal_mpf_bound(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    term_count: int,
+    segments: int,
+    coefficients: tuple[float, ...] | np.ndarray,
+    exponents: tuple[int, ...],
+    target_error: float,
+    execution: CommutatorExecution | None = None,
+) -> tuple[
+    float,
+    float,
+    tuple[tuple[str, float], ...],
+    PauliNestedCommutatorBounds,
+    tuple[str, ...],
+    bool,
+]:
+    """Apply Theorem 4 using the directly certified BCH remainder."""
+    evaluation = _evaluate_refined_mizuta_candidate(
+        hamiltonian,
+        time,
+        term_count,
+        segments,
+        coefficients,
+        exponents,
+        target_error,
+        execution,
+    )
+    candidate = evaluation.selected
+    step_time = abs(float(time)) / segments
+    second_satisfied = step_time <= candidate.second_time_limit
+    rigorous = candidate.tail_certified and second_satisfied
+    components = (
+        ("mu_upper", candidate.mu_upper),
+        ("refined_lemma9_remainder", candidate.lemma9_remainder),
+        ("refined_lemma10_remainder", candidate.lemma10_remainder),
+        ("total_branchwise_bch_remainder", candidate.local_truncated_bch_error),
+        ("local_commutator_error", candidate.local_commutator_error),
+        ("local_truncated_bch_error", candidate.local_truncated_bch_error),
+        ("local_step_error", candidate.local_step_error),
+        ("repeated_global_error", candidate.repeated_error),
+        ("truncation_order_p0", float(candidate.truncation_order)),
+        ("legacy_first_time_limit", candidate.legacy_first_time_limit),
+        (
+            "legacy_first_condition_passed",
+            float(candidate.legacy_first_condition_passed),
+        ),
+        ("second_time_limit", candidate.second_time_limit),
+        ("schedule_weighted_extensiveness", candidate.schedule_weighted_extensiveness),
+        ("locality_k", float(candidate.commutators.locality_k)),
+        ("extensiveness_g", candidate.commutators.extensiveness_g),
+        ("refined_tail_fallback", float(candidate.used_legacy_tail_fallback)),
+        ("error_predicate_satisfied", float(evaluation.error_satisfied)),
+        ("time_2_predicate_satisfied", float(evaluation.second_time_satisfied)),
+        ("joint_predicate_satisfied", float(evaluation.full_satisfied)),
+    )
+    assumptions = (
+        "individual Pauli summands define the ordered H_gamma decomposition",
+        "the actual Strang factors define schedule-weighted g_alpha extensiveness",
+        "Lemma 9 and Lemma 10 positive majorants directly certify the BCH remainder",
+        (
+            "the scalar-flow/Cauchy refined tail certificate is used"
+            if not candidate.used_legacy_tail_fallback
+            else "the refined tail failed and the printed-Theorem-3 tail condition is used"
+        ),
+        (
+            "Theorem 4 second time hypothesis is satisfied"
+            if second_satisfied
+            else "Theorem 4 second time hypothesis is not satisfied"
+        ),
+        "the repeated ideal MPF is composed with the Eq. (15) telescoping argument",
+    )
+    if candidate.commuting_exact:
+        assumptions = (
+            "all individual Pauli summands commute; the ordered Strang formula is exact",
+        )
+    elif candidate.zero_time_exact:
+        assumptions = ("zero-time evolution is exact",)
+    return (
+        candidate.repeated_error if rigorous else math.inf,
+        candidate.prefactor,
+        components,
+        candidate.commutators,
+        assumptions,
+        rigorous,
     )
 
 
@@ -515,7 +1468,7 @@ def _normalize_mpf_error_method(method: MPFErrorMethod) -> MPFErrorMethod:
     return method
 
 
-def estimate_mpf_error(
+def _estimate_mpf_error(
     hamiltonian: PauliHamiltonian,
     time: float,
     segments: int,
@@ -524,8 +1477,15 @@ def estimate_mpf_error(
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
     target_error: float | None = None,
+    auxiliary_allocation_fraction: float | None = None,
+    execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
-    """Estimate ideal-MPF error while preserving certification provenance."""
+    """Estimate ideal-MPF error while preserving certification provenance.
+
+    The explicit legacy Mizuta estimator optimizes the printed-theorem
+    auxiliary allocation when ``auxiliary_allocation_fraction`` is ``None``.
+    The refined estimator enumerates ``p0`` directly and rejects that option.
+    """
     if isinstance(segments, bool) or not isinstance(segments, Integral):
         raise TypeError("segments must be an integer")
     if segments < 1:
@@ -536,6 +1496,17 @@ def estimate_mpf_error(
     coefficients = multiproduct_coefficients(m, schedule=schedule)
     coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
     method = _normalize_mpf_error_method(method)
+    if (
+        method == "mizuta2026-commutator-ideal-rigorous"
+        and auxiliary_allocation_fraction is not None
+    ):
+        raise ValueError(
+            "auxiliary_allocation_fraction is not applicable to the refined "
+            "Mizuta estimator; use "
+            "'mizuta2026-theorem3-legacy-ideal-rigorous' to reproduce the "
+            "printed-Theorem-3 allocation"
+        )
+    w2_commutator_bound = False
     if method == "low2019-l1-ideal-rigorous":
         error, prefactor = _low_ideal_mpf_bound(
             hamiltonian,
@@ -545,6 +1516,14 @@ def estimate_mpf_error(
             coefficient_l1_norm,
         )
         rigorous = True
+        local_error = _low_local_mpf_bound(
+            hamiltonian,
+            time,
+            m,
+            int(segments),
+            coefficient_l1_norm,
+        )
+        local_error_rigorous = True
         reference = "Low, Kliuchnikov, and Wiebe, arXiv:1907.11679v2 (2019)"
         theorem_or_equations = "Theorem 2, Eqs. (13)--(15)"
         bound_components = (("worst_case_prefactor", prefactor),)
@@ -554,6 +1533,41 @@ def estimate_mpf_error(
             "the bound certifies the repeated ideal MPF operator only",
         )
         commutators: PauliNestedCommutatorBounds | None = None
+    elif method == "childs2021-w2-triangle-ideal-rigorous":
+        _, w2 = suzuki_commutator_bounds(hamiltonian)
+        error, prefactor, local_error, b2 = _w2_triangle_ideal_mpf_bound(
+            w2,
+            time,
+            int(segments),
+            coefficients,
+            exponents,
+        )
+        rigorous = True
+        local_error_rigorous = True
+        reference = (
+            "Childs, Su, Tran, Wiebe, and Zhu, Phys. Rev. X 11, 011020 (2021)"
+        )
+        theorem_or_equations = (
+            "Propositions 9--10 Strang bound; repository MPF triangle and "
+            "repeated-step telescoping derivation"
+        )
+        local_step_size = abs(float(time)) / int(segments)
+        bound_components = (
+            ("w2", w2),
+            ("b2", b2),
+            ("local_step_size", local_step_size),
+            ("local_step_error", local_error),
+            ("repeated_ideal_mpf_error", error),
+        )
+        assumptions = (
+            "H is decomposed into the ordered individual Pauli summands",
+            "each branch uses the same ordered symmetric second-order formula",
+            "branch and MPF errors are combined only by triangle inequalities",
+            "no MPF cancellation condition is used",
+            "the bound certifies the repeated ideal MPF operator only",
+        )
+        commutators = None
+        w2_commutator_bound = True
     elif method == "legacy-w2-proxy":
         error, prefactor = legacy_w2_proxy_error(
             hamiltonian,
@@ -562,45 +1576,77 @@ def estimate_mpf_error(
             int(segments),
         )
         rigorous = False
+        local_error = error / int(segments)
+        local_error_rigorous = False
         reference = "historical repository W2 calibration; no MPF theorem"
         theorem_or_equations = "none (nonrigorous proxy)"
         bound_components = (("legacy_w2_prefactor", prefactor),)
-        assumptions = (
-            "alpha_eff=min(alpha,W2^(1/3)) is a heuristic MPF substitution",
-        )
+        assumptions = ("alpha_eff=min(alpha,W2^(1/3)) is a heuristic MPF substitution",)
         commutators = None
-    elif method == "mizuta2026-commutator-ideal-rigorous":
+    elif method in (
+        "mizuta2026-commutator-ideal-rigorous",
+        "mizuta2026-theorem3-legacy-ideal-rigorous",
+    ):
         if target_error is None or not 0 < target_error <= 1:
-            raise ValueError(
-                "target_error in (0, 1] is required for the Mizuta estimator"
+            raise ValueError("target_error in (0, 1] is required for the Mizuta estimator")
+        if method == "mizuta2026-commutator-ideal-rigorous":
+            (
+                error,
+                prefactor,
+                bound_components,
+                commutators,
+                assumptions,
+                rigorous,
+            ) = _refined_mizuta_ideal_mpf_bound(
+                hamiltonian,
+                time,
+                m,
+                int(segments),
+                coefficients,
+                exponents,
+                target_error,
+                execution,
             )
-        (
-            error,
-            prefactor,
-            bound_components,
-            commutators,
-            assumptions,
-            rigorous,
-        ) = _mizuta_ideal_mpf_bound(
-            hamiltonian,
-            time,
-            m,
-            int(segments),
-            coefficient_l1_norm,
-            exponents,
-            target_error,
-        )
-        reference = (
-            "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
-        )
+        else:
+            (
+                error,
+                prefactor,
+                bound_components,
+                commutators,
+                assumptions,
+                rigorous,
+            ) = _legacy_mizuta_ideal_mpf_bound(
+                hamiltonian,
+                time,
+                m,
+                int(segments),
+                coefficient_l1_norm,
+                exponents,
+                target_error,
+                execution,
+                auxiliary_allocation_fraction,
+            )
+        reference = "Mizuta, Quantum 10, 1974 (2026), arXiv:2507.06557v4"
         theorem_or_equations = (
-            "Theorem 4, Eqs. (61)--(63), with Theorem 3, Eqs. (47)--(49)"
+            "Theorem 4, Eqs. (47)--(49), with direct Lemmas 9--10 BCH remainder"
+            if method == "mizuta2026-commutator-ideal-rigorous"
+            else "Theorem 4, Eqs. (47)--(49), with Theorem 3, Eqs. (33)--(35)"
+        )
+        local_error = dict(bound_components).get("local_step_error", 0.0)
+        local_error_rigorous = rigorous
+    elif method == "best-rigorous-ideal":
+        raise ValueError(
+            "best-rigorous-ideal is a segment-selection policy; "
+            "use select_mpf_segments rather than estimate_mpf_error"
         )
     else:
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
-            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+            "'childs2021-w2-triangle-ideal-rigorous', "
+            "'mizuta2026-commutator-ideal-rigorous', "
+            "'mizuta2026-theorem3-legacy-ideal-rigorous', "
+            "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
     return MPFErrorEstimate(
         error=error,
@@ -615,33 +1661,72 @@ def estimate_mpf_error(
         method=method,
         scope="ideal-mpf",
         rigorous=rigorous,
+        local_error=local_error,
+        local_error_rigorous=local_error_rigorous,
         reference=reference,
         theorem_or_equations=theorem_or_equations,
         local_step_size=abs(float(time)) / int(segments),
         bound_components=bound_components,
         assumptions=assumptions,
         fallback_reason=(
-            commutators.fallback_reason if commutators is not None else None
+            (
+                "refined-tail certificate unavailable; used the legacy "
+                "printed-Theorem-3 tail condition"
+            )
+            if method == "mizuta2026-commutator-ideal-rigorous"
+            and dict(bound_components).get("refined_tail_fallback", 0.0)
+            else (commutators.fallback_reason if commutators is not None else None)
         ),
         max_nested_commutator_order=(
-            commutators.max_order if commutators is not None else 0
+            commutators.max_order
+            if commutators is not None
+            else (3 if w2_commutator_bound else 0)
         ),
         max_exact_nested_commutator_order=(
-            commutators.max_exact_order if commutators is not None else 0
+            commutators.max_exact_order
+            if commutators is not None
+            else (3 if w2_commutator_bound else 0)
         ),
-        locality_compatible=commutators is not None,
+        locality_compatible=commutators is not None or w2_commutator_bound,
         commutator_bounds=(
-            tuple(
-                (order, commutators.at(order))
-                for order in range(2, commutators.max_order + 1)
-            )
+            tuple((order, commutators.at(order)) for order in range(2, commutators.max_order + 1))
             if commutators is not None
             else ()
         ),
+        requested_method=method,
     )
 
 
-def select_mpf_segments(
+def estimate_mpf_error(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    segments: int,
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    target_error: float | None = None,
+    auxiliary_allocation_fraction: float | None = None,
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
+) -> MPFErrorEstimate:
+    """Estimate ideal-MPF error while preserving certification provenance."""
+    with execution_scope(workers, _execution, progress) as execution:
+        return _estimate_mpf_error(
+            hamiltonian,
+            time,
+            segments,
+            m,
+            schedule=schedule,
+            method=method,
+            target_error=target_error,
+            auxiliary_allocation_fraction=auxiliary_allocation_fraction,
+            execution=execution,
+        )
+
+
+def _select_mpf_segments(
     hamiltonian: PauliHamiltonian,
     time: float,
     target_error: float,
@@ -649,6 +1734,8 @@ def select_mpf_segments(
     *,
     schedule: MPFSchedule = "new",
     method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    auxiliary_allocation_fraction: float | None = None,
+    execution: CommutatorExecution,
 ) -> MPFErrorEstimate:
     """Select segments and return the resulting scoped MPF estimate.
 
@@ -656,6 +1743,8 @@ def select_mpf_segments(
     Wiebe, arXiv:1907.11679, only as a safe upper bracket, then finds the
     smallest integer satisfying their direct Eqs. (14)--(15) bound by binary
     search. ``low-rigorous`` remains a backward-compatible alias.
+    ``childs2021-w2-triangle-ideal-rigorous`` composes the rigorous Strang W2
+    error through branch, MPF, and repeated-step triangle inequalities.
     ``legacy-w2-proxy`` exactly reproduces the historical heuristic.
     """
     if not np.isfinite(time):
@@ -664,8 +1753,101 @@ def select_mpf_segments(
         raise ValueError("target_error must lie in (0, 1]")
     optimal_mpf_exponents(m, schedule=schedule)
     method = _normalize_mpf_error_method(method)
+    if auxiliary_allocation_fraction is not None and method in (
+        "mizuta2026-commutator-ideal-rigorous",
+        "best-rigorous-ideal",
+    ):
+        raise ValueError(
+            "auxiliary_allocation_fraction is available only for "
+            "'mizuta2026-theorem3-legacy-ideal-rigorous'"
+        )
+    if method == "best-rigorous-ideal":
+        candidates = tuple(
+            _select_mpf_segments(
+                hamiltonian,
+                time,
+                target_error,
+                m,
+                schedule=schedule,
+                method=candidate_method,
+                auxiliary_allocation_fraction=auxiliary_allocation_fraction,
+                execution=execution,
+            )
+            for candidate_method in (
+                "low2019-l1-ideal-rigorous",
+                "childs2021-w2-triangle-ideal-rigorous",
+                "mizuta2026-commutator-ideal-rigorous",
+            )
+        )
+        tie_break_priority = {
+            "low2019-l1-ideal-rigorous": 0,
+            "childs2021-w2-triangle-ideal-rigorous": 1,
+            "mizuta2026-commutator-ideal-rigorous": 2,
+        }
+        chosen = min(
+            candidates,
+            key=lambda item: (
+                item.segments,
+                item.error,
+                tie_break_priority[item.method],
+            ),
+        )
+        summaries = tuple(
+            MPFBoundCandidateSummary(
+                method=item.method,
+                segments=item.segments,
+                error=item.error,
+                rigorous=item.rigorous,
+                fallback_reason=item.fallback_reason,
+                max_exact_nested_commutator_order=item.max_exact_nested_commutator_order,
+            )
+            for item in candidates
+        )
+        return replace(
+            chosen,
+            requested_method="best-rigorous-ideal",
+            bound_candidates=summaries,
+        )
     if method == "legacy-w2-proxy":
         segments = legacy_w2_proxy_segments(hamiltonian, time, target_error, m)
+    elif method == "childs2021-w2-triangle-ideal-rigorous":
+        coefficients = multiproduct_coefficients(m, schedule=schedule)
+        exponents = optimal_mpf_exponents(m, schedule=schedule)
+        b2 = _w2_triangle_b2(coefficients, exponents)
+        _, w2 = suzuki_commutator_bounds(hamiltonian)
+        if w2 == 0 or time == 0:
+            segments = 1
+        else:
+            target_log = math.log(target_error)
+
+            def satisfies_w2(candidate: int) -> bool:
+                _, log_error = _w2_triangle_log_ideal_mpf_bound(
+                    w2,
+                    time,
+                    candidate,
+                    b2,
+                )
+                return log_error <= target_log
+
+            segments = 1
+            while not satisfies_w2(segments):
+                segments *= 2
+                if math.log(segments) > 709:
+                    raise OverflowError("required MPF segment count exceeds float range")
+            if segments > 1:
+                lower = 1
+                upper = segments
+                while lower + 1 < upper:
+                    midpoint = (lower + upper) // 2
+                    if satisfies_w2(midpoint):
+                        upper = midpoint
+                    else:
+                        lower = midpoint
+                segments = upper
+            if not satisfies_w2(segments):
+                raise AssertionError("selected W2-triangle segment fails its error bound")
+            if segments > 1 and satisfies_w2(segments - 1):
+                raise AssertionError("W2-triangle segment selection is not minimal")
     elif method == "low2019-l1-ideal-rigorous":
         coefficients = multiproduct_coefficients(m, schedule=schedule)
         coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
@@ -716,18 +1898,33 @@ def select_mpf_segments(
                 else:
                     lower = midpoint
             segments = upper
-    elif method == "mizuta2026-commutator-ideal-rigorous":
+    elif method in (
+        "mizuta2026-commutator-ideal-rigorous",
+        "mizuta2026-theorem3-legacy-ideal-rigorous",
+    ):
+        estimates: dict[int, MPFErrorEstimate] = {}
+
+        def candidate_estimate(candidate: int) -> MPFErrorEstimate:
+            estimate = estimates.get(candidate)
+            if estimate is None:
+                estimate = estimate_mpf_error(
+                    hamiltonian,
+                    time,
+                    candidate,
+                    m,
+                    schedule=schedule,
+                    method=method,
+                    target_error=target_error,
+                    auxiliary_allocation_fraction=auxiliary_allocation_fraction,
+                    workers=execution.workers,
+                    _execution=execution,
+                )
+                estimates[candidate] = estimate
+            return estimate
+
         def satisfies_mizuta(candidate: int) -> bool:
-            candidate_estimate = estimate_mpf_error(
-                hamiltonian,
-                time,
-                candidate,
-                m,
-                schedule=schedule,
-                method=method,
-                target_error=target_error,
-            )
-            return candidate_estimate.rigorous and candidate_estimate.error <= target_error
+            estimate = candidate_estimate(candidate)
+            return estimate.rigorous and estimate.error <= target_error
 
         segments = 1
         while not satisfies_mizuta(segments):
@@ -748,22 +1945,250 @@ def select_mpf_segments(
         raise ValueError(
             "MPF error method must be 'low2019-l1-ideal-rigorous' "
             "(historical alias 'low-rigorous'), "
-            "'mizuta2026-commutator-ideal-rigorous', or 'legacy-w2-proxy'"
+            "'childs2021-w2-triangle-ideal-rigorous', "
+            "'mizuta2026-commutator-ideal-rigorous', "
+            "'mizuta2026-theorem3-legacy-ideal-rigorous', "
+            "'best-rigorous-ideal', or 'legacy-w2-proxy'"
         )
-    estimate = estimate_mpf_error(
-        hamiltonian,
-        time,
-        segments,
-        m,
-        schedule=schedule,
-        method=method,
-        target_error=(
-            target_error
-            if method == "mizuta2026-commutator-ideal-rigorous"
-            else None
-        ),
-    )
+    if method == "mizuta2026-theorem3-legacy-ideal-rigorous":
+        estimate = candidate_estimate(segments)
+
+        def predicate_value(candidate: int, name: str) -> bool:
+            return bool(dict(candidate_estimate(candidate).bound_components)[name])
+
+        def error_satisfied(candidate: int) -> bool:
+            return predicate_value(candidate, "error_predicate_satisfied")
+
+        def first_time_satisfied(candidate: int) -> bool:
+            return predicate_value(candidate, "time_1_predicate_satisfied")
+
+        def second_time_satisfied(candidate: int) -> bool:
+            return predicate_value(candidate, "time_2_predicate_satisfied")
+
+        def smallest_component(predicate) -> int:
+            if predicate(1):
+                return 1
+            lower = 1
+            upper = segments
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                if predicate(midpoint):
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            if not predicate(upper) or (upper > 1 and predicate(upper - 1)):
+                raise AssertionError("Mizuta segment diagnostic is not independently minimal")
+            return upper
+
+        r_error = smallest_component(error_satisfied)
+        r_time_1 = smallest_component(first_time_satisfied)
+        r_time_2 = smallest_component(second_time_satisfied)
+        components = dict(estimate.bound_components)
+        commuting_exact = all(value == 0 for _, value in estimate.commutator_bounds)
+        additional_constraints: tuple[tuple[str, int], ...] = ()
+        if commuting_exact:
+            active_constraints = ("commuting_exact",)
+        else:
+            thresholds = {
+                "error": r_error,
+                "time_1": r_time_1,
+                "time_2": r_time_2,
+            }
+            independent_maximum = max(thresholds.values())
+            if auxiliary_allocation_fraction is not None and independent_maximum != segments:
+                raise AssertionError("fixed-allocation diagnostics do not recover selection")
+            if independent_maximum > segments:
+                raise AssertionError("Mizuta component threshold exceeds joint selection")
+            if independent_maximum == segments:
+                active_constraints = tuple(
+                    name for name, threshold in thresholds.items() if threshold == segments
+                )
+            else:
+                active_constraints = ("joint_allocation",)
+                additional_constraints = (("joint_allocation", segments),)
+            if not predicate_value(segments, "joint_predicate_satisfied"):
+                raise AssertionError("selected Mizuta segment fails the complete predicate")
+            if segments > 1:
+                if predicate_value(segments - 1, "joint_predicate_satisfied"):
+                    raise AssertionError("Mizuta segment selection is not jointly minimal")
+                if active_constraints != ("joint_allocation",):
+                    previous_failures = {
+                        "error": not error_satisfied(segments - 1),
+                        "time_1": not first_time_satisfied(segments - 1),
+                        "time_2": not second_time_satisfied(segments - 1),
+                    }
+                    if not any(previous_failures[name] for name in active_constraints):
+                        raise AssertionError("selected Mizuta segment has no active failing predicate")
+        estimate = replace(
+            estimate,
+            segment_diagnostics=MPFSegmentDiagnostics(
+                r_error=r_error,
+                r_time_1=r_time_1,
+                r_time_2=r_time_2,
+                active_constraints=active_constraints,
+                truncation_order_p0=int(components["truncation_order_p0"]),
+                mu_upper=components["mu_upper"],
+                auxiliary_error=components["auxiliary_error"],
+                auxiliary_allocation_fraction=components["auxiliary_allocation_fraction"],
+                local_commutator_error=components["local_commutator_error"],
+                local_truncated_bch_error=components["local_truncated_bch_error"],
+                allocation_strategy=(
+                    "optimized-discrete-p0"
+                    if auxiliary_allocation_fraction is None
+                    else "fixed-local-budget-fraction"
+                ),
+                additional_constraints=additional_constraints,
+            ),
+        )
+    elif method == "mizuta2026-commutator-ideal-rigorous":
+        estimate = candidate_estimate(segments)
+
+        def refined_predicate(candidate: int, name: str) -> bool:
+            return bool(dict(candidate_estimate(candidate).bound_components)[name])
+
+        def smallest_refined_component(name: str) -> int:
+            if refined_predicate(1, name):
+                return 1
+            lower = 1
+            upper = segments
+            while lower + 1 < upper:
+                midpoint = (lower + upper) // 2
+                if refined_predicate(midpoint, name):
+                    upper = midpoint
+                else:
+                    lower = midpoint
+            if not refined_predicate(upper, name):
+                raise AssertionError("refined Mizuta diagnostic threshold was not found")
+            return upper
+
+        r_error = smallest_refined_component("error_predicate_satisfied")
+        r_time_2 = smallest_refined_component("time_2_predicate_satisfied")
+        components = dict(estimate.bound_components)
+        commuting_exact = all(value == 0 for _, value in estimate.commutator_bounds)
+        if commuting_exact or time == 0.0:
+            active_constraints = ("commuting_exact" if commuting_exact else "zero_time_exact",)
+        elif segments == 1:
+            active_constraints = tuple(
+                name
+                for name, threshold in (("error", r_error), ("time_2", r_time_2))
+                if threshold == 1
+            ) or ("joint_p0",)
+        else:
+            previous_components = dict(candidate_estimate(segments - 1).bound_components)
+            failures = []
+            if not previous_components["error_predicate_satisfied"]:
+                failures.append("error")
+            if not previous_components["time_2_predicate_satisfied"]:
+                failures.append("time_2")
+            active_constraints = tuple(failures) or ("joint_p0",)
+            if previous_components["joint_predicate_satisfied"]:
+                raise AssertionError("refined Mizuta segment selection is not minimal")
+
+        fallback_used = bool(components["refined_tail_fallback"])
+        estimate = replace(
+            estimate,
+            segment_diagnostics=MPFSegmentDiagnostics(
+                r_error=r_error,
+                r_time_1=None,
+                r_time_2=r_time_2,
+                active_constraints=active_constraints,
+                truncation_order_p0=int(components["truncation_order_p0"]),
+                mu_upper=components["mu_upper"],
+                auxiliary_error=None,
+                auxiliary_allocation_fraction=None,
+                local_commutator_error=components["local_commutator_error"],
+                local_truncated_bch_error=components["local_truncated_bch_error"],
+                allocation_strategy="direct-p0-remainder-optimization",
+                refined_lemma9_remainder=components["refined_lemma9_remainder"],
+                refined_lemma10_remainder=components["refined_lemma10_remainder"],
+                total_branchwise_bch_remainder=components[
+                    "total_branchwise_bch_remainder"
+                ],
+                local_step_error=components["local_step_error"],
+                repeated_global_error=components["repeated_global_error"],
+                legacy_first_time_limit=components["legacy_first_time_limit"],
+                legacy_first_condition_passed=bool(
+                    components["legacy_first_condition_passed"]
+                ),
+                second_time_limit=components["second_time_limit"],
+                schedule_weights=mizuta_schedule_weights(
+                    hamiltonian,
+                    suzuki_order=2,
+                ).group_weights,
+                schedule_weighted_extensiveness=components[
+                    "schedule_weighted_extensiveness"
+                ],
+                max_exact_nested_commutator_order=estimate.max_exact_nested_commutator_order,
+                used_locality_fallback=(
+                    estimate.max_exact_nested_commutator_order
+                    < estimate.max_nested_commutator_order
+                ),
+                locality_fallback_reason=(
+                    "exact commutator transition cap reached; locality bound used"
+                    if estimate.max_exact_nested_commutator_order
+                    < estimate.max_nested_commutator_order
+                    else None
+                ),
+                refined_tail_fallback_status=(
+                    "legacy-theorem3-tail" if fallback_used else "not-used"
+                ),
+            ),
+        )
+    else:
+        estimate = estimate_mpf_error(
+            hamiltonian,
+            time,
+            segments,
+            m,
+            schedule=schedule,
+            method=method,
+            workers=execution.workers,
+            _execution=execution,
+        )
+        estimate = replace(
+            estimate,
+            segment_diagnostics=MPFSegmentDiagnostics(
+                r_error=segments,
+                r_time_1=None,
+                r_time_2=None,
+                active_constraints=(
+                    "error" if estimate.rigorous else "heuristic_error",
+                ),
+            ),
+        )
     return estimate
+
+
+def select_mpf_segments(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    target_error: float,
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+    method: MPFErrorMethod = "low2019-l1-ideal-rigorous",
+    auxiliary_allocation_fraction: float | None = None,
+    workers: int = 1,
+    progress: CommutatorProgressCallback | None = None,
+    _execution: CommutatorExecution | None = None,
+) -> MPFErrorEstimate:
+    """Select the smallest segment count satisfying the requested bound.
+
+    Refined Mizuta selection enumerates ``p0`` and evaluates the BCH remainder
+    directly. The auxiliary allocation option applies only to the explicit
+    ``mizuta2026-theorem3-legacy-ideal-rigorous`` identifier.
+    """
+    with execution_scope(workers, _execution, progress) as execution:
+        return _select_mpf_segments(
+            hamiltonian,
+            time,
+            target_error,
+            m,
+            schedule=schedule,
+            method=method,
+            auxiliary_allocation_fraction=auxiliary_allocation_fraction,
+            execution=execution,
+        )
 
 
 def _multiproduct_select_gate(
@@ -850,9 +2275,7 @@ def _build_multiproduct_step_from_components(
     coefficient_array = np.asarray(coefficients, dtype=float)
     coefficient_l1 = structure.coefficient_l1_norm
     padding_weight = structure.padding_weight
-    branch_weights = np.concatenate(
-        (coefficient_array, [padding_weight / 2, -padding_weight / 2])
-    )
+    branch_weights = np.concatenate((coefficient_array, [padding_weight / 2, -padding_weight / 2]))
     prepare = state_preparation(
         np.sqrt(np.abs(branch_weights) / _OAA_NORMALIZATION),
         name="PREPARE_MPF",
@@ -931,9 +2354,7 @@ def build_multiproduct_circuit(
         raise ValueError("unamplified MPF is only supported for segments=1")
 
     exponents = optimal_mpf_exponents(m, schedule=schedule)
-    coefficients = tuple(
-        float(value) for value in multiproduct_coefficients(m, schedule=schedule)
-    )
+    coefficients = tuple(float(value) for value in multiproduct_coefficients(m, schedule=schedule))
     structure = mpf_lcu_structure(m, schedule=schedule)
     return _build_multiproduct_circuit_from_components(
         hamiltonian,
@@ -1002,8 +2423,7 @@ def _build_multiproduct_circuit_from_components(
         "base_lcu_uses_per_segment": oaa_factor,
         "logical_gate_counts_per_segment": logical_counts_per_segment,
         "logical_gate_counts": {
-            key: int(segments * value)
-            for key, value in logical_counts_per_segment.items()
+            key: int(segments * value) for key, value in logical_counts_per_segment.items()
         },
         "registers": {"branch": 0, "system": hamiltonian.num_qubits},
     }
@@ -1017,9 +2437,7 @@ def _build_multiproduct_circuit_from_components(
             postselection="none",
             trotter_step_queries_per_segment=0,
             trotter_step_queries=0,
-            logical_gate_counts_per_segment={
-                key: 0 for key in logical_counts_per_segment
-            },
+            logical_gate_counts_per_segment={key: 0 for key in logical_counts_per_segment},
             logical_gate_counts={key: 0 for key in logical_counts_per_segment},
         )
         circuit.metadata = metadata
@@ -1062,10 +2480,10 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
 
     if not isinstance(plan, MPFPlan):
         raise TypeError("plan must be an MPFPlan")
-    return _build_multiproduct_circuit_from_components(
+    circuit = _build_multiproduct_circuit_from_components(
         plan.hamiltonian,
         plan.time,
-        plan.method.term_count,
+        plan.term_count,
         plan.segments,
         plan.method.schedule,
         True,
@@ -1073,3 +2491,15 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
         plan.coefficients,
         plan.lcu_structure,
     )
+    circuit.metadata = {
+        **(circuit.metadata or {}),
+        "branch_count_policy": plan.branch_count_selection.policy,
+        "selected_branch_count": plan.term_count,
+        "branch_count_policy_extensiveness_g": (
+            plan.branch_count_selection.extensiveness_g
+        ),
+        "branch_count_policy_target_error": (
+            plan.branch_count_selection.target_error
+        ),
+    }
+    return circuit

@@ -144,6 +144,12 @@ Fallback results always have `method="alpha-proxy"` and `rigorous=False`.
 Benchmark tables expose the same distinction through
 `trotter_error_method` and `trotter_error_rigorous`.
 
+The evaluator retains only the active nonzero commutator frontier. Large
+frontier and theorem-reduction stages can be split across worker processes;
+small stages stay serial to avoid process and serialization overhead. Python
+calls default to `workers=1`, while benchmark CLI runs select a capped worker
+count automatically.
+
 ## Validation
 
 The test suite synthesizes the decomposed Qiskit circuit, forms its small dense
