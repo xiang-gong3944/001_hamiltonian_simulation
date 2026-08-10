@@ -110,17 +110,36 @@ provided by `pauli_locality_parameters`. It is not the Hamiltonian 1-norm or
 the schedule-weighted \(g_\alpha\).
 
 The policy is evaluated in the log domain. If \(g|t|=0\), or the ratio is at
-most one, it returns \(J=2\). It resolves the selected schedule without
-clamping or testing nearby orders. The registered `new` and `legacy` tables
-support only \(2\le J\le15\); a larger prescribed order raises a `ValueError`
-recording \(J,N,g,|t|,\varepsilon_{\rm alg}\), policy, schedule, and the
-supported interval.
+most one, it returns \(J=2\). It resolves the selected order without clamping
+or testing nearby orders. The registered `new` and `legacy` exponent tables
+support only \(2\le J\le15\). Branch-count resolution itself is
+schedule-independent and may return a larger value. Rigorous or
+coefficient-dependent consumers then fail with the resolved \(J\), model size,
+and explicit-schedule requirement. Empirical planning may retain a larger
+`new`-schedule value only when an exact reviewed calibration exists; it uses
+aggregate \(K\) cost and is not circuit-ready.
 
 Resolution occurs once per planning point. Low, legacy Mizuta, refined
 Mizuta, and `best-rigorous-ideal` consequently consume identical exponents,
 coefficients, and LCU structure. The policy never optimizes over \(J\).
 Theorem 6 assumes well-conditioned schedules at asymptotically growing order;
 the repository can study only points resolving to \(J\le15\).
+
+### Empirical ideal-MPF sizing and aggregate cost
+
+`error_method="empirical-operator-norm"` looks up a reviewed fixed-\(J\)
+spectral-norm calibration after branch-count resolution. It models the
+repeated ideal MPF operator, produces no ideal or circuit certification claim,
+and never falls back to an analytical estimator. Initial reviewed rows cover
+only `new` schedules with \(2\le J\le8\).
+
+Resource costing consumes \(K=\sum_jk_j\) separately from explicit
+implementation data. Registered schedules through \(J=15\) provide both. For
+`new` and \(J>15\), `mpf_exponent_cost` provides only
+`ceil(0.418*J**2*log(J))`; exponents, coefficients, weights, coefficient norm,
+LCU structure, rigorous estimators, exact simulation, and circuit construction
+remain unavailable. See [the empirical guide](empirical_error_estimation.md)
+and [the cost-scaling note](mpf_exponent_sum_scaling.md).
 
 ## Notation map
 

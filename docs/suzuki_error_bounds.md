@@ -68,6 +68,16 @@ The resulting coefficient is stored as `SuzukiErrorEstimate.prefactor`. For
 `choose_parameters` inverts this expression against the algorithmic portion
 of the requested error budget.
 
+## Opt-in empirical sizing
+
+`TrotterMethod(p, error_policy="empirical-operator-norm")` bypasses bound
+inversion only for reviewed orders 2, 4, and 6. Planning still resolves the
+same `auto` structure first, then performs an exact calibration lookup for the
+resolved partition and model metadata. The fixed-order operator-norm law and
+domain guard are documented in
+[the empirical guide](empirical_error_estimation.md). This path is explicitly
+nonrigorous and does not alter the analytical default or its fallback rules.
+
 ## Qiskit formula correspondence
 
 Qiskit's `SuzukiTrotter` uses

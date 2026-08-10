@@ -130,10 +130,11 @@ continues to contain `term_count` and omit `branch_count_policy`; dynamic JSON
 omits `term_count` and stores
 `"branch_count_policy": "mizuta2026-theorem6"`.
 
-The registered schedules cover \(2\le J\le15\). A dynamic point requiring a
-larger order remains a fault-isolated benchmark row with `status="error"` and
-the full unsupported-order message; direct planning calls propagate the
-exception.
+The registered explicit schedules cover \(2\le J\le15\). Resolution may return
+a larger order. Rigorous/coefficient-dependent methods then become a
+fault-isolated `status="error"` row. An empirical `new`-schedule row can
+continue only with an exact reviewed calibration, in which case its analytical
+resource result uses aggregate \(K\) and remains explicitly non-implementable.
 
 `TimeScaling("proportional", tau)` means `t(n) = tau * n`; the checked-in
 default has `tau=1`. This gives each one-dimensional local Hamiltonian enough
@@ -194,6 +195,7 @@ are:
 | `target_error` | Total simulation-error target. |
 | `method_id` | Stable method identity such as `trotter-p4` or `mpf-m5`. |
 | `method_family` / `method_label` | Plot grouping and human-readable name. |
+| `error_policy`, `estimate_category` | Normalized sizing policy and analytical/empirical/proxy category. |
 | `mpf_term_count`, `mpf_formal_order` | Resolved row-specific \(J\) and \(2J\), including dynamic rows. |
 | `mpf_branch_count_policy` | `fixed` or `mizuta2026-theorem6`; missing historical schema-2 values load as `fixed`. |
 | `mpf_branch_count_policy_extensiveness_g` | Outward-rounded unweighted Pauli extensiveness used by the dynamic formula. |
@@ -217,6 +219,10 @@ are:
 | `bound_scope`, `bound_target_satisfied` | Scope of the bound and whether a rigorous bound meets the algorithmic budget. |
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
 | `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
+| `empirical_calibration_id`, `empirical_calibration_model` | Exact reviewed row and model identity, when empirical sizing is selected. |
+| `empirical_calibration_size_min`, `empirical_calibration_size_max`, `empirical_calibration_time_min`, `empirical_calibration_time_max` | Reviewed finite calibration domain. |
+| `empirical_size_extrapolated`, `empirical_time_extrapolated`, `empirical_active_constraint` | Extrapolation flags and formula/domain guard provenance. |
+| `mpf_exponent_sum`, `mpf_exponent_sum_source`, `mpf_explicit_schedule_available` | Aggregate \(K\), exact/extrapolated provenance, and circuit-schedule capability. |
 | `status`, `error_type`, `error_message` | Per-method failure information. |
 
 The CSV retains detailed Trotter, MPF, QSVT, synthesis, software, and Git
@@ -239,7 +245,7 @@ current MPF rows because their Low/Mizuta guarantees apply to the ideal MPF,
 not the complete shared-ancilla robust-OAA circuit. Use
 `certification_policy="declared-bound-scope"` to include rigorous ideal-MPF
 rows with an explicit circuit-unproven label, or `"unconstrained"` to include
-heuristics. The old `rigorous_only` argument is a deprecated compatibility
+heuristics and empirical non-certified rows. The old `rigorous_only` argument is a deprecated compatibility
 alias. Plot titles record the selected policy, and summaries retain
 `selected_method_id` and `selected_method_label`.
 
@@ -276,3 +282,8 @@ alias. Plot titles record the selected policy, and summaries retain
    architecture-dependent.
 6. The benchmark constructs neither dense Hamiltonian matrices nor concrete
    circuits. Use `compare_with_exact` separately for small-system calibration.
+7. Empirical policies size from reviewed spectral operator-norm observations,
+   create no mathematical claim, and keep synthesis error separate. Missing or
+   mismatched calibrations fail closed. Aggregate-only MPF counts conditionally
+   retain the existing branch-addressing/OAA architecture without implying an
+   explicit schedule or constructible circuit.
