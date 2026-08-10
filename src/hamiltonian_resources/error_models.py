@@ -8,7 +8,7 @@ from typing import Literal, TypeAlias
 import numpy as np
 
 
-EstimateCategory: TypeAlias = Literal["analytical", "proxy"]
+EstimateCategory: TypeAlias = Literal["analytical", "empirical", "proxy"]
 ClaimCategory: TypeAlias = Literal["analytical", "derived"]
 Certification: TypeAlias = Literal["rigorous", "nonrigorous"]
 AssessmentOutcome: TypeAlias = Literal["certified", "not_met", "unavailable"]
@@ -163,7 +163,7 @@ class SizingEstimate:
         _require_text(self.quantity, "sizing quantity")
         _require_text(self.metric, "sizing metric")
         _require_text(self.scope, "sizing scope")
-        if self.category not in {"analytical", "proxy"}:
+        if self.category not in {"analytical", "empirical", "proxy"}:
             raise ValueError("unknown sizing category")
         if self.certification not in {"rigorous", "nonrigorous"}:
             raise ValueError("unknown sizing certification")
@@ -176,6 +176,10 @@ class SuzukiSizingEstimate(SizingEstimate):
     prefactor: float
     partition: str
     group_count: int
+    calibration_id: str | None = None
+    calibration_size_extrapolated: bool = False
+    calibration_time_extrapolated: bool = False
+    active_constraint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -187,8 +191,15 @@ class MPFSizingEstimate(SizingEstimate):
     branch_count_policy_extensiveness_g: float | None
     branch_count_policy_target_error: float
     schedule: str
-    exponents: tuple[int, ...]
-    coefficient_l1_norm: float
+    exponents: tuple[int, ...] | None
+    coefficient_l1_norm: float | None
+    exponent_sum: int = 0
+    exponent_sum_source: str = ""
+    explicit_schedule_available: bool = True
+    calibration_id: str | None = None
+    calibration_size_extrapolated: bool = False
+    calibration_time_extrapolated: bool = False
+    active_constraint: str | None = None
 
 
 @dataclass(frozen=True)
