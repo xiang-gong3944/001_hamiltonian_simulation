@@ -44,11 +44,19 @@ def _analytical_provenance(plan: SimulationPlan) -> ResourceModelProvenance:
             "each Pauli word uses a parity ladder with no cross-word cancellation",
         )
     elif isinstance(plan, MPFPlan):
-        assumptions = (
+        assumptions = [
             "MPF SELECT uses one reusable equality-flag ancilla per physical branch",
             "each segment uses three SELECT, six PREPARE, and two good reflections",
             "generic Qiskit controlled-gate decomposition is not modeled",
-        )
+        ]
+        if not plan.schedule_cost.explicit_schedule_available:
+            assumptions.extend(
+                (
+                    "the exponent sum is an aggregate extrapolation, not an explicit schedule",
+                    "branch-addressing overhead conditionally follows the registered OAA architecture",
+                    "this resource estimate does not imply an implementable MPF circuit",
+                )
+            )
     else:
         assumptions = (
             "controlled QSVT responses multiplex V and V-dagger in shared query slots",
@@ -58,7 +66,7 @@ def _analytical_provenance(plan: SimulationPlan) -> ResourceModelProvenance:
     return ResourceModelProvenance(
         backend="analytical",
         model="structured-analytical-v1",
-        assumptions=common + assumptions,
+        assumptions=common + tuple(assumptions),
     )
 
 
@@ -82,7 +90,22 @@ def compile_resources_analytically(
     elif isinstance(plan, MPFPlan):
         segments = plan.segments
         structure = plan.lcu_structure
-        branch_bits = structure.branch_bits
+        branch_bits = (
+            structure.branch_bits
+            if structure is not None
+            else max(1, math.ceil(math.log2(plan.term_count + 2)))
+        )
+        physical_branch_count = (
+            structure.physical_branch_count if structure is not None else plan.term_count
+        )
+        # For any increasing distinct exponent schedule, coefficient signs
+        # alternate. The extra negative identity padding branch contributes one
+        # more selected sign phase in the conditional aggregate-cost model.
+        sign_branch_count = (
+            structure.sign_branch_count
+            if structure is not None
+            else plan.term_count // 2 + 1
+        )
         branch_flag_pairs = multicontrol_and_pairs(branch_bits)
         phase_pairs = multicontrol_and_pairs(branch_bits - 1)
         select_rotations = (
@@ -91,8 +114,8 @@ def compile_resources_analytically(
         prepare_rotations = 2**branch_bits - 1
         rotations = segments * (3 * 2 * select_rotations + 6 * prepare_rotations)
         and_pairs = segments * (
-            3 * structure.physical_branch_count * branch_flag_pairs
-            + 3 * structure.sign_branch_count * phase_pairs
+            3 * physical_branch_count * branch_flag_pairs
+            + 3 * sign_branch_count * phase_pairs
             + 2 * phase_pairs
         )
         cnots = math.ceil(
@@ -100,7 +123,7 @@ def compile_resources_analytically(
             * (
                 3 * select_rotations * (mean_ladder_cx + 2)
                 + 6 * max(0, 2**branch_bits - 2)
-                + (3 * structure.sign_branch_count + 2)
+                + (3 * sign_branch_count + 2)
             )
             + and_pairs * _CX_PER_AND
         )
