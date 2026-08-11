@@ -1,0 +1,149 @@
+{
+  "accepted_observations_canonical_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+  "reviewed_size_policy": "Each migrated record remains reviewed only through its observed v1 size maximum. The N<=100 audit is diagnostic and does not silently expand it.",
+  "schema_version": "2.0",
+  "size_model_audit": [
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m2",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "power-plus-offset"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m3",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m4",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m5",
+      "failure_reasons": [
+        "N=9,10 holdout observations are absent"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m6",
+      "failure_reasons": [
+        "N=9,10 holdout observations are absent"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m7",
+      "failure_reasons": [
+        "N=9,10 holdout observations are absent"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m8",
+      "failure_reasons": [
+        "N=9,10 holdout observations are absent"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p2",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "power"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p4",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p6",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m2",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m3",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m4",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m5",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m6",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m7",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m8",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p2",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p4",
+      "failure_reasons": [],
+      "passed_v2_size_gates": true,
+      "selected_model": "affine"
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p6",
+      "failure_reasons": [
+        "no size law passed holdout and shifted-window stability gates"
+      ],
+      "passed_v2_size_gates": false,
+      "selected_model": null
+    }
+  ],
+  "status": "reviewed-lossless-migration",
+  "study_id": "empirical-operator-norm-1d-v2-lossless-migration"
+}

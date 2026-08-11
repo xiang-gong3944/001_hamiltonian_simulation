@@ -1,5 +1,4 @@
 from dataclasses import replace
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -106,8 +105,8 @@ def test_reviewed_package_calibrations_match_the_reviewed_artifacts():
     fits_path = (
         project_root / "docs" / "calibration_data" / "empirical_1d_v1_fits.json"
     )
-    source_digest = hashlib.sha256(accepted_path.read_bytes()).hexdigest()
     accepted = json.loads(accepted_path.read_text(encoding="utf-8"))
+    source_digest = canonical_json_digest(accepted)
     fits = json.loads(fits_path.read_text(encoding="utf-8"))
     registry = default_empirical_calibrations()
 
@@ -153,6 +152,29 @@ def test_reviewed_package_calibrations_match_the_reviewed_artifacts():
         )
         assert row.coefficient.at(row.size_range[0]) > 0
         assert row.coefficient.at(row.size_range[1]) > 0
+
+
+def test_lossless_v2_migration_loads_all_v1_rows_with_observed_domains():
+    project_root = Path(__file__).resolve().parents[1]
+    migrated = json.loads(
+        (
+            project_root
+            / "src"
+            / "hamiltonian_resources"
+            / "data"
+            / "empirical_calibrations_v2_migrated.json"
+        ).read_text(encoding="utf-8")
+    )
+    registry = EmpiricalCalibrationRegistry.from_json_data(migrated)
+    legacy = default_empirical_calibrations()
+
+    assert len(registry.records) == len(legacy.records) == 20
+    by_id = {row.calibration_id: row for row in registry.records}
+    for old in legacy.records:
+        new = by_id[old.calibration_id]
+        assert new.coefficient.model_name == "affine"
+        assert new.coefficient.parameters == old.coefficient.parameters
+        assert new.reviewed_size_max == old.size_range[1]
 
 
 def test_empirical_formula_has_exact_fixed_powers_and_affine_size_scaling():

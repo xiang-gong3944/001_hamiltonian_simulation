@@ -1,0 +1,1419 @@
+{
+  "calibrations": [
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p2",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.7602307823,
+          "slope": 0.9660001035
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.026736299,
+        "r_squared": 0.999924125,
+        "rmse": 0.0217268805,
+        "slope_standard_error": 0.0031804896
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 2,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": "individual",
+        "schedule": null
+      },
+      "max_step_size": 0.0625,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p4",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.3567275051,
+          "slope": 0.4252299911
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0161752172,
+        "r_squared": 0.9998566909,
+        "rmse": 0.0131445647,
+        "slope_standard_error": 0.0019241672
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 4,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": "commuting",
+        "schedule": null
+      },
+      "max_step_size": 0.125,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p6",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": 0.0253370433,
+          "slope": 0.0065063233
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.00799142,
+        "r_squared": 0.8699906345,
+        "rmse": 0.006494116,
+        "slope_standard_error": 0.0009506412
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 6,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": "commuting",
+        "schedule": null
+      },
+      "max_step_size": 0.125,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m2",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -4.0389274532,
+          "slope": 3.607143115
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.1297718259,
+        "r_squared": 0.9998718077,
+        "rmse": 0.1054572647,
+        "slope_standard_error": 0.0154373628
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 4,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.125,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m3",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -1.1555532088,
+          "slope": 1.079005989
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0354801312,
+        "r_squared": 0.9998929074,
+        "rmse": 0.0288324339,
+        "slope_standard_error": 0.0042206361
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 6,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.1666666667,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m4",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": 0.0188559758,
+          "slope": 0.115329371
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0358566818,
+        "r_squared": 0.990515703,
+        "rmse": 0.0291384324,
+        "slope_standard_error": 0.0042654298
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 8,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.4,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m5",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.0089474144,
+          "slope": 0.0090977155
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0049500127,
+        "r_squared": 0.971510881,
+        "rmse": 0.0040225588,
+        "slope_standard_error": 0.0005888423
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 10,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.5,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m6",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.0028829422,
+          "slope": 0.0014115823
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0012177666,
+        "r_squared": 0.9313394698,
+        "rmse": 0.000989601,
+        "slope_standard_error": 0.0001448628
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 12,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.6666666667,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m7",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.0001799053,
+          "slope": 7.00701e-05
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 4.5033e-05,
+        "r_squared": 0.9606934706,
+        "rmse": 3.65955e-05,
+        "slope_standard_error": 5.357e-06
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 14,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.8,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m8",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -1.84525e-05,
+          "slope": 5.2484e-06
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 2.7916e-06,
+        "r_squared": 0.9727393177,
+        "rmse": 2.2686e-06,
+        "slope_standard_error": 3.321e-07
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 16,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.8,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p2",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -1.8067365799,
+          "slope": 1.119603813
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.2468415952,
+        "r_squared": 0.995208127,
+        "rmse": 0.2005923802,
+        "slope_standard_error": 0.0293637178
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 2,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": "individual",
+        "schedule": null
+      },
+      "max_step_size": 0.0625,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p4",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.8341627504,
+          "slope": 0.2869395721
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0876380065,
+        "r_squared": 0.9908442711,
+        "rmse": 0.0712178039,
+        "slope_standard_error": 0.010425219
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 4,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": "commuting",
+        "schedule": null
+      },
+      "max_step_size": 0.125,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p6",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.0120399404,
+          "slope": 0.0041652782
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0019372829,
+        "r_squared": 0.979021533,
+        "rmse": 0.0015743059,
+        "slope_standard_error": 0.0002304548
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 6,
+        "formula": "repository-suzuki-v1",
+        "geometry": "1d-chain",
+        "method": "trotter",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": "commuting",
+        "schedule": null
+      },
+      "max_step_size": 0.1666666667,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m2",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -1.027865727,
+          "slope": 0.3842865401
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.2415757436,
+        "r_squared": 0.9628769847,
+        "rmse": 0.1728904657,
+        "slope_standard_error": 0.0308046137
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 4,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.125,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 11,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        11
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m3",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.1632281362,
+          "slope": 0.0488064737
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0282100126,
+        "r_squared": 0.9679671377,
+        "rmse": 0.0229244734,
+        "slope_standard_error": 0.0033557993
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 6,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.1666666667,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m4",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.009329568,
+          "slope": 0.0030699963
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 0.0017956791,
+        "r_squared": 0.9672213491,
+        "rmse": 0.0014592336,
+        "slope_standard_error": 0.0002136099
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 8,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.25,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 12,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        12
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m5",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -0.0005261246,
+          "slope": 0.0001372834
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 5.49138e-05,
+        "r_squared": 0.9875258001,
+        "rmse": 2.18205e-05,
+        "slope_standard_error": 8.9082e-06
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 10,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.5,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 8,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        8
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m6",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -2.6803e-05,
+          "slope": 7.1136e-06
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 2.4098e-06,
+        "r_squared": 0.937284601,
+        "rmse": 2.9513e-06,
+        "slope_standard_error": 6.024e-07
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 12,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.6666666667,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 8,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        8
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m7",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -5.76e-07,
+          "slope": 1.462e-07
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 5.79e-08,
+        "r_squared": 0.9156533817,
+        "rmse": 7.09e-08,
+        "slope_standard_error": 1.45e-08
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 14,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 0.8,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 8,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        8
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m8",
+      "coefficient": {
+        "model": "affine",
+        "parameters": {
+          "intercept": -1.25494e-08,
+          "slope": 3.2069e-09
+        }
+      },
+      "error_metric": "spectral operator 2-norm",
+      "external_validation_sizes": [],
+      "fit_diagnostics": {
+        "intercept_standard_error": 1.4489e-09,
+        "r_squared": 0.8966280696,
+        "rmse": 1.7745e-09,
+        "slope_standard_error": 3.622e-10
+      },
+      "key": {
+        "boundary_condition": "open",
+        "formal_order": 16,
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "geometry": "1d-chain",
+        "method": "multiproduct",
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        },
+        "partition": null,
+        "schedule": "new"
+      },
+      "max_step_size": 1.0,
+      "reference": "Repository empirical operator-norm calibration study v1; lossless tagged-schema migration (2026-08-11)",
+      "review_status": "reviewed",
+      "reviewed_size_max": 8,
+      "sample_sizes": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "sample_times": [
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0
+      ],
+      "size_range": [
+        4,
+        8
+      ],
+      "source": "docs/calibration_data/empirical_1d_v2_accepted.json",
+      "source_digest": "e88d8e917f3b78953c971044bbf853988e15e5e35cba8fbd73ea723a94edb88f",
+      "stability_diagnostics": {
+        "legacy_lossless_migration": 1.0
+      },
+      "time_range": [
+        4.0,
+        12.0
+      ]
+    }
+  ],
+  "dataset_id": "empirical-operator-norm-1d-v2-lossless-migration",
+  "schema_version": "2.0"
+}

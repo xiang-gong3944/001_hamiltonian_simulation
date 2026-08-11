@@ -1,0 +1,210 @@
+{
+  "fits": [
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p2",
+      "intercept": -0.7602307823,
+      "intercept_standard_error": 0.026736299,
+      "max_step_size": 0.0625,
+      "r_squared": 0.999924125,
+      "rmse": 0.0217268805,
+      "slope": 0.9660001035,
+      "slope_standard_error": 0.0031804896
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p4",
+      "intercept": -0.3567275051,
+      "intercept_standard_error": 0.0161752172,
+      "max_step_size": 0.125,
+      "r_squared": 0.9998566909,
+      "rmse": 0.0131445647,
+      "slope": 0.4252299911,
+      "slope_standard_error": 0.0019241672
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-trotter-p6",
+      "intercept": 0.0253370433,
+      "intercept_standard_error": 0.00799142,
+      "max_step_size": 0.125,
+      "r_squared": 0.8699906345,
+      "rmse": 0.006494116,
+      "slope": 0.0065063233,
+      "slope_standard_error": 0.0009506412
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m2",
+      "intercept": -4.0389274532,
+      "intercept_standard_error": 0.1297718259,
+      "max_step_size": 0.125,
+      "r_squared": 0.9998718077,
+      "rmse": 0.1054572647,
+      "slope": 3.607143115,
+      "slope_standard_error": 0.0154373628
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m3",
+      "intercept": -1.1555532088,
+      "intercept_standard_error": 0.0354801312,
+      "max_step_size": 0.1666666667,
+      "r_squared": 0.9998929074,
+      "rmse": 0.0288324339,
+      "slope": 1.079005989,
+      "slope_standard_error": 0.0042206361
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m4",
+      "intercept": 0.0188559758,
+      "intercept_standard_error": 0.0358566818,
+      "max_step_size": 0.4,
+      "r_squared": 0.990515703,
+      "rmse": 0.0291384324,
+      "slope": 0.115329371,
+      "slope_standard_error": 0.0042654298
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m5",
+      "intercept": -0.0089474144,
+      "intercept_standard_error": 0.0049500127,
+      "max_step_size": 0.5,
+      "r_squared": 0.971510881,
+      "rmse": 0.0040225588,
+      "slope": 0.0090977155,
+      "slope_standard_error": 0.0005888423
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m6",
+      "intercept": -0.0028829422,
+      "intercept_standard_error": 0.0012177666,
+      "max_step_size": 0.6666666667,
+      "r_squared": 0.9313394698,
+      "rmse": 0.000989601,
+      "slope": 0.0014115823,
+      "slope_standard_error": 0.0001448628
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m7",
+      "intercept": -0.0001799053,
+      "intercept_standard_error": 4.5033e-05,
+      "max_step_size": 0.8,
+      "r_squared": 0.9606934706,
+      "rmse": 3.65955e-05,
+      "slope": 7.00701e-05,
+      "slope_standard_error": 5.357e-06
+    },
+    {
+      "calibration_id": "opnorm-v1-tfim-open-mpf-new-m8",
+      "intercept": -1.84525e-05,
+      "intercept_standard_error": 2.7916e-06,
+      "max_step_size": 0.8,
+      "r_squared": 0.9727393177,
+      "rmse": 2.2686e-06,
+      "slope": 5.2484e-06,
+      "slope_standard_error": 3.321e-07
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p2",
+      "intercept": -1.8067365799,
+      "intercept_standard_error": 0.2468415952,
+      "max_step_size": 0.0625,
+      "r_squared": 0.995208127,
+      "rmse": 0.2005923802,
+      "slope": 1.119603813,
+      "slope_standard_error": 0.0293637178
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p4",
+      "intercept": -0.8341627504,
+      "intercept_standard_error": 0.0876380065,
+      "max_step_size": 0.125,
+      "r_squared": 0.9908442711,
+      "rmse": 0.0712178039,
+      "slope": 0.2869395721,
+      "slope_standard_error": 0.010425219
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-trotter-p6",
+      "intercept": -0.0120399404,
+      "intercept_standard_error": 0.0019372829,
+      "max_step_size": 0.1666666667,
+      "r_squared": 0.979021533,
+      "rmse": 0.0015743059,
+      "slope": 0.0041652782,
+      "slope_standard_error": 0.0002304548
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m2",
+      "intercept": -1.027865727,
+      "intercept_standard_error": 0.2415757436,
+      "max_step_size": 0.125,
+      "r_squared": 0.9628769847,
+      "rmse": 0.1728904657,
+      "slope": 0.3842865401,
+      "slope_standard_error": 0.0308046137
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m3",
+      "intercept": -0.1632281362,
+      "intercept_standard_error": 0.0282100126,
+      "max_step_size": 0.1666666667,
+      "r_squared": 0.9679671377,
+      "rmse": 0.0229244734,
+      "slope": 0.0488064737,
+      "slope_standard_error": 0.0033557993
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m4",
+      "intercept": -0.009329568,
+      "intercept_standard_error": 0.0017956791,
+      "max_step_size": 0.25,
+      "r_squared": 0.9672213491,
+      "rmse": 0.0014592336,
+      "slope": 0.0030699963,
+      "slope_standard_error": 0.0002136099
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m5",
+      "intercept": -0.0005261246,
+      "intercept_standard_error": 5.49138e-05,
+      "max_step_size": 0.5,
+      "r_squared": 0.9875258001,
+      "rmse": 2.18205e-05,
+      "slope": 0.0001372834,
+      "slope_standard_error": 8.9082e-06
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m6",
+      "fit_constraint": "anchored-at-N4",
+      "intercept": -2.6803e-05,
+      "intercept_standard_error": 2.4098e-06,
+      "max_step_size": 0.6666666667,
+      "r_squared": 0.937284601,
+      "rmse": 2.9513e-06,
+      "slope": 7.1136e-06,
+      "slope_standard_error": 6.024e-07
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m7",
+      "fit_constraint": "anchored-at-N4",
+      "intercept": -5.76e-07,
+      "intercept_standard_error": 5.79e-08,
+      "max_step_size": 0.8,
+      "r_squared": 0.9156533817,
+      "rmse": 7.09e-08,
+      "slope": 1.462e-07,
+      "slope_standard_error": 1.45e-08
+    },
+    {
+      "calibration_id": "opnorm-v1-heisenberg-open-mpf-new-m8",
+      "fit_constraint": "anchored-at-N4",
+      "intercept": -1.25494e-08,
+      "intercept_standard_error": 1.4489e-09,
+      "max_step_size": 1.0,
+      "r_squared": 0.8966280696,
+      "rmse": 1.7745e-09,
+      "slope": 3.2069e-09,
+      "slope_standard_error": 3.622e-10
+    }
+  ],
+  "migration": "lossless-affine-parameters",
+  "schema_version": "2.0",
+  "study_id": "empirical-operator-norm-1d-v2-lossless-migration"
+}
