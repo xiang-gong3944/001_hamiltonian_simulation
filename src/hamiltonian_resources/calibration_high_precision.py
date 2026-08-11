@@ -11,7 +11,7 @@ import json
 import math
 import time as wall_time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .hamiltonians import PauliHamiltonian
 from .multiproduct import (
@@ -31,11 +31,14 @@ class HighPrecisionOperatorNormEstimate:
 
     value_decimal: str
     backend: str
+    backend_version: str
     decimal_digits: int
     attempted_digits: tuple[int, ...]
     converged: bool
     relative_precision_change: float
     eigensystem_residual: float
+    interval_relative_width: float
+    interval_certified: bool
     branch_count: int
     formal_order: int
     segments: int
@@ -58,6 +61,16 @@ def _require_mpmath() -> "MPContext":
             "high-precision calibration requires the 'calibration' optional extra"
         ) from error
     return mp
+
+
+def _require_flint() -> Any:
+    try:
+        import flint
+    except ImportError as error:  # pragma: no cover - depends on optional environment
+        raise RuntimeError(
+            "FLINT calibration requires the 'calibration-flint' optional extra"
+        ) from error
+    return flint
 
 
 def _mp_number(mp: "MPContext", value: int | float | str) -> Any:
@@ -151,7 +164,7 @@ def _exact_evolution(
     return exact, _matrix_max_abs(mp, residual_matrix) / scale
 
 
-def _mpf_operator_norm_at_precision(
+def _mpmath_operator_norm_at_precision(
     hamiltonian: PauliHamiltonian,
     time: float,
     segments: int,
@@ -159,7 +172,7 @@ def _mpf_operator_norm_at_precision(
     *,
     schedule: MPFSchedule,
     decimal_digits: int,
-) -> tuple[str, float]:
+) -> tuple[str, float, float, bool]:
     mp = _require_mpmath()
     with mp.workdps(decimal_digits):
         time_mp = _mp_number(mp, time)
@@ -189,7 +202,149 @@ def _mpf_operator_norm_at_precision(
         if largest < -negative_tolerance:
             raise ArithmeticError("D^dagger D has a negative eigenvalue at working precision")
         value = mp.sqrt(max(largest, mp.mpf("0")))
-        return mp.nstr(value, n=decimal_digits), float(eigensystem_residual)
+        return mp.nstr(value, n=decimal_digits), float(eigensystem_residual), 0.0, False
+
+
+def _flint_identity(flint: Any, dimension: int) -> Any:
+    result = flint.acb_mat(dimension, dimension)
+    for index in range(dimension):
+        result[index, index] = 1
+    return result
+
+
+def _flint_pauli_matrix(flint: Any, label: str) -> Any:
+    dimension = 2 ** len(label)
+    x_mask = 0
+    z_mask = 0
+    y_count = 0
+    for offset, pauli in enumerate(reversed(label)):
+        if pauli in "XY":
+            x_mask |= 1 << offset
+        if pauli in "YZ":
+            z_mask |= 1 << offset
+        if pauli == "Y":
+            y_count += 1
+    result = flint.acb_mat(dimension, dimension)
+    y_phase = flint.acb(0, 1) ** y_count
+    for column in range(dimension):
+        row = column ^ x_mask
+        parity = (column & z_mask).bit_count() & 1
+        result[row, column] = y_phase * (-1 if parity else 1)
+    return result
+
+
+def _flint_matrix_power(flint: Any, matrix: Any, exponent: int) -> Any:
+    result = _flint_identity(flint, matrix.nrows())
+    factor = matrix
+    power = exponent
+    while power:
+        if power & 1:
+            result = factor * result
+        power >>= 1
+        if power:
+            factor = factor * factor
+    return result
+
+
+def _flint_strang_step(
+    flint: Any,
+    terms: tuple[tuple[Any, Any], ...],
+    step_time: Any,
+) -> Any:
+    identity = _flint_identity(flint, terms[0][0].nrows())
+    result = identity
+    minus_i = flint.acb(0, -1)
+    for group, factor in suzuki_group_factors(len(terms), 2):
+        pauli, weight = terms[group]
+        angle = flint.arb(str(factor)) * step_time * weight
+        unitary = angle.cos() * identity + minus_i * angle.sin() * pauli
+        result = unitary * result
+    return result
+
+
+def _flatten_eigenvalues(values: list[Any]) -> list[Any]:
+    flattened: list[Any] = []
+    for value in values:
+        if isinstance(value, list):
+            flattened.extend(_flatten_eigenvalues(value))
+        else:
+            flattened.append(value)
+    return flattened
+
+
+def _flint_operator_norm_at_precision(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    segments: int,
+    branch_count: int,
+    *,
+    schedule: MPFSchedule,
+    decimal_digits: int,
+) -> tuple[str, float, float, bool]:
+    flint = _require_flint()
+    previous_dps = flint.ctx.dps
+    flint.ctx.dps = decimal_digits
+    try:
+        dimension = 2**hamiltonian.num_qubits
+        hamiltonian_matrix = flint.acb_mat(dimension, dimension)
+        terms: list[tuple[Any, Any]] = []
+        for label, coefficient in hamiltonian.terms:
+            pauli = _flint_pauli_matrix(flint, label)
+            weight = flint.arb(str(coefficient))
+            hamiltonian_matrix += weight * pauli
+            terms.append((pauli, weight))
+        time_ball = flint.arb(str(time))
+        exact = (flint.acb(0, -1) * time_ball * hamiltonian_matrix).exp()
+        diagnostics = mpf_richardson_diagnostics(branch_count, schedule=schedule)
+        step_time = time_ball / segments
+        mpf_step = flint.acb_mat(dimension, dimension)
+        for coefficient, exponent in zip(
+            diagnostics.coefficients,
+            diagnostics.exponents,
+            strict=True,
+        ):
+            base = _flint_strang_step(
+                flint,
+                tuple(terms),
+                step_time / exponent,
+            )
+            coefficient_ball = flint.arb(coefficient.numerator) / coefficient.denominator
+            mpf_step += coefficient_ball * _flint_matrix_power(
+                flint,
+                base,
+                exponent,
+            )
+        approximate = _flint_matrix_power(flint, mpf_step, segments)
+        difference = approximate - exact
+        gram = difference.conjugate().transpose() * difference
+        try:
+            eigenvalues = _flatten_eigenvalues(gram.eig(multiple=True))
+            interval_certified = True
+        except ValueError:
+            eigenvalues = _flatten_eigenvalues(gram.eig(algorithm="approx"))
+            interval_certified = False
+        largest = max(eigenvalues, key=lambda value: float(value.real.mid()))
+        if interval_certified and not largest.imag.contains(0):
+            raise ArithmeticError("D^dagger D eigenvalue enclosure is not real")
+        if (
+            interval_certified
+            and float(largest.real.mid()) < 0
+            and not largest.real.contains(0)
+        ):
+            raise ArithmeticError("D^dagger D has a negative eigenvalue enclosure")
+        nonnegative = largest.real if float(largest.real.mid()) >= 0 else flint.arb(0)
+        value = nonnegative.sqrt()
+        midpoint = abs(float(value.mid()))
+        radius = float(value.rad())
+        relative_width = math.inf if midpoint == 0 else 2 * radius / midpoint
+        return (
+            value.str(decimal_digits, radius=False),
+            0.0,
+            relative_width,
+            interval_certified,
+        )
+    finally:
+        flint.ctx.dps = previous_dps
 
 
 def recommended_initial_digits(
@@ -218,6 +373,7 @@ def adaptive_mpf_operator_norm_error(
     segments: int,
     branch_count: int,
     *,
+    backend: Literal["mpmath", "flint"] = "mpmath",
     schedule: MPFSchedule = "new",
     initial_digits: int | None = None,
     digit_increment: int = 32,
@@ -250,19 +406,37 @@ def adaptive_mpf_operator_norm_error(
     previous: str | None = None
     relative_change = math.inf
     residual = math.inf
+    interval_relative_width = math.inf
+    interval_certified = False
     value_decimal = "nan"
     started = wall_time.perf_counter()
     digits = start_digits
     while True:
         attempted.append(digits)
-        value_decimal, residual = _mpf_operator_norm_at_precision(
-            hamiltonian,
-            time,
-            segments,
-            branch_count,
-            schedule=schedule,
-            decimal_digits=digits,
-        )
+        if backend == "mpmath":
+            value_decimal, residual, interval_relative_width, interval_certified = (
+                _mpmath_operator_norm_at_precision(
+                    hamiltonian,
+                    time,
+                    segments,
+                    branch_count,
+                    schedule=schedule,
+                    decimal_digits=digits,
+                )
+            )
+        elif backend == "flint":
+            value_decimal, residual, interval_relative_width, interval_certified = (
+                _flint_operator_norm_at_precision(
+                    hamiltonian,
+                    time,
+                    segments,
+                    branch_count,
+                    schedule=schedule,
+                    decimal_digits=digits,
+                )
+            )
+        else:
+            raise ValueError("backend must be 'mpmath' or 'flint'")
         if previous is not None:
             mp = _require_mpmath()
             with mp.workdps(digits):
@@ -270,13 +444,26 @@ def adaptive_mpf_operator_norm_error(
                 previous_mp = mp.mpf(previous)
                 denominator = max(abs(current_mp), mp.power(10, -(digits - 8)))
                 relative_change = float(abs(current_mp - previous_mp) / denominator)
-            if relative_change <= relative_tolerance:
+            if (
+                relative_change <= relative_tolerance
+                and (
+                    not interval_certified
+                    or interval_relative_width <= relative_tolerance
+                )
+            ):
                 break
         previous = value_decimal
         if digits == max_digits:
             break
         digits = min(digits + digit_increment, max_digits)
-    converged = len(attempted) >= 2 and relative_change <= relative_tolerance
+    converged = (
+        len(attempted) >= 2
+        and relative_change <= relative_tolerance
+        and (
+            not interval_certified
+            or interval_relative_width <= relative_tolerance
+        )
+    )
     diagnostics = mpf_richardson_diagnostics(branch_count, schedule=schedule)
     schedule_payload = json.dumps(
         diagnostics.exponents,
@@ -286,14 +473,21 @@ def adaptive_mpf_operator_norm_error(
         hamiltonian.terms,
         separators=(",", ":"),
     ).encode("ascii")
+    if backend == "mpmath":
+        backend_version = _require_mpmath().__version__
+    else:
+        backend_version = _require_flint().__version__
     return HighPrecisionOperatorNormEstimate(
         value_decimal=value_decimal,
-        backend="mpmath",
+        backend=backend,
+        backend_version=backend_version,
         decimal_digits=attempted[-1],
         attempted_digits=tuple(attempted),
         converged=converged,
         relative_precision_change=relative_change,
         eigensystem_residual=residual,
+        interval_relative_width=interval_relative_width,
+        interval_certified=interval_certified,
         branch_count=branch_count,
         formal_order=2 * branch_count,
         segments=segments,
