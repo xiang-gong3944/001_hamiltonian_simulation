@@ -55,6 +55,7 @@ MPFErrorMethod: TypeAlias = Literal[
     "best-rigorous-ideal",
     "low-rigorous",
     "legacy-w2-proxy",
+    "empirical-operator-norm",
 ]
 MPFErrorScope: TypeAlias = Literal["ideal-mpf", "amplified-shared-ancilla"]
 
@@ -200,6 +201,46 @@ class MPFLCUStructure:
     padding_weight: float
 
 
+MPFScheduleCostSource: TypeAlias = Literal[
+    "registered-exact",
+    "extrapolated-0.418-m2-log-m",
+]
+
+
+@dataclass(frozen=True)
+class MPFScheduleCost:
+    """Aggregate exponent-schedule cost, with explicit capability provenance."""
+
+    term_count: int
+    formal_order: int
+    schedule: MPFSchedule
+    exponent_sum: int
+    source: MPFScheduleCostSource
+    exponents: tuple[int, ...] | None
+
+    def __post_init__(self) -> None:
+        if self.term_count < 2 or self.formal_order != 2 * self.term_count:
+            raise ValueError("invalid MPF branch count or formal order")
+        if self.exponent_sum < 1:
+            raise ValueError("MPF exponent sum must be positive")
+        if self.source == "registered-exact":
+            if self.exponents is None or sum(self.exponents) != self.exponent_sum:
+                raise ValueError("exact MPF cost requires its registered exponent tuple")
+        elif self.source == "extrapolated-0.418-m2-log-m":
+            if self.exponents is not None or self.schedule != "new" or self.term_count <= 15:
+                raise ValueError("extrapolated MPF cost cannot contain explicit exponents")
+        else:
+            raise ValueError("unknown MPF schedule-cost provenance")
+
+    @property
+    def exact(self) -> bool:
+        return self.source == "registered-exact"
+
+    @property
+    def explicit_schedule_available(self) -> bool:
+        return self.exponents is not None
+
+
 _NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
     2: (1, 2),
     3: (1, 2, 4),
@@ -261,6 +302,46 @@ def optimal_mpf_exponents(
         raise ValueError("m must lie between 2 and 15") from error
 
 
+def mpf_exponent_cost(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> MPFScheduleCost:
+    """Return exact registered or aggregate-only extrapolated schedule cost.
+
+    The continuation for ``m > 15`` describes only ``sum(k_j)``.  It does not
+    manufacture exponents, MPF coefficients, or a circuit implementation.
+    """
+    if isinstance(m, bool) or not isinstance(m, Integral):
+        raise TypeError("m must be an integer")
+    if m < 2:
+        raise ValueError("m must be at least 2")
+    if schedule not in {"new", "legacy"}:
+        raise ValueError("schedule must be 'new' or 'legacy'")
+    if m <= 15:
+        exponents = optimal_mpf_exponents(int(m), schedule=schedule)
+        return MPFScheduleCost(
+            term_count=int(m),
+            formal_order=2 * int(m),
+            schedule=schedule,
+            exponent_sum=sum(exponents),
+            source="registered-exact",
+            exponents=exponents,
+        )
+    if schedule == "legacy":
+        raise ValueError(
+            "legacy MPF schedules above m=15 have no authorized aggregate extrapolation"
+        )
+    return MPFScheduleCost(
+        term_count=int(m),
+        formal_order=2 * int(m),
+        schedule=schedule,
+        exponent_sum=math.ceil(0.418 * int(m) ** 2 * math.log(int(m))),
+        source="extrapolated-0.418-m2-log-m",
+        exponents=None,
+    )
+
+
 def resolve_mpf_branch_count(
     hamiltonian: PauliHamiltonian,
     time: float,
@@ -285,7 +366,11 @@ def resolve_mpf_branch_count(
     if policy == "fixed":
         if term_count is None:
             raise ValueError("fixed MPF branch-count policy requires term_count")
-        selected = term_count
+        if isinstance(term_count, bool) or not isinstance(term_count, Integral):
+            raise TypeError("term_count must be an integer")
+        if term_count < 2:
+            raise ValueError("term_count must be at least 2")
+        selected = int(term_count)
         extensiveness_g = None
     elif policy == "mizuta2026-theorem6":
         if term_count is not None:
@@ -309,18 +394,8 @@ def resolve_mpf_branch_count(
             "branch_count_policy must be 'fixed' or 'mizuta2026-theorem6'"
         )
 
-    try:
-        optimal_mpf_exponents(selected, schedule=schedule)
-    except (TypeError, ValueError) as error:
-        if policy == "mizuta2026-theorem6":
-            raise ValueError(
-                "mizuta2026-theorem6 branch-count policy selected unsupported "
-                f"J={selected} from N={hamiltonian.num_qubits}, "
-                f"g={extensiveness_g!r}, |t|={abs(float(time))!r}, "
-                f"epsilon={float(target_error)!r}, schedule={schedule!r}; "
-                "registered schedules support only 2 <= J <= 15"
-            ) from error
-        raise
+    if schedule not in {"new", "legacy"}:
+        raise ValueError("schedule must be 'new' or 'legacy'")
     return MPFBranchCountSelection(
         policy=policy,
         term_count=int(selected),
@@ -2480,6 +2555,12 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
 
     if not isinstance(plan, MPFPlan):
         raise TypeError("plan must be an MPFPlan")
+    if plan.implementation is None:
+        raise ValueError(
+            "aggregate MPF resource cost only; no explicit well-conditioned "
+            f"schedule is registered for m={plan.term_count}, so circuit "
+            "construction is unavailable"
+        )
     circuit = _build_multiproduct_circuit_from_components(
         plan.hamiltonian,
         plan.time,
@@ -2487,9 +2568,9 @@ def build_multiproduct_circuit_from_plan(plan) -> QuantumCircuit:
         plan.segments,
         plan.method.schedule,
         True,
-        plan.exponents,
-        plan.coefficients,
-        plan.lcu_structure,
+        plan.implementation.exponents,
+        plan.implementation.coefficients,
+        plan.implementation.lcu_structure,
     )
     circuit.metadata = {
         **(circuit.metadata or {}),

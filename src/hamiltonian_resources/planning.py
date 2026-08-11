@@ -28,12 +28,20 @@ from .error_models import (
     oaa_good_block_error_bound,
     repeated_block_encoding_error_bound,
 )
+from .empirical import (
+    EmpiricalErrorEstimate,
+    EmpiricalCalibrationKey,
+    default_empirical_calibrations,
+    select_empirical_segments,
+)
 from .hamiltonians import PauliHamiltonian
 from .method_specs import MethodSpec, MultiproductMethod, QSVTMethod, TrotterMethod
 from .multiproduct import (
     MPFBranchCountSelection,
     MPFErrorEstimate,
+    MPFScheduleCost,
     MPFLCUStructure,
+    mpf_exponent_cost,
     mpf_lcu_structure,
     multiproduct_coefficients,
     resolve_mpf_branch_count,
@@ -106,7 +114,7 @@ class TrotterPlan:
     resolved_partition: str
     group_term_indices: tuple[tuple[int, ...], ...]
     suzuki_factors: tuple[tuple[int, float], ...]
-    error_estimate: SuzukiErrorEstimate
+    error_estimate: SuzukiErrorEstimate | EmpiricalErrorEstimate
 
     def __post_init__(self) -> None:
         if self.repetitions < 1:
@@ -114,14 +122,30 @@ class TrotterPlan:
         flattened = tuple(index for group in self.group_term_indices for index in group)
         if sorted(flattened) != list(range(self.hamiltonian.term_count)):
             raise ValueError("Trotter groups must partition Hamiltonian term indices")
-        if self.error_estimate.reps != self.repetitions:
+        estimated_repetitions = (
+            self.error_estimate.segments
+            if isinstance(self.error_estimate, EmpiricalErrorEstimate)
+            else self.error_estimate.reps
+        )
+        if estimated_repetitions != self.repetitions:
             raise ValueError("Trotter error estimate repetitions do not match the plan")
-        if self.error_estimate.order != self.method.order:
+        estimated_order = (
+            self.error_estimate.formal_order
+            if isinstance(self.error_estimate, EmpiricalErrorEstimate)
+            else self.error_estimate.order
+        )
+        if estimated_order != self.method.order:
             raise ValueError("Trotter error estimate order does not match the method")
-        if self.error_estimate.partition != self.resolved_partition:
-            raise ValueError("Trotter error estimate partition does not match the plan")
-        if self.error_estimate.group_count != len(self.group_term_indices):
-            raise ValueError("Trotter error estimate group count does not match the plan")
+        if isinstance(self.error_estimate, EmpiricalErrorEstimate):
+            if self.error_estimate.calibration.key.method != "trotter":
+                raise ValueError("Trotter plan requires a Trotter empirical calibration")
+            if self.error_estimate.calibration.key.partition != self.resolved_partition:
+                raise ValueError("Trotter empirical partition does not match the plan")
+        else:
+            if self.error_estimate.partition != self.resolved_partition:
+                raise ValueError("Trotter error estimate partition does not match the plan")
+            if self.error_estimate.group_count != len(self.group_term_indices):
+                raise ValueError("Trotter error estimate group count does not match the plan")
         if any(
             group < 0 or group >= len(self.group_term_indices) for group, _ in self.suzuki_factors
         ):
@@ -133,12 +157,16 @@ class TrotterPlan:
 
     @property
     def selected_parameters(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "trotter_order": self.method.order,
             "trotter_reps": self.repetitions,
             "trotter_partition": self.resolved_partition,
             "trotter_group_count": len(self.group_term_indices),
+            "trotter_error_policy": self.method.error_policy,
         }
+        if isinstance(self.error_estimate, EmpiricalErrorEstimate):
+            result["empirical_calibration_id"] = self.error_estimate.calibration_id
+        return result
 
     @property
     def logical_counts(self) -> LogicalOperationCounts:
@@ -158,7 +186,8 @@ class TrotterPlan:
 
         error = self.error_estimate
         scope = "implemented-product-formula"
-        category = "analytical" if error.rigorous else "proxy"
+        empirical = isinstance(error, EmpiricalErrorEstimate)
+        category = "empirical" if empirical else ("analytical" if error.rigorous else "proxy")
         certification = "rigorous" if error.rigorous else "nonrigorous"
         sizing = SuzukiSizingEstimate(
             value=error.error,
@@ -169,14 +198,18 @@ class TrotterPlan:
             metric="operator-2-norm",
             scope=scope,
             target=self.error_budget.algorithm_error,
-            repetitions=error.reps,
-            order=error.order,
+            repetitions=self.repetitions,
+            order=self.method.order,
             prefactor=error.prefactor,
-            partition=error.partition,
-            group_count=error.group_count,
+            partition=self.resolved_partition,
+            group_count=len(self.group_term_indices),
+            calibration_id=(error.calibration_id if empirical else None),
+            calibration_size_extrapolated=(error.size_extrapolated if empirical else False),
+            calibration_time_extrapolated=(error.time_extrapolated if empirical else False),
+            active_constraint=(error.active_constraint if empirical else None),
         )
         fallback = None
-        if error.method == "alpha-proxy":
+        if not empirical and error.method == "alpha-proxy":
             reason = (
                 "commutator evaluation exceeds the configured practical cap"
                 if error.order in {4, 6}
@@ -188,7 +221,15 @@ class TrotterPlan:
                 reason=reason,
             )
         references = ()
-        if error.method == "childs-commutator":
+        if empirical:
+            references = (
+                ReferenceRecord(
+                    error.calibration.reference,
+                    f"reviewed calibration {error.calibration_id}; "
+                    f"artifact {error.calibration.source}",
+                ),
+            )
+        elif error.method == "childs-commutator":
             references = (
                 ReferenceRecord(
                     "Childs, Su, Tran, Wiebe, and Zhu, arXiv:1912.08854",
@@ -204,14 +245,22 @@ class TrotterPlan:
                     "https://arxiv.org/abs/2306.10603",
                 ),
             )
+        assumptions = [
+            AssumptionRecord(
+                "the resolved ordered Hamiltonian groups match the implemented formula",
+                True,
+            ),
+        ]
+        if empirical:
+            assumptions.extend(
+                (
+                    AssumptionRecord("the fixed formal-order powers in time and segments apply", None),
+                    AssumptionRecord("the reviewed affine size calibration extrapolates as flagged", None),
+                )
+            )
         support = EstimateSupport(
             components=(ErrorComponent("prefactor", error.prefactor, "operator-error prefactor"),),
-            assumptions=(
-                AssumptionRecord(
-                    "the resolved ordered Hamiltonian groups match the implemented formula",
-                    True,
-                ),
-            ),
+            assumptions=tuple(assumptions),
             references=references,
             fallback=fallback,
         )
@@ -255,7 +304,12 @@ class TrotterPlan:
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
         analysis = self.error_analysis
-        return {
+        empirical = isinstance(error, EmpiricalErrorEstimate)
+        result = {
+            "estimate_category": "empirical" if empirical else (
+                "analytical" if error.rigorous else "proxy"
+            ),
+            "error_policy": self.method.error_policy,
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
@@ -288,6 +342,36 @@ class TrotterPlan:
                 else None
             ),
         }
+        if empirical:
+            result.update(
+                empirical_calibration_id=error.calibration_id,
+                empirical_calibration_model=error.calibration.key.model,
+                empirical_coefficient_model="affine-aN-plus-b",
+                empirical_coefficient_value=error.prefactor,
+                empirical_calibration_size_min=error.calibration.size_range[0],
+                empirical_calibration_size_max=error.calibration.size_range[1],
+                empirical_calibration_time_min=error.calibration.time_range[0],
+                empirical_calibration_time_max=error.calibration.time_range[1],
+                empirical_size_extrapolated=error.size_extrapolated,
+                empirical_time_extrapolated=error.time_extrapolated,
+                empirical_active_constraint=error.active_constraint,
+            )
+        return result
+
+
+@dataclass(frozen=True)
+class MPFImplementationData:
+    """Explicit registered schedule data required for circuit construction."""
+
+    exponents: tuple[int, ...]
+    coefficients: tuple[float, ...]
+    lcu_structure: MPFLCUStructure
+
+    def __post_init__(self) -> None:
+        if not self.exponents or len(self.coefficients) != len(self.exponents):
+            raise ValueError("explicit MPF exponents and coefficients must align")
+        if self.lcu_structure.physical_branch_count != len(self.exponents):
+            raise ValueError("MPF LCU structure does not match its explicit schedule")
 
 
 @dataclass(frozen=True)
@@ -298,12 +382,11 @@ class MPFPlan:
     error_budget: ErrorBudget
     branch_count_selection: MPFBranchCountSelection
     segments: int
-    exponents: tuple[int, ...]
-    coefficients: tuple[float, ...]
-    lcu_structure: MPFLCUStructure
+    schedule_cost: MPFScheduleCost
+    implementation: MPFImplementationData | None
     base_formula_group_term_indices: tuple[tuple[int, ...], ...]
     oaa_rounds_per_segment: int
-    error_estimate: MPFErrorEstimate
+    error_estimate: MPFErrorEstimate | EmpiricalErrorEstimate
 
     def __post_init__(self) -> None:
         if self.segments < 1:
@@ -323,17 +406,35 @@ class MPFPlan:
             raise ValueError("MPF branch-count selection target does not match the algorithm budget")
         if self.method.term_count is not None and selection.term_count != self.method.term_count:
             raise ValueError("fixed MPF term count does not match the branch-count selection")
-        if self.error_estimate.m != selection.term_count:
-            raise ValueError("MPF error estimate term count does not match the resolved selection")
-        if self.error_estimate.schedule != self.method.schedule:
-            raise ValueError("MPF error estimate schedule does not match the method")
-        if self.error_estimate.exponents != self.exponents:
-            raise ValueError("MPF error estimate exponents do not match the plan")
+        if self.schedule_cost.term_count != selection.term_count:
+            raise ValueError("MPF schedule cost does not match the resolved branch count")
+        if self.schedule_cost.schedule != self.method.schedule:
+            raise ValueError("MPF schedule cost does not match the method")
+        if isinstance(self.error_estimate, EmpiricalErrorEstimate):
+            calibration = self.error_estimate.calibration
+            if calibration.key.method != "multiproduct":
+                raise ValueError("MPF plan requires an MPF empirical calibration")
+            if calibration.key.formal_order != selection.formal_order:
+                raise ValueError("MPF empirical calibration order does not match the plan")
+            if calibration.key.schedule != self.method.schedule:
+                raise ValueError("MPF empirical schedule does not match the plan")
+        else:
+            if self.error_estimate.m != selection.term_count:
+                raise ValueError("MPF error estimate term count does not match the selection")
+            if self.error_estimate.schedule != self.method.schedule:
+                raise ValueError("MPF error estimate schedule does not match the method")
+            if self.error_estimate.exponents != self.exponents:
+                raise ValueError("MPF error estimate exponents do not match the plan")
         expected_indices = tuple((index,) for index in range(self.hamiltonian.term_count))
         if self.base_formula_group_term_indices != expected_indices:
             raise ValueError("MPF base formulas must use ordered individual Pauli terms")
-        if len(self.coefficients) != len(self.exponents):
-            raise ValueError("MPF coefficients and exponents must have equal length")
+        if self.implementation is None:
+            if self.schedule_cost.explicit_schedule_available:
+                raise ValueError("registered MPF schedule cost requires implementation data")
+            if not isinstance(self.error_estimate, EmpiricalErrorEstimate):
+                raise ValueError("aggregate-only MPF plans require empirical sizing")
+        elif self.implementation.exponents != self.schedule_cost.exponents:
+            raise ValueError("MPF implementation does not match its schedule cost")
         if self.oaa_rounds_per_segment != 1:
             raise ValueError("the implemented MPF plan requires one OAA round per segment")
 
@@ -355,6 +456,18 @@ class MPFPlan:
         return self.branch_count_selection.formal_order
 
     @property
+    def exponents(self) -> tuple[int, ...] | None:
+        return self.implementation.exponents if self.implementation is not None else None
+
+    @property
+    def coefficients(self) -> tuple[float, ...] | None:
+        return self.implementation.coefficients if self.implementation is not None else None
+
+    @property
+    def lcu_structure(self) -> MPFLCUStructure | None:
+        return self.implementation.lcu_structure if self.implementation is not None else None
+
+    @property
     def selected_parameters(self) -> dict[str, object]:
         return {
             "mpf_m": self.term_count,
@@ -365,11 +478,16 @@ class MPFPlan:
             "mpf_schedule": self.method.schedule,
             "mpf_error_method": self.method.error_method,
             "mpf_exponents": self.exponents,
+            "mpf_exponent_sum": self.schedule_cost.exponent_sum,
+            "mpf_exponent_sum_source": self.schedule_cost.source,
+            "mpf_explicit_schedule_available": (
+                self.schedule_cost.explicit_schedule_available
+            ),
         }
 
     @property
     def logical_counts(self) -> LogicalOperationCounts:
-        exponent_sum = sum(self.exponents)
+        exponent_sum = self.schedule_cost.exponent_sum
         term_occurrences = (2 * self.hamiltonian.term_count - 1) * exponent_sum
         per_segment = (
             ("prepare", 6),
@@ -386,6 +504,87 @@ class MPFPlan:
     @property
     def error_analysis(self) -> ErrorAnalysis:
         error = self.error_estimate
+        if isinstance(error, EmpiricalErrorEstimate):
+            ideal_scope = "ideal-mpf"
+            sizing = MPFSizingEstimate(
+                value=error.error,
+                method=error.method,
+                category="empirical",
+                certification="nonrigorous",
+                quantity="evolution-operator approximation error",
+                metric="operator-2-norm",
+                scope=ideal_scope,
+                target=self.error_budget.algorithm_error,
+                segments=error.segments,
+                term_count=self.term_count,
+                formal_order=self.formal_order,
+                branch_count_policy=self.branch_count_selection.policy,
+                branch_count_policy_extensiveness_g=(
+                    self.branch_count_selection.extensiveness_g
+                ),
+                branch_count_policy_target_error=self.branch_count_selection.target_error,
+                schedule=self.method.schedule,
+                exponents=self.exponents,
+                coefficient_l1_norm=(
+                    self.lcu_structure.coefficient_l1_norm
+                    if self.lcu_structure is not None
+                    else None
+                ),
+                exponent_sum=self.schedule_cost.exponent_sum,
+                exponent_sum_source=self.schedule_cost.source,
+                explicit_schedule_available=self.schedule_cost.explicit_schedule_available,
+                calibration_id=error.calibration_id,
+                calibration_size_extrapolated=error.size_extrapolated,
+                calibration_time_extrapolated=error.time_extrapolated,
+                active_constraint=error.active_constraint,
+            )
+            support = EstimateSupport(
+                components=(
+                    ErrorComponent(
+                        "empirical-coefficient",
+                        error.prefactor,
+                        "operator-error prefactor",
+                    ),
+                ),
+                references=(
+                    ReferenceRecord(
+                        error.calibration.reference,
+                        f"reviewed calibration {error.calibration_id}; "
+                        f"artifact {error.calibration.source}",
+                    ),
+                ),
+                assumptions=(
+                    AssumptionRecord(
+                        "the fixed formal-order powers in time and segments apply",
+                        None,
+                    ),
+                    AssumptionRecord(
+                        "the empirical estimate concerns the repeated ideal MPF operator",
+                        None,
+                    ),
+                    AssumptionRecord(
+                        "the reviewed affine size calibration extrapolates as flagged",
+                        None,
+                    ),
+                ),
+            )
+            return ErrorAnalysis(
+                sizing_estimate=sizing,
+                sizing_support=support,
+                claims=(),
+                observations=(),
+                selection_succeeded=True,
+                ideal_algorithm_target=assess_claim(
+                    None,
+                    self.error_budget.algorithm_error,
+                    ideal_scope,
+                ),
+                implemented_circuit_target=assess_claim(
+                    None,
+                    self.error_budget.algorithm_error,
+                    "repeated-shared-ancilla-good-block",
+                ),
+            )
         ideal_scope = "ideal-mpf"
         local_scope = "one-segment-ideal-mpf"
         amplified_scope = "one-segment-amplified-good-block"
@@ -411,6 +610,9 @@ class MPFPlan:
             schedule=error.schedule,
             exponents=error.exponents,
             coefficient_l1_norm=error.coefficient_l1_norm,
+            exponent_sum=self.schedule_cost.exponent_sum,
+            exponent_sum_source=self.schedule_cost.source,
+            explicit_schedule_available=self.schedule_cost.explicit_schedule_available,
         )
         components = tuple(
             ErrorComponent(name, value, name.replace("_", " "))
@@ -604,8 +806,56 @@ class MPFPlan:
     def error_metadata(self) -> dict[str, object]:
         error = self.error_estimate
         analysis = self.error_analysis
+        if isinstance(error, EmpiricalErrorEstimate):
+            return {
+                "estimate_category": "empirical",
+                "error_policy": self.method.error_method,
+                "bound_value": error.error,
+                "bound_prefactor": error.prefactor,
+                "bound_method": error.method,
+                "bound_reference": error.calibration.reference,
+                "bound_theorem_or_equations": (
+                    f"reviewed calibration {error.calibration_id}; fixed formal powers"
+                ),
+                "bound_components": (("empirical_coefficient", error.prefactor),),
+                "bound_rigorous": False,
+                "bound_scope": "ideal-mpf",
+                "bound_target_satisfied": False,
+                "circuit_bound_value": None,
+                "circuit_bound_scope": "repeated-shared-ancilla-good-block",
+                "circuit_bound_rigorous": False,
+                "circuit_target_satisfied": False,
+                "hamiltonian_decomposition": "ordered individual Pauli terms",
+                "bound_assumptions": tuple(
+                    assumption.description
+                    for assumption in analysis.sizing_support.assumptions
+                ),
+                "bound_fallback_reason": None,
+                "max_nested_commutator_order": 0,
+                "max_exact_nested_commutator_order": 0,
+                "locality_compatible": False,
+                "commutator_bounds": (),
+                "empirical_calibration_id": error.calibration_id,
+                "empirical_calibration_model": error.calibration.key.model,
+                "empirical_coefficient_model": "affine-aN-plus-b",
+                "empirical_coefficient_value": error.prefactor,
+                "empirical_calibration_size_min": error.calibration.size_range[0],
+                "empirical_calibration_size_max": error.calibration.size_range[1],
+                "empirical_calibration_time_min": error.calibration.time_range[0],
+                "empirical_calibration_time_max": error.calibration.time_range[1],
+                "empirical_size_extrapolated": error.size_extrapolated,
+                "empirical_time_extrapolated": error.time_extrapolated,
+                "empirical_active_constraint": error.active_constraint,
+                "mpf_exponent_sum": self.schedule_cost.exponent_sum,
+                "mpf_exponent_sum_source": self.schedule_cost.source,
+                "mpf_explicit_schedule_available": (
+                    self.schedule_cost.explicit_schedule_available
+                ),
+            }
         circuit_entry = analysis.claim_for_scope("repeated-shared-ancilla-good-block")
         return {
+            "estimate_category": "analytical" if error.rigorous else "proxy",
+            "error_policy": self.method.error_method,
             "bound_value": error.error,
             "bound_prefactor": error.prefactor,
             "bound_method": error.method,
@@ -628,6 +878,11 @@ class MPFPlan:
             "max_exact_nested_commutator_order": error.max_exact_nested_commutator_order,
             "locality_compatible": error.locality_compatible,
             "commutator_bounds": error.commutator_bounds,
+            "mpf_exponent_sum": self.schedule_cost.exponent_sum,
+            "mpf_exponent_sum_source": self.schedule_cost.source,
+            "mpf_explicit_schedule_available": (
+                self.schedule_cost.explicit_schedule_available
+            ),
         }
 
 
@@ -862,6 +1117,8 @@ class QSVTPlan:
         if ideal_entry is None:
             raise RuntimeError("QSVT plan is missing its ideal OAA claim")
         return {
+            "estimate_category": "analytical",
+            "error_policy": "jacobi-anger-rigorous",
             "bound_value": ideal_entry.claim.value,
             "bound_prefactor": None,
             "bound_method": "jacobi-anger-polynomial-oaa",
@@ -893,6 +1150,7 @@ def _canonical_hamiltonian(hamiltonian: PauliHamiltonian) -> PauliHamiltonian:
         hamiltonian.num_qubits,
         tuple(hamiltonian.terms),
         hamiltonian.name,
+        hamiltonian.model_metadata,
     )
 
 
@@ -918,28 +1176,45 @@ def _plan_simulation(
 
     if isinstance(method, TrotterMethod):
         structure = resolve_trotter_structure(canonical, method.order, trotter_partition)
-        one_step = estimate_suzuki_error(
-            canonical,
-            evolution_time,
-            reps=1,
-            order=method.order,
-            partition=trotter_partition,
-            workers=execution.workers,
-            _execution=execution,
-        )
-        repetitions = max(
-            1,
-            math.ceil((one_step.error / budget.algorithm_error) ** (1 / method.order)),
-        )
-        selected_error = estimate_suzuki_error(
-            canonical,
-            evolution_time,
-            reps=repetitions,
-            order=method.order,
-            partition=trotter_partition,
-            workers=execution.workers,
-            _execution=execution,
-        )
+        if method.error_policy == "empirical-operator-norm":
+            key = EmpiricalCalibrationKey.for_hamiltonian(
+                canonical,
+                method="trotter",
+                formal_order=method.order,
+                partition=structure.partition,
+                formula="repository-suzuki-v1",
+            )
+            record = default_empirical_calibrations().lookup(key)
+            selected_error = select_empirical_segments(
+                record,
+                canonical.num_qubits,
+                evolution_time,
+                budget.algorithm_error,
+            )
+            repetitions = selected_error.segments
+        else:
+            one_step = estimate_suzuki_error(
+                canonical,
+                evolution_time,
+                reps=1,
+                order=method.order,
+                partition=trotter_partition,
+                workers=execution.workers,
+                _execution=execution,
+            )
+            repetitions = max(
+                1,
+                math.ceil((one_step.error / budget.algorithm_error) ** (1 / method.order)),
+            )
+            selected_error = estimate_suzuki_error(
+                canonical,
+                evolution_time,
+                reps=repetitions,
+                order=method.order,
+                partition=trotter_partition,
+                workers=execution.workers,
+                _execution=execution,
+            )
         return TrotterPlan(
             hamiltonian=canonical,
             method=method,
@@ -963,24 +1238,54 @@ def _plan_simulation(
             schedule=method.schedule,
         )
         term_count = branch_count_selection.term_count
-        selected_error = select_mpf_segments(
-            canonical,
-            evolution_time,
-            budget.algorithm_error,
-            term_count,
-            schedule=method.schedule,
-            method=method.error_method,
-            workers=execution.workers,
-            _execution=execution,
-        )
-        exponents = selected_error.exponents
-        coefficients = tuple(
-            float(value)
-            for value in multiproduct_coefficients(
+        schedule_cost = mpf_exponent_cost(term_count, schedule=method.schedule)
+        if method.error_method == "empirical-operator-norm":
+            key = EmpiricalCalibrationKey.for_hamiltonian(
+                canonical,
+                method="multiproduct",
+                formal_order=2 * term_count,
+                schedule=method.schedule,
+                formula="ordered-individual-pauli-strang-mpf-v1",
+            )
+            record = default_empirical_calibrations().lookup(key)
+            selected_error = select_empirical_segments(
+                record,
+                canonical.num_qubits,
+                evolution_time,
+                budget.algorithm_error,
+            )
+        else:
+            if not schedule_cost.explicit_schedule_available:
+                raise ValueError(
+                    f"resolved MPF J={term_count} for N={canonical.num_qubits} has "
+                    f"aggregate {method.schedule!r} schedule cost only; rigorous and "
+                    "coefficient-dependent MPF estimators require an explicit "
+                    "registered schedule with 2 <= J <= 15"
+                )
+            selected_error = select_mpf_segments(
+                canonical,
+                evolution_time,
+                budget.algorithm_error,
                 term_count,
                 schedule=method.schedule,
+                method=method.error_method,
+                workers=execution.workers,
+                _execution=execution,
             )
-        )
+        implementation = None
+        if schedule_cost.exponents is not None:
+            coefficients = tuple(
+                float(value)
+                for value in multiproduct_coefficients(
+                    term_count,
+                    schedule=method.schedule,
+                )
+            )
+            implementation = MPFImplementationData(
+                exponents=schedule_cost.exponents,
+                coefficients=coefficients,
+                lcu_structure=mpf_lcu_structure(term_count, schedule=method.schedule),
+            )
         return MPFPlan(
             hamiltonian=canonical,
             method=method,
@@ -988,9 +1293,8 @@ def _plan_simulation(
             error_budget=budget,
             branch_count_selection=branch_count_selection,
             segments=selected_error.segments,
-            exponents=exponents,
-            coefficients=coefficients,
-            lcu_structure=mpf_lcu_structure(term_count, schedule=method.schedule),
+            schedule_cost=schedule_cost,
+            implementation=implementation,
             base_formula_group_term_indices=tuple(
                 (index,) for index in range(canonical.term_count)
             ),

@@ -73,6 +73,7 @@ notebooks/
 tests/
 docs/
   error_semantics.md # sizing、数学claim、empirical observationの区別
+  empirical_error_estimation.md # 非厳密operator-norm校正policyと適用範囲
   mpf_error_bounds.md # ideal MPF、OAA、shared-ancilla good-block上界
   resource_scaling_benchmarks.md # スイープ設定、schema、実行方法
   suzuki_error_bounds.md  # 積公式の分割、厳密誤差上界、fallback
@@ -108,6 +109,11 @@ hamiltonian-benchmark plot --data benchmark_outputs/<run>/benchmark.csv --summar
 
 設定、schema、failure row、解析上の仮定は
 [`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)に記載しています。
+校正済みモデルに限定した非厳密operator-norm sizingと比較notebookは
+[`docs/empirical_error_estimation.md`](docs/empirical_error_estimation.md)および
+`notebooks/empirical_resource_comparison.ipynb`に記載しています。既定の解析上界は
+変更されず、empirical rowを図に含める場合は`certification_policy="unconstrained"`を
+明示します。
 
 ## 単一点resource API
 
@@ -197,7 +203,10 @@ print(check)
 `run_benchmark`は大規模向けの明示的な解析分解コストモデルを使い、具体回路や密行列を構築しません。
 
 MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な
-Trotter 分割数が自動的に選ばれます。対応範囲は `m=2` から `m=15` です。
+Trotter 分割数が自動的に選ばれます。明示scheduleと回路構築の対応範囲は
+`m=2` から `m=15` です。`mpf_exponent_cost`は`new` scheduleの`m>15`に限って
+`ceil(0.418*m**2*log(m))`というaggregate \(K\) を返せますが、指数・係数・LCU
+構造を捏造しないため、そのplanは解析resource proxy専用で回路構築できません。
 既定の`schedule="new"`は3-step OAA込みのquery数を抑える表で、
 `schedule="legacy"`を指定すると以前の1-normが小さい表を使用できます。
 時間を `segments` 個に分け、各segment内で

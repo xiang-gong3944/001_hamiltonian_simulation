@@ -4,8 +4,8 @@ Parameter sizing, mathematical certification, and empirical validation are
 different records in the in-memory plan/report model.
 
 - `SizingEstimate` records the value and scope used to select repetitions,
-  segments, or polynomial degree. It may be a rigorous analytical estimate or
-  an explicitly selected proxy.
+  segments, or polynomial degree. It may be a rigorous analytical estimate,
+  an explicitly selected empirical calibration, or a proxy.
 - `ErrorClaim` is a mathematical statement with an explicit quantity, metric,
   object scope, and certification status.
 - `MetricObservation` is an empirical value with state or calibration context.
@@ -15,6 +15,15 @@ ideal algorithmic target, and the implemented logical-circuit target. A proxy
 can therefore produce a complete resource estimate without certifying either
 target. State error, fidelity, success probability, and finite-grid phase
 residuals never satisfy a target certification.
+
+## Empirical sizing
+
+`error_policy="empirical-operator-norm"` is a nonrigorous sizing category,
+not an empirical `ErrorClaim`. It uses a reviewed spectral-norm calibration to
+select a resource shape and records exact model identity, calibration range,
+extrapolation flags, and the active formula/domain constraint. Both target
+assessments remain `unavailable`, even when the numerical estimate is below
+the allocated error. See [the empirical guide](empirical_error_estimation.md).
 
 ## QSVT scopes
 

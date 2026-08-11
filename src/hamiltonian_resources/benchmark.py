@@ -6,8 +6,13 @@ from dataclasses import dataclass
 
 from .evaluation import estimate_plan_resources
 from .hamiltonians import PauliHamiltonian
-from .method_specs import MultiproductMethod, QSVTMethod, TrotterMethod
-from .multiproduct import MPFErrorMethod, MPFSchedule, optimal_mpf_exponents
+from .method_specs import (
+    MultiproductMethod,
+    QSVTMethod,
+    TrotterErrorPolicy,
+    TrotterMethod,
+)
+from .multiproduct import MPFErrorMethod, MPFSchedule
 from .planning import plan_simulation
 from .qsvt import estimate_qsvt_degree  # noqa: F401 - compatibility monkeypatch target
 from .resources import ResourceEstimate
@@ -22,6 +27,7 @@ class _EvaluationConfig:
     target_error: float = 1e-3
     synthesis_error_fraction: float = 0.1
     trotter_order: int = 2
+    trotter_error_policy: TrotterErrorPolicy = "analytical"
     trotter_partition: TrotterPartition = "auto"
     mpf_m: int = 3
     mpf_schedule: MPFSchedule = "new"
@@ -41,7 +47,12 @@ class _EvaluationConfig:
             raise ValueError(
                 "trotter_partition must be 'auto', 'individual', or 'commuting'"
             )
-        optimal_mpf_exponents(self.mpf_m, schedule=self.mpf_schedule)
+        TrotterMethod(self.trotter_order, self.trotter_error_policy).validate()
+        MultiproductMethod(
+            self.mpf_m,
+            schedule=self.mpf_schedule,
+            error_method=self.mpf_error_method,
+        ).validate()
         if self.mpf_error_method not in (
             "low2019-l1-ideal-rigorous",
             "childs2021-w2-triangle-ideal-rigorous",
@@ -50,6 +61,7 @@ class _EvaluationConfig:
             "best-rigorous-ideal",
             "low-rigorous",
             "legacy-w2-proxy",
+            "empirical-operator-norm",
         ):
             raise ValueError(
                 "mpf_error_method must be 'low2019-l1-ideal-rigorous' "
@@ -57,7 +69,8 @@ class _EvaluationConfig:
                 "'childs2021-w2-triangle-ideal-rigorous', "
                 "'mizuta2026-commutator-ideal-rigorous', "
                 "'mizuta2026-theorem3-legacy-ideal-rigorous', "
-                "'best-rigorous-ideal', or 'legacy-w2-proxy'"
+                "'best-rigorous-ideal', 'legacy-w2-proxy', or "
+                "'empirical-operator-norm'"
             )
 
 
@@ -104,7 +117,7 @@ def _plan_for_algorithm(
     algorithm: str,
 ):
     if algorithm == "trotter":
-        method = TrotterMethod(config.trotter_order)
+        method = TrotterMethod(config.trotter_order, config.trotter_error_policy)
     elif algorithm == "multiproduct":
         method = MultiproductMethod(
             config.mpf_m,
