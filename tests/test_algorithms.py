@@ -1,4 +1,5 @@
 import math
+from fractions import Fraction
 
 import numpy as np
 import pytest
@@ -17,6 +18,8 @@ from hamiltonian_resources import (
     build_trotter_circuit,
     compare_with_exact,
     multiproduct_coefficients,
+    multiproduct_coefficients_exact,
+    mpf_richardson_diagnostics,
     optimal_mpf_exponents,
     pauli_locality_parameters,
     resolve_mpf_branch_count,
@@ -331,6 +334,33 @@ def test_multiproduct_order_conditions_are_stable(m, schedule):
     for q in range(1, m):
         assert np.isclose(sum(coefficients / exponents ** (2 * q)), 0, atol=1e-14)
     assert sum(abs(coefficients)) < 2
+
+
+@pytest.mark.parametrize("schedule", ["new", "legacy"])
+@pytest.mark.parametrize("branch_count", range(2, 16))
+def test_multiproduct_richardson_moments_are_exact(branch_count, schedule):
+    diagnostics = mpf_richardson_diagnostics(
+        branch_count,
+        schedule=schedule,
+    )
+    coefficients = multiproduct_coefficients_exact(
+        branch_count,
+        schedule=schedule,
+    )
+
+    assert diagnostics.branch_count == branch_count
+    assert diagnostics.formal_order == 2 * branch_count
+    assert diagnostics.coefficients == coefficients
+    assert diagnostics.moments[0] == 1
+    assert diagnostics.moments[1:branch_count] == (0,) * (branch_count - 1)
+    assert diagnostics.leading_omitted_moment == (
+        diagnostics.moments[branch_count]
+    )
+    expected_denominator = math.prod(k**2 for k in diagnostics.exponents)
+    assert diagnostics.leading_omitted_moment == Fraction(
+        (-1) ** (branch_count - 1),
+        expected_denominator,
+    )
 
 
 @pytest.mark.parametrize("m", [2, 3])

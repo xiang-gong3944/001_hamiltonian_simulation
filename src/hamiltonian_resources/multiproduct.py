@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from functools import lru_cache
 from numbers import Integral
 from typing import Literal, TypeAlias
@@ -241,6 +242,29 @@ class MPFScheduleCost:
         return self.exponents is not None
 
 
+@dataclass(frozen=True)
+class MPFRichardsonDiagnostics:
+    r"""Exact cancellation data for one registered MPF schedule.
+
+    ``moments[p]`` is :math:`\sum_j a_j k_j^{-2p}`.  Entries zero through
+    ``p=J-1`` certify the Richardson cancellations, while the entry at ``p=J``
+    is the leading omitted moment for formal order ``2J``.
+    """
+
+    branch_count: int
+    formal_order: int
+    schedule: MPFSchedule
+    exponents: tuple[int, ...]
+    coefficients: tuple[Fraction, ...]
+    moments: tuple[Fraction, ...]
+    leading_omitted_moment: Fraction
+
+    @property
+    def coefficient_l1_norm(self) -> Fraction:
+        """Return the exact coefficient one-norm."""
+        return sum((abs(value) for value in self.coefficients), Fraction())
+
+
 _NEW_MPF_EXPONENTS: dict[int, tuple[int, ...]] = {
     2: (1, 2),
     3: (1, 2, 4),
@@ -426,6 +450,75 @@ def multiproduct_coefficients(
             if q != j:
                 coefficients[j] *= k_j_squared / (k_j_squared - k_q**2)
     return coefficients
+
+
+def multiproduct_coefficients_exact(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> tuple[Fraction, ...]:
+    """Return exact Richardson coefficients for a registered MPF schedule."""
+    exponents = optimal_mpf_exponents(m, schedule=schedule)
+    coefficients: list[Fraction] = []
+    for index, k_j in enumerate(exponents):
+        coefficient = Fraction(1)
+        k_j_squared = k_j**2
+        for other_index, k_other in enumerate(exponents):
+            if index != other_index:
+                coefficient *= Fraction(
+                    k_j_squared,
+                    k_j_squared - k_other**2,
+                )
+        coefficients.append(coefficient)
+    return tuple(coefficients)
+
+
+def mpf_richardson_diagnostics(
+    m: int,
+    *,
+    schedule: MPFSchedule = "new",
+) -> MPFRichardsonDiagnostics:
+    """Return exact moment diagnostics through the leading omitted moment.
+
+    For branch count ``J=m``, the returned moments certify
+
+    ``sum_j a_j = 1`` and ``sum_j a_j / k_j**(2p) = 0`` for ``1 <= p < J``.
+    The formal-order-``2J`` omitted moment is
+    ``(-1)**(J-1) / prod_j(k_j**2)``.
+    """
+    exponents = optimal_mpf_exponents(m, schedule=schedule)
+    coefficients = multiproduct_coefficients_exact(m, schedule=schedule)
+    moments = tuple(
+        sum(
+            (
+                coefficient * Fraction(1, exponent ** (2 * power))
+                for coefficient, exponent in zip(
+                    coefficients,
+                    exponents,
+                    strict=True,
+                )
+            ),
+            Fraction(),
+        )
+        for power in range(m + 1)
+    )
+    expected = Fraction(
+        (-1) ** (m - 1),
+        math.prod(exponent**2 for exponent in exponents),
+    )
+    if moments[0] != 1 or any(moments[power] != 0 for power in range(1, m)):
+        raise ArithmeticError("registered MPF schedule failed exact Richardson moments")
+    if moments[m] != expected:
+        raise ArithmeticError("registered MPF schedule has an unexpected omitted moment")
+    return MPFRichardsonDiagnostics(
+        branch_count=m,
+        formal_order=2 * m,
+        schedule=schedule,
+        exponents=exponents,
+        coefficients=coefficients,
+        moments=moments,
+        leading_omitted_moment=expected,
+    )
 
 
 def mpf_lcu_structure(
