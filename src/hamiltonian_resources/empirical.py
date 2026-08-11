@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 from dataclasses import dataclass
 from functools import lru_cache
@@ -110,12 +111,104 @@ class AffineSizeCoefficient:
             )
         return float(value)
 
+    @property
+    def model_name(self) -> str:
+        return "affine"
+
+    @property
+    def parameters(self) -> tuple[tuple[str, float], ...]:
+        return (("slope", self.slope), ("intercept", self.intercept))
+
+
+@dataclass(frozen=True)
+class PowerSizeCoefficient:
+    """Positive monotone coefficient ``B_2J(N)=A*N**p``."""
+
+    amplitude: float
+    exponent: float
+
+    def __post_init__(self) -> None:
+        if (
+            not np.isfinite((self.amplitude, self.exponent)).all()
+            or self.amplitude <= 0
+            or self.exponent < 0
+        ):
+            raise ValueError("power coefficient requires A > 0 and p >= 0")
+
+    def at(self, system_size: int) -> float:
+        _validate_coefficient_system_size(system_size)
+        value = self.amplitude * int(system_size) ** self.exponent
+        if not np.isfinite(value) or value <= 0:
+            raise UnsupportedEmpiricalCalibrationError(
+                "the calibrated power coefficient is invalid at this system size"
+            )
+        return float(value)
+
+    @property
+    def model_name(self) -> str:
+        return "power"
+
+    @property
+    def parameters(self) -> tuple[tuple[str, float], ...]:
+        return (("amplitude", self.amplitude), ("exponent", self.exponent))
+
+
+@dataclass(frozen=True)
+class PowerPlusOffsetSizeCoefficient:
+    """Monotone coefficient ``B_2J(N)=A*N**p+C``."""
+
+    amplitude: float
+    exponent: float
+    offset: float
+
+    def __post_init__(self) -> None:
+        if (
+            not np.isfinite((self.amplitude, self.exponent, self.offset)).all()
+            or self.amplitude <= 0
+            or self.exponent < 0
+        ):
+            raise ValueError("power-plus-offset coefficient requires A > 0 and p >= 0")
+
+    def at(self, system_size: int) -> float:
+        _validate_coefficient_system_size(system_size)
+        value = self.amplitude * int(system_size) ** self.exponent + self.offset
+        if not np.isfinite(value) or value <= 0:
+            raise UnsupportedEmpiricalCalibrationError(
+                "the calibrated power-plus-offset coefficient is nonpositive "
+                "at this system size"
+            )
+        return float(value)
+
+    @property
+    def model_name(self) -> str:
+        return "power-plus-offset"
+
+    @property
+    def parameters(self) -> tuple[tuple[str, float], ...]:
+        return (
+            ("amplitude", self.amplitude),
+            ("exponent", self.exponent),
+            ("offset", self.offset),
+        )
+
+
+SizeCoefficient: TypeAlias = (
+    AffineSizeCoefficient | PowerSizeCoefficient | PowerPlusOffsetSizeCoefficient
+)
+
+
+def _validate_coefficient_system_size(system_size: int) -> None:
+    if isinstance(system_size, bool) or not isinstance(system_size, Integral):
+        raise TypeError("system_size must be an integer")
+    if system_size < 1:
+        raise ValueError("system_size must be positive")
+
 
 @dataclass(frozen=True)
 class EmpiricalCalibrationRecord:
     calibration_id: str
     key: EmpiricalCalibrationKey
-    coefficient: AffineSizeCoefficient
+    coefficient: SizeCoefficient
     size_range: tuple[int, int]
     time_range: tuple[float, float]
     max_step_size: float
@@ -127,6 +220,12 @@ class EmpiricalCalibrationRecord:
     reference: str
     review_status: Literal["reviewed", "candidate", "rejected"]
     fit_diagnostics: tuple[tuple[str, float], ...] = ()
+    schema_version: Literal["1.0", "2.0"] = "1.0"
+    reviewed_size_max: int | None = None
+    stability_diagnostics: tuple[tuple[str, float], ...] = ()
+    precision_backend: str | None = None
+    precision_digits: int | None = None
+    external_validation_sizes: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -166,13 +265,35 @@ class EmpiricalCalibrationRecord:
             raise ValueError("source_digest must be a lowercase SHA-256 digest")
         if self.review_status not in {"reviewed", "candidate", "rejected"}:
             raise ValueError("unknown calibration review status")
+        if self.schema_version not in {"1.0", "2.0"}:
+            raise ValueError("unsupported record schema version")
+        if self.schema_version == "2.0" and self.reviewed_size_max is None:
+            raise ValueError("v2 calibration records require reviewed_size_max")
+        if self.reviewed_size_max is not None and self.reviewed_size_max < maximum:
+            raise ValueError("reviewed_size_max cannot be below the observed size range")
         diagnostic_names = [name for name, _ in self.fit_diagnostics]
         if len(diagnostic_names) != len(set(diagnostic_names)):
             raise ValueError("fit diagnostic names must be unique")
         if any(not name or not np.isfinite(value) for name, value in self.fit_diagnostics):
             raise ValueError("fit diagnostics must be named and finite")
+        stability_names = [name for name, _ in self.stability_diagnostics]
+        if len(stability_names) != len(set(stability_names)) or any(
+            not name or not np.isfinite(value)
+            for name, value in self.stability_diagnostics
+        ):
+            raise ValueError("stability diagnostics must be uniquely named and finite")
+        if self.precision_digits is not None and self.precision_digits < 2:
+            raise ValueError("precision_digits must be at least two")
+        if (self.precision_backend is None) != (self.precision_digits is None):
+            raise ValueError("precision backend and digits must be supplied together")
+        if tuple(sorted(set(self.external_validation_sizes))) != self.external_validation_sizes:
+            raise ValueError("external validation sizes must be sorted and unique")
+        if any(value not in self.sample_sizes for value in self.external_validation_sizes):
+            raise ValueError("external validation sizes must be included in sample_sizes")
         self.coefficient.at(minimum)
         self.coefficient.at(maximum)
+        if self.reviewed_size_max is not None:
+            self.coefficient.at(self.reviewed_size_max)
 
 
 @dataclass(frozen=True)
@@ -252,15 +373,55 @@ class EmpiricalCalibrationRegistry:
 
     @classmethod
     def from_json_data(cls, raw: Mapping[str, object]) -> "EmpiricalCalibrationRegistry":
-        if raw.get("schema_version") != "1.0":
+        schema_version = raw.get("schema_version")
+        if schema_version not in {"1.0", "2.0"}:
             raise ValueError("unsupported empirical calibration schema")
         rows = raw.get("calibrations")
         if not isinstance(rows, list):
             raise ValueError("calibrations must be an array")
-        return cls(tuple(_record_from_dict(row) for row in rows))
+        return cls(
+            tuple(
+                _record_from_dict(row, schema_version=str(schema_version))
+                for row in rows
+            )
+        )
 
 
-def _record_from_dict(raw: object) -> EmpiricalCalibrationRecord:
+def _coefficient_from_dict(
+    raw: Mapping[str, object],
+    *,
+    schema_version: str,
+) -> SizeCoefficient:
+    if schema_version == "1.0":
+        return AffineSizeCoefficient(float(raw["slope"]), float(raw["intercept"]))
+    model = raw.get("model")
+    parameters = raw.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise TypeError("v2 coefficient parameters must be an object")
+    if model == "affine":
+        return AffineSizeCoefficient(
+            float(parameters["slope"]),
+            float(parameters["intercept"]),
+        )
+    if model == "power":
+        return PowerSizeCoefficient(
+            float(parameters["amplitude"]),
+            float(parameters["exponent"]),
+        )
+    if model == "power-plus-offset":
+        return PowerPlusOffsetSizeCoefficient(
+            float(parameters["amplitude"]),
+            float(parameters["exponent"]),
+            float(parameters["offset"]),
+        )
+    raise ValueError(f"unsupported v2 coefficient model: {model!r}")
+
+
+def _record_from_dict(
+    raw: object,
+    *,
+    schema_version: str,
+) -> EmpiricalCalibrationRecord:
     if not isinstance(raw, Mapping):
         raise TypeError("each calibration must be an object")
     key_raw = raw["key"]
@@ -291,9 +452,9 @@ def _record_from_dict(raw: object) -> EmpiricalCalibrationRecord:
     return EmpiricalCalibrationRecord(
         calibration_id=str(raw["calibration_id"]),
         key=key,
-        coefficient=AffineSizeCoefficient(
-            float(coefficient_raw["slope"]),
-            float(coefficient_raw["intercept"]),
+        coefficient=_coefficient_from_dict(
+            coefficient_raw,
+            schema_version=schema_version,
         ),
         size_range=(size_range[0], size_range[1]),
         time_range=(time_range[0], time_range[1]),
@@ -308,7 +469,54 @@ def _record_from_dict(raw: object) -> EmpiricalCalibrationRecord:
         fit_diagnostics=tuple(
             sorted((str(name), float(value)) for name, value in diagnostics.items())
         ),
+        schema_version=schema_version,  # type: ignore[arg-type]
+        reviewed_size_max=(
+            int(raw["reviewed_size_max"])
+            if raw.get("reviewed_size_max") is not None
+            else None
+        ),
+        stability_diagnostics=tuple(
+            sorted(
+                (str(name), float(value))
+                for name, value in _mapping_or_empty(
+                    raw.get("stability_diagnostics"),
+                    name="stability_diagnostics",
+                ).items()
+            )
+        ),
+        precision_backend=(
+            str(raw["precision_backend"])
+            if raw.get("precision_backend") is not None
+            else None
+        ),
+        precision_digits=(
+            int(raw["precision_digits"])
+            if raw.get("precision_digits") is not None
+            else None
+        ),
+        external_validation_sizes=tuple(
+            int(value) for value in raw.get("external_validation_sizes", ())  # type: ignore[arg-type]
+        ),
     )
+
+
+def _mapping_or_empty(raw: object, *, name: str) -> Mapping[str, object]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{name} must be an object")
+    return raw
+
+
+def canonical_json_digest(raw: object) -> str:
+    """Return a platform-independent SHA-256 digest of parsed JSON data."""
+    payload = json.dumps(
+        raw,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 @lru_cache(maxsize=1)
@@ -360,6 +568,14 @@ def select_empirical_segments(
         raise UnsupportedEmpiricalCalibrationError(
             f"calibration {record.calibration_id!r} supports N >= {size_minimum}; "
             f"received N={system_size}"
+        )
+    if (
+        record.reviewed_size_max is not None
+        and system_size > record.reviewed_size_max
+    ):
+        raise UnsupportedEmpiricalCalibrationError(
+            f"calibration {record.calibration_id!r} was reviewed only through "
+            f"N={record.reviewed_size_max}; received N={system_size}"
         )
     prefactor = record.coefficient.at(system_size)
     order = record.key.formal_order

@@ -16,10 +16,13 @@ from hamiltonian_resources import (
     HamiltonianSpec,
     MultiproductMethod,
     PauliHamiltonian,
+    PowerPlusOffsetSizeCoefficient,
+    PowerSizeCoefficient,
     TrotterMethod,
     TimeScaling,
     UnsupportedEmpiricalCalibrationError,
     build_simulation_circuit,
+    canonical_json_digest,
     default_empirical_calibrations,
     estimate_mpf_error,
     estimate_plan_resources,
@@ -163,6 +166,86 @@ def test_empirical_formula_has_exact_fixed_powers_and_affine_size_scaling():
         baseline * 2**5
     )
     assert record.coefficient.at(12) - record.coefficient.at(8) == pytest.approx(2.0)
+
+
+def test_tagged_size_coefficients_preserve_fixed_formal_powers():
+    power_record = replace(
+        _record(order=18),
+        coefficient=PowerSizeCoefficient(2e-9, 1.5),
+    )
+    offset_record = replace(
+        power_record,
+        coefficient=PowerPlusOffsetSizeCoefficient(1e-9, 1.5, 2e-9),
+    )
+
+    for record in (power_record, offset_record):
+        baseline = evaluate_empirical_error(record, 8, 4.0, 20)
+        assert evaluate_empirical_error(record, 8, 4.0, 40) == pytest.approx(
+            baseline / 2**18
+        )
+        assert record.coefficient.at(12) >= record.coefficient.at(8)
+
+
+def test_v2_registry_loads_tagged_models_and_enforces_reviewed_domain():
+    raw = {
+        "schema_version": "2.0",
+        "calibrations": [
+            {
+                "calibration_id": "v2-power-order-18",
+                "key": {
+                    "method": "multiproduct",
+                    "formal_order": 18,
+                    "model": "transverse_field_ising",
+                    "parameters": {
+                        "coupling": 1.0,
+                        "field": 3.0,
+                        "periodic": False,
+                    },
+                    "geometry": "1d-chain",
+                    "boundary_condition": "open",
+                    "partition": None,
+                    "schedule": "new",
+                    "formula": "ordered-individual-pauli-strang-mpf-v1",
+                },
+                "coefficient": {
+                    "model": "power",
+                    "parameters": {"amplitude": 2e-9, "exponent": 1.5},
+                },
+                "size_range": [4, 12],
+                "reviewed_size_max": 100,
+                "time_range": [4.0, 12.0],
+                "max_step_size": 0.1,
+                "sample_sizes": list(range(4, 13)),
+                "sample_times": [4.0, 8.0, 12.0],
+                "external_validation_sizes": [11, 12],
+                "fit_diagnostics": {"holdout_max_relative_error": 0.08},
+                "stability_diagnostics": {"spread_at_reviewed_max": 0.20},
+                "precision_backend": "flint",
+                "precision_digits": 128,
+                "error_metric": "spectral operator 2-norm",
+                "source": "synthetic v2 source",
+                "source_digest": "b" * 64,
+                "reference": "synthetic v2 reference",
+                "review_status": "reviewed",
+            }
+        ],
+    }
+    registry = EmpiricalCalibrationRegistry.from_json_data(raw)
+    record = registry.records[0]
+
+    assert isinstance(record.coefficient, PowerSizeCoefficient)
+    assert record.coefficient.model_name == "power"
+    assert record.reviewed_size_max == 100
+    assert select_empirical_segments(record, 100, 100.0, 0.1).size_extrapolated
+    with pytest.raises(UnsupportedEmpiricalCalibrationError, match="reviewed only"):
+        select_empirical_segments(record, 101, 100.0, 0.1)
+
+
+def test_canonical_json_digest_is_whitespace_and_line_ending_independent():
+    parsed = json.loads('{"b": 2, "a": [1, 3]}')
+    same = json.loads('{\r\n  "a": [1, 3],\r\n  "b": 2\r\n}')
+
+    assert canonical_json_digest(parsed) == canonical_json_digest(same)
 
 
 def test_empirical_inversion_ceiling_and_asymptotic_guard_are_consistent():
