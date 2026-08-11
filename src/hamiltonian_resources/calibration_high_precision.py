@@ -43,6 +43,7 @@ class HighPrecisionOperatorNormEstimate:
     formal_order: int
     segments: int
     schedule: MPFSchedule
+    symmetry_reduction: str
     schedule_digest: str
     term_order_digest: str
     wall_seconds: float
@@ -233,6 +234,57 @@ def _flint_pauli_matrix(flint: Any, label: str) -> Any:
     return result
 
 
+def _flint_pauli_block_matrix(
+    flint: Any,
+    label: str,
+    basis_states: tuple[int, ...],
+    basis_index: dict[int, int],
+) -> Any:
+    dimension = len(basis_states)
+    x_mask = 0
+    z_mask = 0
+    y_count = 0
+    for offset, pauli in enumerate(reversed(label)):
+        if pauli in "XY":
+            x_mask |= 1 << offset
+        if pauli in "YZ":
+            z_mask |= 1 << offset
+        if pauli == "Y":
+            y_count += 1
+    if x_mask.bit_count() & 1:
+        raise ValueError(f"Pauli term {label!r} does not preserve the selected parity")
+    result = flint.acb_mat(dimension, dimension)
+    y_phase = flint.acb(0, 1) ** y_count
+    for column, state in enumerate(basis_states):
+        row_state = state ^ x_mask
+        row = basis_index[row_state]
+        parity = (state & z_mask).bit_count() & 1
+        result[row, column] = y_phase * (-1 if parity else 1)
+    return result
+
+
+def _parity_labels_and_coefficients(
+    hamiltonian: PauliHamiltonian,
+) -> tuple[tuple[str, float], ...]:
+    metadata = hamiltonian.model_metadata
+    if metadata is None:
+        raise ValueError("parity reduction requires built-in Hamiltonian metadata")
+    if metadata.model == "heisenberg_chain":
+        return hamiltonian.terms
+    if metadata.model == "transverse_field_ising":
+        transformed: list[tuple[str, float]] = []
+        translation = {"I": "I", "X": "Z", "Y": "Y", "Z": "X"}
+        for label, coefficient in hamiltonian.terms:
+            transformed.append(
+                (
+                    "".join(translation[value] for value in label),
+                    coefficient * (-1 if label.count("Y") & 1 else 1),
+                )
+            )
+        return tuple(transformed)
+    raise ValueError(f"no parity reduction is registered for {metadata.model!r}")
+
+
 def _flint_matrix_power(flint: Any, matrix: Any, exponent: int) -> Any:
     result = _flint_identity(flint, matrix.nrows())
     factor = matrix
@@ -272,6 +324,58 @@ def _flatten_eigenvalues(values: list[Any]) -> list[Any]:
     return flattened
 
 
+def _flint_sector_norm(
+    flint: Any,
+    terms: tuple[tuple[Any, Any], ...],
+    time_ball: Any,
+    segments: int,
+    diagnostics: Any,
+) -> tuple[Any, float, bool]:
+    dimension = terms[0][0].nrows()
+    hamiltonian_matrix = flint.acb_mat(dimension, dimension)
+    for pauli, weight in terms:
+        hamiltonian_matrix += weight * pauli
+    exact = (flint.acb(0, -1) * time_ball * hamiltonian_matrix).exp()
+    step_time = time_ball / segments
+    mpf_step = flint.acb_mat(dimension, dimension)
+    for coefficient, exponent in zip(
+        diagnostics.coefficients,
+        diagnostics.exponents,
+        strict=True,
+    ):
+        base = _flint_strang_step(flint, terms, step_time / exponent)
+        coefficient_ball = flint.arb(coefficient.numerator) / coefficient.denominator
+        mpf_step += coefficient_ball * _flint_matrix_power(
+            flint,
+            base,
+            exponent,
+        )
+    approximate = _flint_matrix_power(flint, mpf_step, segments)
+    difference = approximate - exact
+    gram = difference.conjugate().transpose() * difference
+    try:
+        eigenvalues = _flatten_eigenvalues(gram.eig(multiple=True))
+        interval_certified = True
+    except ValueError:
+        eigenvalues = _flatten_eigenvalues(gram.eig(algorithm="approx"))
+        interval_certified = False
+    largest = max(eigenvalues, key=lambda value: float(value.real.mid()))
+    if interval_certified and not largest.imag.contains(0):
+        raise ArithmeticError("D^dagger D eigenvalue enclosure is not real")
+    if (
+        interval_certified
+        and float(largest.real.mid()) < 0
+        and not largest.real.contains(0)
+    ):
+        raise ArithmeticError("D^dagger D has a negative eigenvalue enclosure")
+    nonnegative = largest.real if float(largest.real.mid()) >= 0 else flint.arb(0)
+    value = nonnegative.sqrt()
+    midpoint = abs(float(value.mid()))
+    radius = float(value.rad())
+    relative_width = math.inf if midpoint == 0 else 2 * radius / midpoint
+    return value, relative_width, interval_certified
+
+
 def _flint_operator_norm_at_precision(
     hamiltonian: PauliHamiltonian,
     time: float,
@@ -280,63 +384,68 @@ def _flint_operator_norm_at_precision(
     *,
     schedule: MPFSchedule,
     decimal_digits: int,
+    symmetry_reduction: Literal["none", "parity"],
 ) -> tuple[str, float, float, bool]:
     flint = _require_flint()
     previous_dps = flint.ctx.dps
     flint.ctx.dps = decimal_digits
     try:
-        dimension = 2**hamiltonian.num_qubits
-        hamiltonian_matrix = flint.acb_mat(dimension, dimension)
-        terms: list[tuple[Any, Any]] = []
-        for label, coefficient in hamiltonian.terms:
-            pauli = _flint_pauli_matrix(flint, label)
-            weight = flint.arb(str(coefficient))
-            hamiltonian_matrix += weight * pauli
-            terms.append((pauli, weight))
         time_ball = flint.arb(str(time))
-        exact = (flint.acb(0, -1) * time_ball * hamiltonian_matrix).exp()
         diagnostics = mpf_richardson_diagnostics(branch_count, schedule=schedule)
-        step_time = time_ball / segments
-        mpf_step = flint.acb_mat(dimension, dimension)
-        for coefficient, exponent in zip(
-            diagnostics.coefficients,
-            diagnostics.exponents,
-            strict=True,
-        ):
-            base = _flint_strang_step(
-                flint,
-                tuple(terms),
-                step_time / exponent,
+        if symmetry_reduction == "none":
+            term_sets = (
+                tuple(
+                    (
+                        _flint_pauli_matrix(flint, label),
+                        flint.arb(str(coefficient)),
+                    )
+                    for label, coefficient in hamiltonian.terms
+                ),
             )
-            coefficient_ball = flint.arb(coefficient.numerator) / coefficient.denominator
-            mpf_step += coefficient_ball * _flint_matrix_power(
+        elif symmetry_reduction == "parity":
+            labels = _parity_labels_and_coefficients(hamiltonian)
+            full_dimension = 2**hamiltonian.num_qubits
+            blocks: list[tuple[tuple[Any, Any], ...]] = []
+            for sector in (0, 1):
+                basis_states = tuple(
+                    state
+                    for state in range(full_dimension)
+                    if state.bit_count() % 2 == sector
+                )
+                basis_index = {
+                    state: index for index, state in enumerate(basis_states)
+                }
+                blocks.append(
+                    tuple(
+                        (
+                            _flint_pauli_block_matrix(
+                                flint,
+                                label,
+                                basis_states,
+                                basis_index,
+                            ),
+                            flint.arb(str(coefficient)),
+                        )
+                        for label, coefficient in labels
+                    )
+                )
+            term_sets = tuple(blocks)
+        else:
+            raise ValueError("symmetry_reduction must be 'none' or 'parity'")
+        sector_results = tuple(
+            _flint_sector_norm(
                 flint,
-                base,
-                exponent,
+                terms,
+                time_ball,
+                segments,
+                diagnostics,
             )
-        approximate = _flint_matrix_power(flint, mpf_step, segments)
-        difference = approximate - exact
-        gram = difference.conjugate().transpose() * difference
-        try:
-            eigenvalues = _flatten_eigenvalues(gram.eig(multiple=True))
-            interval_certified = True
-        except ValueError:
-            eigenvalues = _flatten_eigenvalues(gram.eig(algorithm="approx"))
-            interval_certified = False
-        largest = max(eigenvalues, key=lambda value: float(value.real.mid()))
-        if interval_certified and not largest.imag.contains(0):
-            raise ArithmeticError("D^dagger D eigenvalue enclosure is not real")
-        if (
-            interval_certified
-            and float(largest.real.mid()) < 0
-            and not largest.real.contains(0)
-        ):
-            raise ArithmeticError("D^dagger D has a negative eigenvalue enclosure")
-        nonnegative = largest.real if float(largest.real.mid()) >= 0 else flint.arb(0)
-        value = nonnegative.sqrt()
-        midpoint = abs(float(value.mid()))
-        radius = float(value.rad())
-        relative_width = math.inf if midpoint == 0 else 2 * radius / midpoint
+            for terms in term_sets
+        )
+        value, relative_width, interval_certified = max(
+            sector_results,
+            key=lambda result: float(result[0].mid()),
+        )
         return (
             value.str(decimal_digits, radius=False),
             0.0,
@@ -374,6 +483,7 @@ def adaptive_mpf_operator_norm_error(
     branch_count: int,
     *,
     backend: Literal["mpmath", "flint"] = "mpmath",
+    symmetry_reduction: Literal["none", "parity"] = "none",
     schedule: MPFSchedule = "new",
     initial_digits: int | None = None,
     digit_increment: int = 32,
@@ -389,6 +499,8 @@ def adaptive_mpf_operator_norm_error(
         raise ValueError("relative_tolerance must lie in (0, 1)")
     if initial_digits is not None and initial_digits < 2:
         raise ValueError("initial_digits must be at least two")
+    if backend == "mpmath" and symmetry_reduction != "none":
+        raise ValueError("symmetry reduction is currently available only with FLINT")
     start_digits = (
         initial_digits
         if initial_digits is not None
@@ -433,6 +545,7 @@ def adaptive_mpf_operator_norm_error(
                     branch_count,
                     schedule=schedule,
                     decimal_digits=digits,
+                    symmetry_reduction=symmetry_reduction,
                 )
             )
         else:
@@ -492,6 +605,7 @@ def adaptive_mpf_operator_norm_error(
         formal_order=2 * branch_count,
         segments=segments,
         schedule=schedule,
+        symmetry_reduction=symmetry_reduction,
         schedule_digest=hashlib.sha256(schedule_payload).hexdigest(),
         term_order_digest=hashlib.sha256(term_payload).hexdigest(),
         wall_seconds=wall_time.perf_counter() - started,

@@ -1,6 +1,6 @@
 import pytest
 
-from hamiltonian_resources import transverse_field_ising
+from hamiltonian_resources import heisenberg_chain, transverse_field_ising
 from hamiltonian_resources.calibration_high_precision import (
     adaptive_mpf_operator_norm_error,
     recommended_initial_digits,
@@ -60,6 +60,37 @@ def test_flint_backend_agrees_with_mpmath_when_available():
     if accelerated.interval_certified:
         assert accelerated.interval_relative_width <= 1e-10
     assert accelerated.value == pytest.approx(reference.value, rel=1e-10)
+
+
+@pytest.mark.parametrize(
+    "hamiltonian",
+    [
+        transverse_field_ising(3, coupling=1.0, field=3.0),
+        heisenberg_chain(3, coupling=1.0),
+    ],
+)
+def test_flint_parity_blocks_reproduce_full_space_norm(hamiltonian):
+    pytest.importorskip("flint")
+    common = dict(
+        hamiltonian=hamiltonian,
+        time=3.0,
+        segments=6,
+        branch_count=2,
+        backend="flint",
+        initial_digits=48,
+        digit_increment=24,
+        max_digits=72,
+        relative_tolerance=1e-10,
+    )
+    full = adaptive_mpf_operator_norm_error(**common)
+    reduced = adaptive_mpf_operator_norm_error(
+        **common,
+        symmetry_reduction="parity",
+    )
+
+    assert reduced.converged
+    assert reduced.symmetry_reduction == "parity"
+    assert reduced.value == pytest.approx(full.value, rel=1e-10)
 
 
 def test_recommended_precision_grows_with_order_and_step_refinement():

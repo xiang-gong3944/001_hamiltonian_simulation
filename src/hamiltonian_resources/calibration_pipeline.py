@@ -77,9 +77,14 @@ def expand_calibration_tasks(config: Mapping[str, Any]) -> tuple[CalibrationTask
             formal_order = int(formal_order_raw)
             if formal_order % 2 or not 4 <= formal_order <= 30:
                 raise ValueError("MPF formal orders must be even and lie in [4, 30]")
-            ratios = ratios_by_order[str(formal_order)]
             for size_raw in config["sizes"]:
                 size = int(size_raw)
+                ratios = (
+                    config.get("segment_ratio_overrides", {})
+                    .get(str(model), {})
+                    .get(str(formal_order), {})
+                    .get(str(size), ratios_by_order[str(formal_order)])
+                )
                 points = tuple(
                     CalibrationPoint(float(size), max(1, round(float(ratio) * size)))
                     for ratio in ratios
@@ -142,6 +147,24 @@ def _coefficient_strings(
         )  # type: ignore[return-value]
 
 
+def task_execution_digest(
+    config: Mapping[str, Any],
+    task: CalibrationTask,
+) -> str:
+    """Hash only settings that can change the numerical result of one task."""
+    return canonical_json_digest(
+        {
+            "task": asdict(task),
+            "backend": config["backend"],
+            "digit_increment": int(config.get("digit_increment", 32)),
+            "max_digits": int(config.get("max_digits", 512)),
+            "relative_tolerance": float(config.get("relative_tolerance", 1e-8)),
+            "schedule": str(config.get("schedule", "new")),
+            "symmetry_reduction": str(config.get("symmetry_reduction", "none")),
+        }
+    )
+
+
 def run_calibration_task(
     config: Mapping[str, Any],
     task: CalibrationTask,
@@ -155,6 +178,9 @@ def run_calibration_task(
             point.segments,
             task.branch_count,
             backend=str(config["backend"]),  # type: ignore[arg-type]
+            symmetry_reduction=str(  # type: ignore[arg-type]
+                config.get("symmetry_reduction", "none")
+            ),
             digit_increment=int(config.get("digit_increment", 32)),
             max_digits=int(config.get("max_digits", 512)),
             relative_tolerance=float(config.get("relative_tolerance", 1e-8)),
@@ -191,13 +217,17 @@ def run_calibration_task(
         "schema_version": "task-1.0",
         "study_id": config["study_id"],
         "configuration_digest": canonical_json_digest(config),
+        "task_execution_digest": task_execution_digest(config, task),
         "task": asdict(task),
         "task_id": task.task_id,
         "observations": observations,
     }
     payload["scientific_digest"] = canonical_json_digest(
         {
-            **payload,
+            "schema_version": payload["schema_version"],
+            "task": payload["task"],
+            "task_id": payload["task_id"],
+            "task_execution_digest": payload["task_execution_digest"],
             "observations": [
                 {key: value for key, value in row.items() if key != "wall_seconds"}
                 for row in observations
@@ -226,9 +256,20 @@ def run_and_write_task(
     destination = shard_directory / f"{task.task_id}.json"
     if destination.exists():
         existing = json.loads(destination.read_text(encoding="utf-8"))
-        if (
-            existing.get("configuration_digest") == canonical_json_digest(config)
-            and existing.get("task_id") == task.task_id
+        execution_matches = existing.get("task_execution_digest") == (
+            task_execution_digest(config, task)
+        )
+        legacy_matches = (
+            existing.get("task_execution_digest") is None
+            and canonical_json_digest(existing.get("task"))
+            == canonical_json_digest(asdict(task))
+            and all(
+                row.get("backend") == config["backend"]
+                for row in existing.get("observations", [])
+            )
+        )
+        if existing.get("task_id") == task.task_id and (
+            execution_matches or legacy_matches
         ):
             return destination
     _atomic_json_write(destination, run_calibration_task(config, task))
@@ -264,13 +305,19 @@ def reduce_calibration_shards(
     expected = {task.task_id: task for task in expand_calibration_tasks(config)}
     configuration_digest = canonical_json_digest(config)
     shards: dict[str, dict[str, Any]] = {}
+    ignored_task_ids: list[str] = []
     for path in shard_paths:
         raw = json.loads(path.read_text(encoding="utf-8"))
         task_id = str(raw["task_id"])
-        if raw.get("configuration_digest") != configuration_digest:
-            raise ValueError(f"shard {path} has a different configuration digest")
         if task_id not in expected:
-            raise ValueError(f"shard {path} is not in the configured task inventory")
+            ignored_task_ids.append(task_id)
+            continue
+        execution_digest = raw.get("task_execution_digest")
+        if execution_digest is not None and execution_digest != task_execution_digest(
+            config,
+            expected[task_id],
+        ):
+            raise ValueError(f"shard {path} has a different task execution digest")
         if task_id in shards:
             raise ValueError(f"duplicate shard for task {task_id}")
         shards[task_id] = raw
@@ -299,6 +346,7 @@ def reduce_calibration_shards(
         "reviewed_size_max": int(config["reviewed_size_max"]),
         "expected_task_ids": sorted(expected),
         "missing_task_ids": missing,
+        "ignored_task_ids": sorted(ignored_task_ids),
         "tasks": reduced_tasks,
     }
     payload["reduced_digest"] = canonical_json_digest(payload)

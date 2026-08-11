@@ -6,6 +6,7 @@ from hamiltonian_resources.calibration_pipeline import (
     assemble_calibration_artifacts,
     expand_calibration_tasks,
     reduce_calibration_shards,
+    task_execution_digest,
 )
 from hamiltonian_resources.empirical import canonical_json_digest
 
@@ -41,6 +42,7 @@ def _shard(config, task):
         "schema_version": "task-1.0",
         "study_id": config["study_id"],
         "configuration_digest": canonical_json_digest(config),
+        "task_execution_digest": task_execution_digest(config, task),
         "task": {
             "kind": task.kind,
             "model": task.model,
@@ -84,10 +86,10 @@ def test_reducer_rejects_missing_and_wrong_configuration_shards(tmp_path):
         reduce_calibration_shards(config, [])
 
     raw = _shard(config, task)
-    raw["configuration_digest"] = "0" * 64
+    raw["task_execution_digest"] = "0" * 64
     shard_path = tmp_path / "wrong.json"
     shard_path.write_text(json.dumps(raw), encoding="utf-8")
-    with pytest.raises(ValueError, match="different configuration"):
+    with pytest.raises(ValueError, match="different task execution"):
         reduce_calibration_shards(config, [shard_path])
 
 
@@ -109,3 +111,15 @@ def test_task_inventory_includes_fixed_segment_time_law_checks():
 
     assert {point.segments for point in check.points} == {40}
     assert tuple(point.time for point in check.points) == pytest.approx((3.2, 4.0, 4.8))
+
+
+def test_task_inventory_applies_model_order_and_size_ratio_overrides():
+    config = {
+        **_config(),
+        "segment_ratio_overrides": {
+            "transverse_field_ising": {"18": {"4": [8, 10, 12, 16]}}
+        },
+    }
+    task = expand_calibration_tasks(config)[0]
+
+    assert tuple(point.segments for point in task.points) == (32, 40, 48, 64)
