@@ -990,9 +990,12 @@ def validate_benchmark_frame(frame: pd.DataFrame) -> None:
     if not set(frame["status"]).issubset({"ok", "error"}):
         raise ValueError("benchmark status must be 'ok' or 'error'")
     successful = frame[frame["status"] == "ok"]
-    if successful[["t_count", "cnot_count"]].isna().any().any():
+    resource_counts = successful[["t_count", "cnot_count"]].apply(
+        pd.to_numeric, errors="coerce"
+    )
+    if resource_counts.isna().any().any():
         raise ValueError("successful rows must contain T and CNOT counts")
-    if (successful[["t_count", "cnot_count"]] < 0).any().any():
+    if (resource_counts < 0).any().any():
         raise ValueError("resource counts must be nonnegative")
     failed = frame[frame["status"] == "error"]
     if failed["error_message"].isna().any() or (failed["error_message"] == "").any():
