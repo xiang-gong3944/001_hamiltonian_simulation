@@ -226,6 +226,7 @@ class EmpiricalCalibrationRecord:
     precision_backend: str | None = None
     precision_digits: int | None = None
     external_validation_sizes: tuple[int, ...] = ()
+    external_validation_status: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -290,6 +291,15 @@ class EmpiricalCalibrationRecord:
             raise ValueError("external validation sizes must be sorted and unique")
         if any(value not in self.sample_sizes for value in self.external_validation_sizes):
             raise ValueError("external validation sizes must be included in sample_sizes")
+        if self.external_validation_status not in {
+            None,
+            "passed",
+            "not-required",
+            "infeasible-review-exception",
+        }:
+            raise ValueError("unknown external validation status")
+        if self.schema_version == "2.0" and self.external_validation_status is None:
+            object.__setattr__(self, "external_validation_status", "not-required")
         self.coefficient.at(minimum)
         self.coefficient.at(maximum)
         if self.reviewed_size_max is not None:
@@ -496,6 +506,11 @@ def _record_from_dict(
         ),
         external_validation_sizes=tuple(
             int(value) for value in raw.get("external_validation_sizes", ())  # type: ignore[arg-type]
+        ),
+        external_validation_status=(
+            str(raw["external_validation_status"])
+            if raw.get("external_validation_status") is not None
+            else None
         ),
     )
 

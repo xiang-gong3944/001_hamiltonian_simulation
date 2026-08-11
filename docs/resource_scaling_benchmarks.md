@@ -220,8 +220,11 @@ are:
 | `circuit_bound_scope`, `circuit_bound_rigorous` | Implemented-circuit scope and its separate certification status. |
 | `circuit_target_satisfied` | Whether the rigorous claim at `circuit_bound_scope` meets the target; inspect that scope rather than inferring full joint-unitary certification. |
 | `empirical_calibration_id`, `empirical_calibration_model` | Exact reviewed row and model identity, when empirical sizing is selected. |
-| `empirical_calibration_size_min`, `empirical_calibration_size_max`, `empirical_calibration_time_min`, `empirical_calibration_time_max` | Reviewed finite calibration domain. |
+| `empirical_calibration_schema_version`, `empirical_coefficient_model`, `empirical_coefficient_parameters_json` | Tagged coefficient schema and ordinary-float runtime parameters. |
+| `empirical_calibration_size_min`, `empirical_calibration_size_max`, `empirical_reviewed_size_max`, `empirical_calibration_time_min`, `empirical_calibration_time_max` | Observed domain, downstream-reviewed size maximum, and checked time domain. |
 | `empirical_size_extrapolated`, `empirical_time_extrapolated`, `empirical_active_constraint` | Extrapolation flags and formula/domain guard provenance. |
+| `empirical_stability_diagnostics_json`, `empirical_external_validation_sizes_json`, `empirical_external_validation_status` | Shifted-window stability and \(N=11,12\) validation or review-exception provenance. |
+| `empirical_precision_backend`, `empirical_precision_digits` | Offline reference backend and maximum recorded precision. |
 | `mpf_exponent_sum`, `mpf_exponent_sum_source`, `mpf_explicit_schedule_available` | Aggregate \(K\), exact/extrapolated provenance, and circuit-schedule capability. |
 | `status`, `error_type`, `error_message` | Per-method failure information. |
 

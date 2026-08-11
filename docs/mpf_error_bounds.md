@@ -130,8 +130,11 @@ the repository can study only points resolving to \(J\le15\).
 `error_method="empirical-operator-norm"` looks up a reviewed fixed-\(J\)
 spectral-norm calibration after branch-count resolution. It models the
 repeated ideal MPF operator, produces no ideal or circuit certification claim,
-and never falls back to an analytical estimator. Initial reviewed rows cover
-only `new` schedules with \(2\le J\le8\).
+and never falls back to an analytical estimator. The lookup coefficient
+\(B_{2J}(N)\) determines only the required segment count \(r\); it is never
+fed back into the branch-count policy. A missing row therefore fails at the
+already-selected `formal_order=2J` instead of falling back to another order.
+Reviewed rows cover only explicitly accepted `new`-schedule orders.
 
 Resource costing consumes \(K=\sum_jk_j\) separately from explicit
 implementation data. Registered schedules through \(J=15\) provide both. For

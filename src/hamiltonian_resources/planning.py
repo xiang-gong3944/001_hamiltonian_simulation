@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from typing import TypeAlias
@@ -55,6 +56,45 @@ from .trotter import (
     resolve_trotter_structure,
     suzuki_group_factors,
 )
+
+
+def _empirical_runtime_metadata(error: EmpiricalErrorEstimate) -> dict[str, object]:
+    """Expose the reviewed coefficient model and its finite review domain."""
+    calibration = error.calibration
+    return {
+        "empirical_calibration_id": error.calibration_id,
+        "empirical_calibration_model": calibration.key.model,
+        "empirical_calibration_schema_version": calibration.schema_version,
+        "empirical_coefficient_model": calibration.coefficient.model_name,
+        "empirical_coefficient_parameters_json": json.dumps(
+            dict(calibration.coefficient.parameters),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "empirical_coefficient_value": error.prefactor,
+        "empirical_calibration_size_min": calibration.size_range[0],
+        "empirical_calibration_size_max": calibration.size_range[1],
+        "empirical_reviewed_size_max": calibration.reviewed_size_max,
+        "empirical_calibration_time_min": calibration.time_range[0],
+        "empirical_calibration_time_max": calibration.time_range[1],
+        "empirical_size_extrapolated": error.size_extrapolated,
+        "empirical_time_extrapolated": error.time_extrapolated,
+        "empirical_active_constraint": error.active_constraint,
+        "empirical_stability_diagnostics_json": json.dumps(
+            dict(calibration.stability_diagnostics),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "empirical_external_validation_sizes_json": json.dumps(
+            calibration.external_validation_sizes,
+            separators=(",", ":"),
+        ),
+        "empirical_external_validation_status": (
+            calibration.external_validation_status
+        ),
+        "empirical_precision_backend": calibration.precision_backend,
+        "empirical_precision_digits": calibration.precision_digits,
+    }
 
 
 @dataclass(frozen=True)
@@ -343,19 +383,7 @@ class TrotterPlan:
             ),
         }
         if empirical:
-            result.update(
-                empirical_calibration_id=error.calibration_id,
-                empirical_calibration_model=error.calibration.key.model,
-                empirical_coefficient_model="affine-aN-plus-b",
-                empirical_coefficient_value=error.prefactor,
-                empirical_calibration_size_min=error.calibration.size_range[0],
-                empirical_calibration_size_max=error.calibration.size_range[1],
-                empirical_calibration_time_min=error.calibration.time_range[0],
-                empirical_calibration_time_max=error.calibration.time_range[1],
-                empirical_size_extrapolated=error.size_extrapolated,
-                empirical_time_extrapolated=error.time_extrapolated,
-                empirical_active_constraint=error.active_constraint,
-            )
+            result.update(_empirical_runtime_metadata(error))
         return result
 
 
@@ -835,17 +863,7 @@ class MPFPlan:
                 "max_exact_nested_commutator_order": 0,
                 "locality_compatible": False,
                 "commutator_bounds": (),
-                "empirical_calibration_id": error.calibration_id,
-                "empirical_calibration_model": error.calibration.key.model,
-                "empirical_coefficient_model": "affine-aN-plus-b",
-                "empirical_coefficient_value": error.prefactor,
-                "empirical_calibration_size_min": error.calibration.size_range[0],
-                "empirical_calibration_size_max": error.calibration.size_range[1],
-                "empirical_calibration_time_min": error.calibration.time_range[0],
-                "empirical_calibration_time_max": error.calibration.time_range[1],
-                "empirical_size_extrapolated": error.size_extrapolated,
-                "empirical_time_extrapolated": error.time_extrapolated,
-                "empirical_active_constraint": error.active_constraint,
+                **_empirical_runtime_metadata(error),
                 "mpf_exponent_sum": self.schedule_cost.exponent_sum,
                 "mpf_exponent_sum_source": self.schedule_cost.source,
                 "mpf_explicit_schedule_available": (

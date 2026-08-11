@@ -32,6 +32,7 @@ from hamiltonian_resources import (
     multiproduct_coefficients,
     plan_simulation,
     plot_benchmark,
+    resolve_mpf_branch_count,
     run_benchmark,
     save_benchmark,
     select_empirical_segments,
@@ -436,7 +437,17 @@ def test_empirical_benchmark_rows_round_trip_with_schema2_extensions(
 ):
     import hamiltonian_resources.planning as planning
 
-    registry = EmpiricalCalibrationRegistry((_record(),))
+    record = replace(
+        _record(),
+        coefficient=PowerSizeCoefficient(0.25, 1.5),
+        schema_version="2.0",
+        reviewed_size_max=100,
+        stability_diagnostics=(("spread_at_100", 0.12),),
+        precision_backend="flint",
+        precision_digits=128,
+        external_validation_status="infeasible-review-exception",
+    )
+    registry = EmpiricalCalibrationRegistry((record,))
     monkeypatch.setattr(planning, "default_empirical_calibrations", lambda: registry)
     config = BenchmarkConfig(
         hamiltonian=HamiltonianSpec(
@@ -456,6 +467,17 @@ def test_empirical_benchmark_rows_round_trip_with_schema2_extensions(
     assert row["estimate_category"] == "empirical"
     assert row["error_policy"] == "empirical-operator-norm"
     assert row["empirical_calibration_id"] == "test-trotter-2"
+    assert row["empirical_calibration_schema_version"] == "2.0"
+    assert row["empirical_coefficient_model"] == "power"
+    assert json.loads(row["empirical_coefficient_parameters_json"]) == {
+        "amplitude": 0.25,
+        "exponent": 1.5,
+    }
+    assert row["empirical_reviewed_size_max"] == 100
+    assert row["empirical_external_validation_status"] == (
+        "infeasible-review-exception"
+    )
+    assert row["empirical_precision_backend"] == "flint"
     assert not row["bound_rigorous"]
     _, csv_path, _ = save_benchmark(frame, config, output_root=tmp_path)
     loaded = load_benchmark(csv_path)
@@ -467,6 +489,85 @@ def test_empirical_benchmark_rows_round_trip_with_schema2_extensions(
         certification_policy="unconstrained",
     )
     assert len(figure.axes[0].lines) == 1
+
+
+def test_empirical_coefficient_changes_segments_but_not_dynamic_branch_count(
+    monkeypatch,
+):
+    import hamiltonian_resources.planning as planning
+
+    hamiltonian = transverse_field_ising(4)
+    target_error = 1e-2
+    algorithm_error = 0.9 * target_error
+    selection = resolve_mpf_branch_count(
+        hamiltonian,
+        1.0,
+        algorithm_error,
+        policy="mizuta2026-theorem6",
+        term_count=None,
+        schedule="new",
+    )
+    metadata = hamiltonian.model_metadata
+    base = _record(
+        method="multiproduct",
+        order=2 * selection.branch_count,
+        model=metadata.model,
+        parameters=metadata.parameters,
+        partition=None,
+        schedule="new",
+        max_step_size=10.0,
+    )
+    method = MultiproductMethod(
+        None,
+        error_method="empirical-operator-norm",
+        branch_count_policy="mizuta2026-theorem6",
+    )
+    plans = []
+    for scale in (1e-6, 1e6):
+        registry = EmpiricalCalibrationRegistry(
+            (replace(base, coefficient=AffineSizeCoefficient(scale, scale)),)
+        )
+        monkeypatch.setattr(planning, "default_empirical_calibrations", lambda: registry)
+        plans.append(plan_simulation(hamiltonian, method, 1.0, target_error))
+
+    assert {plan.term_count for plan in plans} == {selection.branch_count}
+    assert {plan.formal_order for plan in plans} == {2 * selection.branch_count}
+    assert plans[0].segments < plans[1].segments
+
+
+def test_missing_empirical_row_fails_after_dynamic_branch_selection(monkeypatch):
+    import hamiltonian_resources.planning as planning
+
+    hamiltonian = transverse_field_ising(4)
+    target_error = 1e-2
+    selection = resolve_mpf_branch_count(
+        hamiltonian,
+        1.0,
+        0.9 * target_error,
+        policy="mizuta2026-theorem6",
+        term_count=None,
+        schedule="new",
+    )
+    monkeypatch.setattr(
+        planning,
+        "default_empirical_calibrations",
+        lambda: EmpiricalCalibrationRegistry(()),
+    )
+
+    with pytest.raises(
+        UnsupportedEmpiricalCalibrationError,
+        match=rf"formal_order={2 * selection.branch_count}",
+    ):
+        plan_simulation(
+            hamiltonian,
+            MultiproductMethod(
+                None,
+                error_method="empirical-operator-norm",
+                branch_count_policy="mizuta2026-theorem6",
+            ),
+            1.0,
+            target_error,
+        )
 
 
 def test_unsupported_empirical_calibration_is_an_actionable_failure_row(
