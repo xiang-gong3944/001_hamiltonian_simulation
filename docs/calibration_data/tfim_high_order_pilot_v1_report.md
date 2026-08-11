@@ -22,6 +22,9 @@ uses these dimensionless segment windows:
 | 24 | 12 | 5, 6, 8, 10 |
 | 30 | 15 | 10, 12, 16, 20 |
 
+For `N=5`, formal order 30 required a further override to
+`r/T = 20, 24, 32, 40` before the 2% median-absolute-deviation gate passed.
+
 All nine `(N, J)` groups satisfy the pilot order criterion (each local
 exponent lies within 2% of `2J`) and the four-point coefficient criterion
 (maximum deviation from the median is below 5%).
@@ -31,7 +34,7 @@ Representative median coefficients are:
 | N | B_18(N) | B_24(N) | B_30(N) |
 |---:|---:|---:|---:|
 | 4 | 2.0401e-7 | 8.3364e-13 | 3.7696e-18 |
-| 5 | 3.5919e-7 | 3.0984e-12 | 4.4280e-18 |
+| 5 | 3.5919e-7 | 3.0984e-12 | 4.1419e-18 |
 | 6 | 4.7471e-7 | 6.0609e-12 | 1.3547e-17 |
 
 The supplied `N=4` exploratory values are reproduced.  The supplied
@@ -55,7 +58,7 @@ Total FLINT wall time for the 12 observations at each size was approximately:
 | N | Wall time |
 |---:|---:|
 | 4 | 2.7 s |
-| 5 | 19.7 s |
+| 5 | 20.3 s |
 | 6 | 256 s |
 
 The observed growth makes an uncached dense sweep through `N=10`

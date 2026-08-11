@@ -57,11 +57,23 @@ def _coefficient_diagnostics(
         )
 
 
-def run_pilot(config: dict[str, Any]) -> dict[str, Any]:
+def run_pilot(
+    config: dict[str, Any],
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if config["model"] != "transverse_field_ising":
         raise ValueError("the staged pilot is restricted to transverse_field_ising")
     backend = str(config["backend"])
     schedule = str(config.get("schedule", "new"))
+    existing_observations = {
+        (
+            row["system_size"],
+            row["branch_count"],
+            row["segments"],
+            row["backend"],
+        ): row
+        for row in (existing or {}).get("observations", [])
+    }
     observations: list[dict[str, Any]] = []
     for size in config["sizes"]:
         hamiltonian = transverse_field_ising(
@@ -71,10 +83,19 @@ def run_pilot(config: dict[str, Any]) -> dict[str, Any]:
             periodic=bool(config["model_parameters"]["periodic"]),
         )
         time = float(size)
-        for branch_count_text, ratios in config["segment_ratios"].items():
+        for branch_count_text, default_ratios in config["segment_ratios"].items():
             branch_count = int(branch_count_text)
+            ratios = (
+                config.get("segment_ratio_overrides", {})
+                .get(str(size), {})
+                .get(branch_count_text, default_ratios)
+            )
             for ratio in ratios:
                 segments = max(1, round(float(ratio) * time))
+                existing_key = (int(size), branch_count, segments, backend)
+                if existing_key in existing_observations:
+                    observations.append(existing_observations[existing_key])
+                    continue
                 estimate = adaptive_mpf_operator_norm_error(
                     hamiltonian,
                     time,
@@ -124,11 +145,19 @@ def run_pilot(config: dict[str, Any]) -> dict[str, Any]:
                         "wall_seconds": estimate.wall_seconds,
                     }
                 )
+    existing_checks = {
+        (row["system_size"], row["branch_count"], row["segments"]): row
+        for row in (existing or {}).get("reference_checks", [])
+    }
     reference_checks: list[dict[str, Any]] = []
     for check in config.get("mpmath_reference_checks", []):
         size = int(check["system_size"])
         branch_count = int(check["branch_count"])
         segments = int(check["segments"])
+        existing_key = (size, branch_count, segments)
+        if existing_key in existing_checks:
+            reference_checks.append(existing_checks[existing_key])
+            continue
         hamiltonian = transverse_field_ising(
             size,
             coupling=float(config["model_parameters"]["coupling"]),
@@ -188,7 +217,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    result = run_pilot(config)
+    existing = (
+        json.loads(args.output.read_text(encoding="utf-8"))
+        if args.output.exists()
+        else None
+    )
+    result = run_pilot(config, existing)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
