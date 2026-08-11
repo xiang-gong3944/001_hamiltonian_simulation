@@ -537,7 +537,7 @@ def canonical_json_digest(raw: object) -> str:
 @lru_cache(maxsize=1)
 def default_empirical_calibrations() -> EmpiricalCalibrationRegistry:
     resource = files("hamiltonian_resources").joinpath(
-        "data/empirical_calibrations_v1.json"
+        "data/empirical_calibrations_v2_migrated.json"
     )
     return EmpiricalCalibrationRegistry.from_json_data(
         json.loads(resource.read_text(encoding="utf-8"))

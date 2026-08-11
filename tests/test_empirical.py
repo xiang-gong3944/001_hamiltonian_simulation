@@ -101,10 +101,10 @@ def test_reviewed_package_calibrations_match_the_reviewed_artifacts():
         project_root
         / "docs"
         / "calibration_data"
-        / "empirical_1d_v1_accepted.json"
+        / "empirical_1d_v2_accepted.json"
     )
     fits_path = (
-        project_root / "docs" / "calibration_data" / "empirical_1d_v1_fits.json"
+        project_root / "docs" / "calibration_data" / "empirical_1d_v2_fits.json"
     )
     accepted = json.loads(accepted_path.read_text(encoding="utf-8"))
     source_digest = canonical_json_digest(accepted)
@@ -167,7 +167,17 @@ def test_lossless_v2_migration_loads_all_v1_rows_with_observed_domains():
         ).read_text(encoding="utf-8")
     )
     registry = EmpiricalCalibrationRegistry.from_json_data(migrated)
-    legacy = default_empirical_calibrations()
+    legacy = EmpiricalCalibrationRegistry.from_json_data(
+        json.loads(
+            (
+                project_root
+                / "src"
+                / "hamiltonian_resources"
+                / "data"
+                / "empirical_calibrations_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+    )
 
     assert len(registry.records) == len(legacy.records) == 20
     by_id = {row.calibration_id: row for row in registry.records}

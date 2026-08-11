@@ -110,6 +110,7 @@ def main() -> None:
         row["reviewed_size_max"] = int(row["size_range"][1])
         row["stability_diagnostics"] = {"legacy_lossless_migration": 1.0}
         row["external_validation_sizes"] = []
+        row["external_validation_status"] = "not-required"
         row["source"] = "docs/calibration_data/empirical_1d_v2_accepted.json"
         row["source_digest"] = accepted_v2_digest
         row["reference"] = (

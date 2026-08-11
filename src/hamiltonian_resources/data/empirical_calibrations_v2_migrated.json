@@ -11,6 +11,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.026736299,
         "r_squared": 0.999924125,
@@ -83,6 +84,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0161752172,
         "r_squared": 0.9998566909,
@@ -155,6 +157,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.00799142,
         "r_squared": 0.8699906345,
@@ -227,6 +230,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.1297718259,
         "r_squared": 0.9998718077,
@@ -299,6 +303,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0354801312,
         "r_squared": 0.9998929074,
@@ -371,6 +376,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0358566818,
         "r_squared": 0.990515703,
@@ -443,6 +449,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0049500127,
         "r_squared": 0.971510881,
@@ -515,6 +522,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0012177666,
         "r_squared": 0.9313394698,
@@ -587,6 +595,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 4.5033e-05,
         "r_squared": 0.9606934706,
@@ -659,6 +668,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 2.7916e-06,
         "r_squared": 0.9727393177,
@@ -731,6 +741,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.2468415952,
         "r_squared": 0.995208127,
@@ -802,6 +813,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0876380065,
         "r_squared": 0.9908442711,
@@ -873,6 +885,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0019372829,
         "r_squared": 0.979021533,
@@ -944,6 +957,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.2415757436,
         "r_squared": 0.9628769847,
@@ -1014,6 +1028,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0282100126,
         "r_squared": 0.9679671377,
@@ -1085,6 +1100,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 0.0017956791,
         "r_squared": 0.9672213491,
@@ -1156,6 +1172,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 5.49138e-05,
         "r_squared": 0.9875258001,
@@ -1223,6 +1240,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 2.4098e-06,
         "r_squared": 0.937284601,
@@ -1290,6 +1308,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 5.79e-08,
         "r_squared": 0.9156533817,
@@ -1357,6 +1376,7 @@
       },
       "error_metric": "spectral operator 2-norm",
       "external_validation_sizes": [],
+      "external_validation_status": "not-required",
       "fit_diagnostics": {
         "intercept_standard_error": 1.4489e-09,
         "r_squared": 0.8966280696,
