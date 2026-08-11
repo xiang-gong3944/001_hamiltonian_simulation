@@ -8,6 +8,7 @@ from pathlib import Path
 
 from hamiltonian_resources.calibration_pipeline import (
     assemble_calibration_artifacts,
+    assemble_reproducibility_manifest,
     load_calibration_config,
     reduce_calibration_shards,
 )
@@ -36,8 +37,10 @@ def main() -> None:
         require_complete=not arguments.allow_incomplete,
     )
     assembled = assemble_calibration_artifacts(reduced)
+    provenance = assemble_reproducibility_manifest(reduced, assembled)
     _write(arguments.output_directory / "reduced_observations.json", reduced)
     _write(arguments.output_directory / "assembled_review.json", assembled)
+    _write(arguments.output_directory / "provenance_manifest.json", provenance)
 
 
 if __name__ == "__main__":

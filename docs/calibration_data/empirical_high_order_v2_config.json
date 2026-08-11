@@ -41,6 +41,16 @@
     }
   },
   "models": ["transverse_field_ising", "heisenberg_chain"],
+  "numerical_kernel_provenance": [
+    {
+      "commit": "c4e8241",
+      "scope": "N=4..7 parity-block shards"
+    },
+    {
+      "commit": "e959d5d",
+      "scope": "N=8..10 exact-equivalent grouped-Strang parity-block shards"
+    }
+  ],
   "relative_tolerance": 1e-08,
   "reviewed_size_max": 100,
   "schedule": "new",

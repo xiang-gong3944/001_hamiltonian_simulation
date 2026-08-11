@@ -600,3 +600,47 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
     }
     payload["assembled_digest"] = canonical_json_digest(payload)
     return payload
+
+
+def assemble_reproducibility_manifest(
+    reduced: Mapping[str, Any],
+    assembled: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Summarize deterministic task hashes and numerical provenance."""
+    completed_hashes = {
+        str(row["task_id"]): str(row["scientific_digest"])
+        for row in reduced["tasks"]
+    }
+    precision_rows = [
+        observation
+        for task in reduced["tasks"]
+        for observation in task["observations"]
+    ]
+    status_counts: dict[str, int] = {}
+    for row in precision_rows:
+        status = str(row.get("status", "converged"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+    payload = {
+        "schema_version": "provenance-1.0",
+        "study_id": reduced["study_id"],
+        "configuration_digest": reduced["configuration_digest"],
+        "reduced_digest": reduced["reduced_digest"],
+        "assembled_digest": assembled["assembled_digest"],
+        "reviewed_size_max": int(reduced["reviewed_size_max"]),
+        "environment_lock": reduced["configuration"].get("environment_lock", {}),
+        "numerical_kernel_provenance": reduced["configuration"].get(
+            "numerical_kernel_provenance", []
+        ),
+        "expected_task_ids": list(reduced["expected_task_ids"]),
+        "completed_task_hashes": completed_hashes,
+        "missing_task_ids": list(reduced["missing_task_ids"]),
+        "precision_status_counts": dict(sorted(status_counts.items())),
+        "maximum_decimal_digits": max(
+            (int(row.get("decimal_digits", 0)) for row in precision_rows),
+            default=0,
+        ),
+        "raw_shards_committed": False,
+        "hash_definition": "SHA-256 of canonical parsed JSON",
+    }
+    payload["provenance_digest"] = canonical_json_digest(payload)
+    return payload

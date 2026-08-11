@@ -4,6 +4,7 @@ import pytest
 
 from hamiltonian_resources.calibration_pipeline import (
     assemble_calibration_artifacts,
+    assemble_reproducibility_manifest,
     expand_calibration_tasks,
     load_calibration_config,
     reduce_calibration_shards,
@@ -79,6 +80,7 @@ def test_reducer_is_deterministic_and_assembler_accepts_window(tmp_path):
     first = reduce_calibration_shards(config, [shard_path])
     second = reduce_calibration_shards(config, [shard_path])
     assembled = assemble_calibration_artifacts(first)
+    provenance = assemble_reproducibility_manifest(first, assembled)
 
     assert first == second
     assert first["expected_task_ids"] == [task.task_id]
@@ -88,6 +90,9 @@ def test_reducer_is_deterministic_and_assembler_accepts_window(tmp_path):
         2e-7
     )
     assert assembled["size_fits"][0]["selected_model"] is None
+    assert provenance["completed_task_hashes"] == {task.task_id: "c" * 64}
+    assert provenance["hash_definition"] == "SHA-256 of canonical parsed JSON"
+    assert not provenance["raw_shards_committed"]
 
 
 def test_reducer_rejects_missing_and_wrong_configuration_shards(tmp_path):
