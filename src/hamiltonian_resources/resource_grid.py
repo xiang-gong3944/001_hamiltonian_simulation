@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,8 +15,10 @@ from typing import Any, Literal, Mapping, Sequence, TypeAlias
 
 import numpy as np
 import pandas as pd
+from tqdm.auto import tqdm
 
 from ._commutator_execution import CommutatorExecution, CommutatorProgressCallback
+from ._progress import TqdmProgressRenderer
 from ._result_records import evaluation_report_metadata, software_metadata
 from .benchmark_suite import BENCHMARK_COLUMNS, SCHEMA_VERSION, HamiltonianSpec, TimeScaling
 from .empirical import UnsupportedEmpiricalCalibrationError
@@ -659,3 +663,417 @@ def load_resource_grid(
     elif set(RESOURCE_GRID_COLUMNS) - set(frame.columns):
         raise ValueError("resource-grid CSV is missing required columns")
     return frame
+
+
+def estimator_source_digest() -> str:
+    """Hash estimator Python and packaged JSON with checkout-stable newlines."""
+    package_root = Path(__file__).resolve().parent
+    paths = sorted(
+        (*package_root.rglob("*.py"), *package_root.joinpath("data").rglob("*.json")),
+        key=lambda path: path.relative_to(package_root).as_posix(),
+    )
+    digest = hashlib.sha256()
+    for path in paths:
+        relative = path.relative_to(package_root).as_posix().encode("utf-8")
+        payload = path.read_bytes().replace(b"\r\n", b"\n")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(payload)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _execution_digest(
+    config: ResourceGridConfig,
+    source_digest: str,
+    software: Mapping[str, Any],
+) -> str:
+    payload = {
+        "grid_schema_version": RESOURCE_GRID_SCHEMA_VERSION,
+        "config_digest": config.digest,
+        "source_digest": source_digest,
+        "package_version": software["package_version"],
+        "python_version": software["python_version"],
+        "qiskit_version": software["qiskit_version"],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8", newline="\n")
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    content = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    _atomic_write_text(path, content)
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _atomic_write_frame(path: Path, frame: pd.DataFrame) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        frame.to_csv(temporary, index=False, na_rep="", lineterminator="\n")
+        checksum = _file_digest(temporary)
+        os.replace(temporary, path)
+        return checksum
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _new_manifest(
+    config: ResourceGridConfig,
+    shards: Sequence[ResourceGridShard],
+    run_metadata: Mapping[str, Any],
+    source_digest: str,
+) -> dict[str, Any]:
+    execution_digest = _execution_digest(config, source_digest, run_metadata["software"])
+    expected_rows = len(config.log10_target_errors) * len(config.methods)
+    return {
+        "grid_schema_version": RESOURCE_GRID_SCHEMA_VERSION,
+        "configuration": config.as_dict(),
+        "config_digest": config.digest,
+        "source_digest": source_digest,
+        "execution_digest": execution_digest,
+        "run": {
+            "run_id": run_metadata["run_id"],
+            "created_at_utc": run_metadata["generated_at_utc"],
+            "updated_at_utc": run_metadata["generated_at_utc"],
+            "status": "running",
+        },
+        "software": dict(run_metadata["software"]),
+        "shards": {
+            shard.shard_id: {
+                "relative_path": shard.relative_path,
+                "expected_rows": expected_rows,
+                "state": "pending",
+                "checksum_sha256": None,
+                "row_count": None,
+                "status_counts": {},
+                "completed_at_utc": None,
+            }
+            for shard in shards
+        },
+    }
+
+
+def _read_manifest(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid resource-grid manifest {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("resource-grid manifest must be an object")
+    return raw
+
+
+def _validate_manifest_compatibility(
+    manifest: Mapping[str, Any],
+    config: ResourceGridConfig,
+    shards: Sequence[ResourceGridShard],
+    source_digest: str,
+    software: Mapping[str, Any],
+) -> None:
+    expected_execution = _execution_digest(config, source_digest, software)
+    checks = {
+        "grid schema": manifest.get("grid_schema_version") == RESOURCE_GRID_SCHEMA_VERSION,
+        "configuration": manifest.get("config_digest") == config.digest,
+        "estimator source": manifest.get("source_digest") == source_digest,
+        "execution environment": manifest.get("execution_digest") == expected_execution,
+        "shard inventory": set(manifest.get("shards", {}))
+        == {shard.shard_id for shard in shards},
+    }
+    incompatible = [name for name, compatible in checks.items() if not compatible]
+    if incompatible:
+        raise ValueError(
+            "resume manifest is incompatible: " + ", ".join(incompatible)
+        )
+
+
+def _status_counts(frame: pd.DataFrame) -> dict[str, int]:
+    return {
+        str(status): int(count)
+        for status, count in frame["status"].value_counts(dropna=False).items()
+    }
+
+
+def _load_and_validate_shard(
+    path: Path,
+    config: ResourceGridConfig,
+    shard: ResourceGridShard,
+) -> pd.DataFrame:
+    frame = pd.read_csv(path, keep_default_na=True)
+    validate_resource_grid_frame(
+        frame,
+        config,
+        shards=(shard,),
+        allow_unexpected_errors=True,
+    )
+    return frame
+
+
+def _prepare_resume(
+    output_directory: Path,
+    config: ResourceGridConfig,
+    shards: Sequence[ResourceGridShard],
+    manifest: dict[str, Any],
+) -> tuple[list[ResourceGridShard], list[ResourceGridShard]]:
+    pending: list[ResourceGridShard] = []
+    skipped: list[ResourceGridShard] = []
+    changed = False
+    for shard in shards:
+        entry = manifest["shards"][shard.shard_id]
+        path = output_directory / shard.relative_path
+        state = entry.get("state")
+        if state == "failed":
+            pending.append(shard)
+            continue
+        if not path.exists():
+            if state == "complete":
+                entry.update(
+                    state="pending",
+                    checksum_sha256=None,
+                    row_count=None,
+                    status_counts={},
+                    completed_at_utc=None,
+                )
+                changed = True
+            pending.append(shard)
+            continue
+        frame = _load_and_validate_shard(path, config, shard)
+        checksum = _file_digest(path)
+        recorded_checksum = entry.get("checksum_sha256")
+        if state == "complete" and recorded_checksum != checksum:
+            raise ValueError(f"completed shard checksum mismatch: {shard.shard_id}")
+        if (frame["status"] == "error").any():
+            entry.update(
+                state="failed",
+                checksum_sha256=checksum,
+                row_count=len(frame),
+                status_counts=_status_counts(frame),
+            )
+            pending.append(shard)
+            changed = True
+            continue
+        if state != "complete" or recorded_checksum != checksum:
+            entry.update(
+                state="complete",
+                checksum_sha256=checksum,
+                row_count=len(frame),
+                status_counts=_status_counts(frame),
+                completed_at_utc=entry.get("completed_at_utc") or _utc_now(),
+            )
+            changed = True
+        skipped.append(shard)
+    if changed:
+        manifest["run"]["updated_at_utc"] = _utc_now()
+        _atomic_write_json(output_directory / "manifest.json", manifest)
+    return pending, skipped
+
+
+def _evaluate_shard_task(arguments):
+    config, shard, run_metadata = arguments
+    return shard, evaluate_resource_grid_shard(
+        config,
+        shard,
+        run_metadata=run_metadata,
+    )
+
+
+def _evaluate_pending_shards(
+    config: ResourceGridConfig,
+    pending: Sequence[ResourceGridShard],
+    run_metadata: Mapping[str, Any],
+    workers: int,
+    *,
+    show_progress: bool,
+):
+    if not pending:
+        return
+    if workers == 1:
+        renderer = TqdmProgressRenderer() if show_progress else None
+        outer = tqdm(total=len(pending), desc="resource-grid", disable=not show_progress)
+        try:
+            for shard in pending:
+                frame = evaluate_resource_grid_shard(
+                    config,
+                    shard,
+                    run_metadata=run_metadata,
+                    commutator_progress=(
+                        renderer.commutator if renderer is not None else None
+                    ),
+                )
+                outer.set_postfix_str(shard.shard_id, refresh=False)
+                outer.update(1)
+                yield shard, frame
+        finally:
+            outer.close()
+            if renderer is not None:
+                renderer.close()
+        return
+    context = multiprocessing.get_context("spawn")
+    outer = tqdm(total=len(pending), desc="resource-grid", disable=not show_progress)
+    try:
+        arguments = ((config, shard, run_metadata) for shard in pending)
+        with context.Pool(processes=workers, maxtasksperchild=1) as pool:
+            for shard, frame in pool.imap_unordered(_evaluate_shard_task, arguments):
+                outer.set_postfix_str(shard.shard_id, refresh=False)
+                outer.update(1)
+                yield shard, frame
+    finally:
+        outer.close()
+
+
+def _merge_shards(
+    output_directory: Path,
+    config: ResourceGridConfig,
+    shards: Sequence[ResourceGridShard],
+) -> tuple[pd.DataFrame, str]:
+    frames = [
+        _load_and_validate_shard(output_directory / shard.relative_path, config, shard)
+        for shard in shards
+    ]
+    merged = pd.concat(frames, ignore_index=True)
+    merged = merged.sort_values(
+        ["hamiltonian_model", "system_qubits", "log10_target_error", "method_id"],
+        kind="stable",
+    ).reset_index(drop=True)
+    validate_resource_grid_frame(merged, config, allow_unexpected_errors=True)
+    checksum = _atomic_write_frame(output_directory / "resource_grid.csv", merged)
+    return merged, checksum
+
+
+def run_resource_grid(
+    config: ResourceGridConfig,
+    output_directory: str | Path,
+    *,
+    resume: bool = False,
+    workers: int = 1,
+    show_progress: bool = False,
+) -> ResourceGridRunSummary:
+    """Run, checkpoint, validate, and merge one resource-grid configuration."""
+    if not isinstance(config, ResourceGridConfig):
+        raise TypeError("config must be a ResourceGridConfig")
+    config.validate()
+    if isinstance(workers, bool) or not isinstance(workers, int):
+        raise TypeError("workers must be an integer")
+    if workers < 1:
+        raise ValueError("workers must be positive")
+    if not isinstance(resume, bool) or not isinstance(show_progress, bool):
+        raise TypeError("resume and show_progress must be booleans")
+    output = Path(output_directory).resolve()
+    manifest_path = output / "manifest.json"
+    validation_path = output / "validation.json"
+    merged_path = output / "resource_grid.csv"
+    shards = expand_resource_grid(config)
+    software = software_metadata()
+    source_digest = estimator_source_digest()
+    if resume:
+        if not manifest_path.exists():
+            raise ValueError("--resume requires an existing resource-grid manifest")
+        manifest = _read_manifest(manifest_path)
+        _validate_manifest_compatibility(
+            manifest, config, shards, source_digest, software
+        )
+        run_metadata = {
+            "run_id": manifest["run"]["run_id"],
+            "generated_at_utc": manifest["run"]["created_at_utc"],
+            "software": manifest["software"],
+        }
+        pending, skipped = _prepare_resume(output, config, shards, manifest)
+    else:
+        if output.exists() and any(output.iterdir()):
+            raise ValueError("output directory is not empty; use --resume or a new output")
+        output.mkdir(parents=True, exist_ok=True)
+        run_metadata = {
+            "run_id": str(uuid.uuid4()),
+            "generated_at_utc": _utc_now(),
+            "software": software,
+        }
+        manifest = _new_manifest(config, shards, run_metadata, source_digest)
+        _atomic_write_json(manifest_path, manifest)
+        pending = list(shards)
+        skipped = []
+    for shard, frame in _evaluate_pending_shards(
+        config,
+        pending,
+        run_metadata,
+        workers,
+        show_progress=show_progress,
+    ):
+        path = output / shard.relative_path
+        checksum = _atomic_write_frame(path, frame)
+        counts = _status_counts(frame)
+        unexpected = counts.get("error", 0)
+        manifest["shards"][shard.shard_id].update(
+            state="failed" if unexpected else "complete",
+            checksum_sha256=checksum,
+            row_count=len(frame),
+            status_counts=counts,
+            completed_at_utc=_utc_now(),
+        )
+        manifest["run"]["updated_at_utc"] = _utc_now()
+        _atomic_write_json(manifest_path, manifest)
+    merged, merged_checksum = _merge_shards(output, config, shards)
+    counts = _status_counts(merged)
+    failed_rows = counts.get("error", 0)
+    validation = {
+        "grid_schema_version": RESOURCE_GRID_SCHEMA_VERSION,
+        "config_digest": config.digest,
+        "row_count": len(merged),
+        "expected_row_count": (
+            len(shards) * len(config.log10_target_errors) * len(config.methods)
+        ),
+        "status_counts": counts,
+        "valid": failed_rows == 0,
+        "unexpected_failure_rows": failed_rows,
+        "merged_checksum_sha256": merged_checksum,
+        "validated_at_utc": _utc_now(),
+    }
+    _atomic_write_json(validation_path, validation)
+    manifest["run"].update(
+        status="failed" if failed_rows else "complete",
+        updated_at_utc=_utc_now(),
+    )
+    manifest["merged"] = {
+        "relative_path": merged_path.name,
+        "checksum_sha256": merged_checksum,
+        "row_count": len(merged),
+    }
+    manifest["validation"] = {
+        "relative_path": validation_path.name,
+        "valid": failed_rows == 0,
+    }
+    _atomic_write_json(manifest_path, manifest)
+    return ResourceGridRunSummary(
+        output_directory=output,
+        manifest_path=manifest_path,
+        validation_path=validation_path,
+        merged_path=merged_path,
+        completed_shards=len(shards) - sum(
+            entry["state"] == "failed" for entry in manifest["shards"].values()
+        ),
+        skipped_shards=len(skipped),
+        expected_missing_rows=counts.get("missing_empirical", 0),
+        failed_rows=failed_rows,
+    )

@@ -125,6 +125,7 @@ from .resource_grid import (
     load_resource_grid_config,
     resource_grid_config_from_dict,
     resource_grid_preset,
+    run_resource_grid,
     validate_resource_grid_frame,
 )
 from .simulation import SimulationComparison, compare_plan_with_exact, compare_with_exact
@@ -244,6 +245,7 @@ __all__ = [
     "resolve_mpf_branch_count",
     "resource_grid_config_from_dict",
     "resource_grid_preset",
+    "run_resource_grid",
     "pauli_nested_commutator_bounds",
     "plan_simulation",
     "plot_benchmark",
