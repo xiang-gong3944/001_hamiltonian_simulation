@@ -1,7 +1,24 @@
 {
   "backend": "flint",
   "digit_increment": 32,
+  "downstream_benchmark": {
+    "source": "high-order empirical MPF resource comparison",
+    "system_sizes": [4, 8, 12, 20, 50, 100]
+  },
   "formal_orders": [18, 20, 22, 24, 26, 28, 30],
+  "external_validation": {
+    "formal_orders": [24, 26, 28, 30],
+    "maximum_incremental_wall_days": 4,
+    "maximum_memory_fraction": 0.75,
+    "maximum_projected_hours_per_task": 24,
+    "sizes": [11, 12],
+    "tightened_spread_limits_when_infeasible": {
+      "12": 0.05,
+      "20": 0.10,
+      "50": 0.15,
+      "100": 0.20
+    }
+  },
   "max_digits": 256,
   "models": ["transverse_field_ising", "heisenberg_chain"],
   "relative_tolerance": 1e-08,

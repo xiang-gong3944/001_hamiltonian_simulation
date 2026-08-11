@@ -56,12 +56,24 @@ def load_calibration_config(path: Path) -> dict[str, Any]:
         "sizes",
         "segment_ratios",
         "reviewed_size_max",
+        "downstream_benchmark",
         "backend",
     }
     missing = required - raw.keys()
     if missing:
         raise ValueError(f"calibration configuration is missing {sorted(missing)}")
-    reviewed_size_max = int(raw["reviewed_size_max"])
+    downstream = raw["downstream_benchmark"]
+    if not isinstance(downstream, Mapping):
+        raise TypeError("downstream_benchmark must be an object")
+    benchmark_sizes = tuple(int(value) for value in downstream["system_sizes"])  # type: ignore[arg-type]
+    if not benchmark_sizes or min(benchmark_sizes) < 1:
+        raise ValueError("downstream benchmark sizes must be positive")
+    reviewed_size_max = max(benchmark_sizes)
+    if int(raw["reviewed_size_max"]) != reviewed_size_max:
+        raise ValueError(
+            "reviewed_size_max must equal the downstream benchmark maximum"
+        )
+    raw["reviewed_size_max"] = reviewed_size_max
     if reviewed_size_max < max(int(value) for value in raw["sizes"]):
         raise ValueError("reviewed_size_max is below the observed size matrix")
     return raw
@@ -200,6 +212,7 @@ def run_calibration_task(
                 "coefficient_b_2j": coefficient,
                 "normalized_c_2j": normalized,
                 "gamma_2j": gamma,
+                "status": "converged" if estimate.converged else "precision-limited",
                 "precision_converged": estimate.converged,
                 "decimal_digits": estimate.decimal_digits,
                 "attempted_digits": list(estimate.attempted_digits),
@@ -419,6 +432,7 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
                             window.maximum_relative_deviation
                         ),
                         "relative_mad": window.relative_median_absolute_deviation,
+                        "status": "accepted-window",
                     }
                 )
             else:
@@ -445,9 +459,17 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
                             validation.maximum_relative_coefficient_deviation
                         ),
                         "accepted": validation.accepted,
+                        "status": (
+                            "time-law-passed"
+                            if validation.accepted
+                            else "time-law-failed"
+                        ),
                     }
                 )
         except ValueError as error:
+            precision_limited = any(
+                not bool(row["precision_converged"]) for row in observations
+            )
             failures.append(
                 {
                     "task_id": task_result["task_id"],
@@ -455,13 +477,24 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
                     "formal_order": int(task["formal_order"]),
                     "system_size": int(task["system_size"]),
                     "reason": str(error),
+                    "status": (
+                        "precision-limited"
+                        if precision_limited
+                        else "truncation-dominated"
+                    ),
                 }
             )
     fits: list[dict[str, Any]] = []
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in accepted_windows:
         grouped.setdefault((row["model"], row["formal_order"]), []).append(row)
-    for (model, formal_order), rows in sorted(grouped.items()):
+    configured_pairs = tuple(
+        (str(model), int(formal_order))
+        for model in reduced["configuration"]["models"]
+        for formal_order in reduced["configuration"]["formal_orders"]
+    )
+    for model, formal_order in configured_pairs:
+        rows = grouped.get((model, formal_order), [])
         rows.sort(key=lambda row: row["system_size"])
         sizes = tuple(int(row["system_size"]) for row in rows)
         if all(size in sizes for size in range(4, 11)):
@@ -470,13 +503,23 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
                 tuple(float(row["coefficient_b_2j"]) for row in rows),
                 reviewed_size_max=int(reduced["reviewed_size_max"]),
             )
-            fits.append(
-                {
-                    "model": model,
-                    "formal_order": formal_order,
-                    **_fit_payload(selection),
-                }
+            fit = {
+                "model": model,
+                "formal_order": formal_order,
+                **_fit_payload(selection),
+            }
+            fit["status"] = (
+                "size-fit-passed"
+                if selection.selected is not None
+                else (
+                    "finite-size-unstable"
+                    if any(
+                        not stability.accepted for stability in selection.stability
+                    )
+                    else "size-fit-failed"
+                )
             )
+            fits.append(fit)
         else:
             fits.append(
                 {
@@ -484,8 +527,47 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
                     "formal_order": formal_order,
                     "selected_model": None,
                     "failure_reasons": ["N=4..10 observations are incomplete"],
+                    "status": "insufficient-window",
                 }
             )
+    promotion: list[dict[str, Any]] = []
+    failures_by_pair: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for failure in failures:
+        failures_by_pair.setdefault(
+            (str(failure["model"]), int(failure["formal_order"])), []
+        ).append(failure)
+    time_by_pair: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for check in time_checks:
+        time_by_pair.setdefault(
+            (str(check["model"]), int(check["formal_order"])), []
+        ).append(check)
+    for fit in fits:
+        pair = (str(fit["model"]), int(fit["formal_order"]))
+        failed_time = [
+            row for row in time_by_pair.get(pair, []) if not bool(row["accepted"])
+        ]
+        pair_failures = failures_by_pair.get(pair, [])
+        if failed_time:
+            status = "time-law-failed"
+        elif pair_failures:
+            statuses = {str(row["status"]) for row in pair_failures}
+            status = (
+                "precision-limited"
+                if "precision-limited" in statuses
+                else "truncation-dominated"
+            )
+        elif fit["status"] != "size-fit-passed":
+            status = str(fit["status"])
+        else:
+            status = "candidate-awaiting-human-review"
+        promotion.append(
+            {
+                "model": pair[0],
+                "formal_order": pair[1],
+                "status": status,
+                "automatic_promotion": False,
+            }
+        )
     payload = {
         "schema_version": "assembled-1.0",
         "study_id": reduced["study_id"],
@@ -494,6 +576,7 @@ def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]
         "accepted_windows": accepted_windows,
         "time_law_checks": time_checks,
         "size_fits": fits,
+        "promotion": promotion,
         "failures": failures,
     }
     payload["assembled_digest"] = canonical_json_digest(payload)

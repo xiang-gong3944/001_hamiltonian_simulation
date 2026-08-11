@@ -5,6 +5,7 @@ import pytest
 from hamiltonian_resources.calibration_pipeline import (
     assemble_calibration_artifacts,
     expand_calibration_tasks,
+    load_calibration_config,
     reduce_calibration_shards,
     task_execution_digest,
 )
@@ -18,6 +19,7 @@ def _config():
         "formal_orders": [18],
         "sizes": [4],
         "segment_ratios": {"18": [3, 4, 5, 6]},
+        "downstream_benchmark": {"system_sizes": [4, 20, 50, 100]},
         "reviewed_size_max": 100,
         "backend": "flint",
     }
@@ -123,3 +125,20 @@ def test_task_inventory_applies_model_order_and_size_ratio_overrides():
     task = expand_calibration_tasks(config)[0]
 
     assert tuple(point.segments for point in task.points) == (32, 40, 48, 64)
+
+
+def test_reviewed_domain_is_derived_from_downstream_benchmark(tmp_path):
+    config = _config()
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    loaded = load_calibration_config(path)
+
+    assert loaded["reviewed_size_max"] == max(
+        loaded["downstream_benchmark"]["system_sizes"]
+    )
+
+    config["reviewed_size_max"] = 101
+    path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="downstream benchmark maximum"):
+        load_calibration_config(path)
