@@ -1,5 +1,7 @@
 import json
+from pathlib import Path
 
+import nbformat
 import pandas as pd
 import pytest
 
@@ -233,3 +235,23 @@ def test_cli_runs_custom_grid_and_reports_compatibility_errors(tmp_path, capsys)
     assert repeated == 2
     assert (output / "resource_grid.csv").exists()
     assert "wrote" in capsys.readouterr().out
+
+
+def test_viewer_notebook_is_valid_output_free_and_has_no_estimators():
+    path = Path(__file__).resolve().parents[1] / "notebooks" / "resource_grid_viewer.ipynb"
+    notebook = nbformat.read(path, as_version=4)
+    source = "\n".join(
+        "".join(cell.get("source", ""))
+        for cell in notebook.cells
+        if cell.cell_type == "code"
+    )
+
+    assert "pd.read_csv" in source
+    assert "estimate_resources" not in source
+    assert "run_resource_grid" not in source
+    assert "CommutatorExecution" not in source
+    assert all(
+        not cell.get("outputs") and cell.get("execution_count") is None
+        for cell in notebook.cells
+        if cell.cell_type == "code"
+    )

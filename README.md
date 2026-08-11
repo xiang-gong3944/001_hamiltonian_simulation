@@ -238,6 +238,19 @@ zero-branch blockはMPF stepのちょうど1/2になります。
 6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
 7. **解析コストと具体回路の対応**: 既定の解析式は具体回路の構造（QSVT の quadrature 抽出、cos/sin LCU、3-step OAA、MPF の identity padding・branch 幅・segment ごとの OAA factor 3）を反映します。したがって 3 手法とも「決定的動作あたり」の比較です。ただし controlled 応答回路については、`V` と `V^dagger` が block-encoding query を共有し projector 位相だけを選択する効率的コンパイルを仮定します。`transpile_circuits=True` は Qiskit の汎用 `.control()` 分解を使うため、これよりかなり大きな数値になります（校正時はこの差に注意）。
 
+## Resumable resource grids
+
+Large Cartesian studies use the dedicated `(model, N)`-sharded runner:
+
+```powershell
+hamiltonian-resource-grid run --preset sanity-low --workers 4 --progress
+hamiltonian-resource-grid run --preset full --workers 4 --resume --progress
+```
+
+See [`docs/resource_grid.md`](docs/resource_grid.md) for configuration, output,
+validation, and resume semantics. `notebooks/resource_grid_viewer.ipynb` only
+loads and plots completed raw data; it never runs estimators.
+
 ## テスト
 
 ```powershell
