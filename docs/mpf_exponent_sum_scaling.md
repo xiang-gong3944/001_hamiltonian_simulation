@@ -2,7 +2,7 @@
 
 ## Purpose
 
-For empirical MPF resource estimation, the branch count \(m\) selected by the error model can exceed the currently registered exponent-schedule range \(2\le m\le15\). The error model can still determine \(m\) and the segment count \(r\), but the per-segment cost also requires the exponent-schedule sum
+For analytical scaling and empirical MPF resource estimation, the branch count \(m\) selected by the error model can exceed the currently registered exponent-schedule range \(2\le m\le15\). The error model can still determine \(m\) and the segment count \(r\) when its required schedule information is available, but the per-segment cost also requires the exponent-schedule sum
 
 \[
 \boxed{K(m)\equiv\sum_{j=1}^{m} k_j.}
@@ -92,6 +92,13 @@ For resource estimation beyond the registered schedule range, use
 \]
 
 The ceiling is convenient because \(K\) is an integer cost quantity. This extrapolates only the aggregate schedule cost \(K=\sum_jk_j\); it does **not** construct an actual well-conditioned exponent tuple \((k_1,\ldots,k_m)\) for \(m>15\).
+
+The same aggregate schedule record carries the analytical assumption
+\(\lVert a\rVert_1\le2\). Low--Kliuchnikov--Wiebe 2019 sizing can use that norm
+bound without individual branches. Childs W2 and refined Mizuta cannot: both
+need the explicit \(a_j,k_j\) data. Aggregate costing therefore supports
+analytical resource sweeps, but it does not authorize LCU weights or circuit
+construction.
 
 Example extrapolated values:
 

@@ -113,17 +113,17 @@ The policy is evaluated in the log domain. If \(g|t|=0\), or the ratio is at
 most one, it returns \(J=2\). It resolves the selected order without clamping
 or testing nearby orders. The registered `new` and `legacy` exponent tables
 support only \(2\le J\le15\). Branch-count resolution itself is
-schedule-independent and may return a larger value. Rigorous or
-coefficient-dependent consumers then fail with the resolved \(J\), model size,
-and explicit-schedule requirement. Empirical planning may retain a larger
-`new`-schedule value only when an exact reviewed calibration exists; it uses
-aggregate \(K\) cost and is not circuit-ready.
+schedule-independent and may return a larger value. For the `new` schedule at
+\(J>15\), planning retains aggregate analytical data only: formal order
+\(2J\), extrapolated \(K=\sum_jk_j\), and the well-conditioned-schedule bound
+\(\lVert a\rVert_1\le2\). This is enough for the Low 2019 ideal-MPF estimator,
+but not for estimators that inspect individual branches.
 
-Resolution occurs once per planning point. Low, legacy Mizuta, refined
-Mizuta, and `best-rigorous-ideal` consequently consume identical exponents,
-coefficients, and LCU structure. The policy never optimizes over \(J\).
-Theorem 6 assumes well-conditioned schedules at asymptotically growing order;
-the repository can study only points resolving to \(J\le15\).
+Resolution occurs once per planning point, and the policy never optimizes over
+\(J\). At \(J\le15\), all estimators consume the same registered exponents and
+coefficients. At larger `new`-schedule values, Low uses the aggregate
+coefficient-norm bound while Childs W2 and refined Mizuta report that their
+required explicit schedule data are unavailable.
 
 ### Empirical ideal-MPF sizing and aggregate cost
 
@@ -135,11 +135,14 @@ only `new` schedules with \(2\le J\le8\).
 
 Resource costing consumes \(K=\sum_jk_j\) separately from explicit
 implementation data. Registered schedules through \(J=15\) provide both. For
-`new` and \(J>15\), `mpf_exponent_cost` provides only
-`ceil(0.418*J**2*log(J))`; exponents, coefficients, weights, coefficient norm,
-LCU structure, rigorous estimators, exact simulation, and circuit construction
-remain unavailable. See [the empirical guide](empirical_error_estimation.md)
-and [the cost-scaling note](mpf_exponent_sum_scaling.md).
+`new` and \(J>15\), `mpf_exponent_cost` provides
+`ceil(0.418*J**2*log(J))` and the analytical bound
+\(\lVert a\rVert_1\le2\), with provenance marking both as extrapolated
+aggregate information. It provides no exponents, coefficients, LCU weights,
+or circuit implementation. Low 2019 analytical sizing and aggregate resource
+scaling are available; exact simulation and circuit construction are not. See
+[the empirical guide](empirical_error_estimation.md) and
+[the cost-scaling note](mpf_exponent_sum_scaling.md).
 
 ## Notation map
 
@@ -292,13 +295,15 @@ finite problem. Its principal advantage is the improved locality-aware
 asymptotic scaling. Both methods remain rigorous within their declared scopes;
 the observed finite-resource difference is therefore not a contradiction.
 
-The opt-in `best-rigorous-ideal` policy evaluates Low, the W2 triangle bound,
-and Mizuta for the same branch count and exponent schedule. Because this fixes
-the implemented MPF circuit structure per segment, it selects the candidate
-with fewer segments, then the smaller certified error. Exact remaining ties
-use the stable order Low, W2 triangle, then Mizuta. Metadata retains all three
-candidates and the concrete selected bound. Low remains the default, and the
-nonrigorous historical W2 proxy is never a candidate.
+The opt-in `best-rigorous-ideal` policy evaluates every rigorous candidate
+whose schedule requirements are available. For registered schedules this is
+Low, the W2 triangle bound, and refined Mizuta, preserving the previous
+selection by fewer segments, then smaller certified error, with stable tie
+order Low, W2, Mizuta. For aggregate-only `new` schedules, Low remains
+available, while W2 is unavailable because it needs
+\(B_2=\sum_j|a_j|/k_j^2\) and refined Mizuta is unavailable because it evaluates
+branchwise BCH remainders. Metadata retains all three entries, including the
+unavailability reasons. No approximate branch data are substituted.
 
 ## Mizuta 2026 finite-order commutator bound
 
