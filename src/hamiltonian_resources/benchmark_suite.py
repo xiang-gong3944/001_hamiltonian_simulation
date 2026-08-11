@@ -683,7 +683,7 @@ def _report_metadata(report: EvaluationReport) -> dict[str, Any]:
                 else None
             ),
             mpf_coefficient_l1_norm=(
-                structure.coefficient_l1_norm if structure is not None else None
+                plan.schedule_cost.coefficient_l1_norm
             ),
             mpf_padding_weight=(structure.padding_weight if structure is not None else None),
             mpf_exponent_sum=plan.schedule_cost.exponent_sum,

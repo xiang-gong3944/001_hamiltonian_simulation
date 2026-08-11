@@ -193,6 +193,7 @@ class MPFSizingEstimate(SizingEstimate):
     schedule: str
     exponents: tuple[int, ...] | None
     coefficient_l1_norm: float | None
+    coefficient_l1_norm_source: str = ""
     exponent_sum: int = 0
     exponent_sum_source: str = ""
     explicit_schedule_available: bool = True

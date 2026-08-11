@@ -82,8 +82,9 @@ class MPFErrorEstimate:
     m: int
     formal_order: int
     schedule: MPFSchedule
-    exponents: tuple[int, ...]
+    exponents: tuple[int, ...] | None
     coefficient_l1_norm: float
+    coefficient_l1_norm_source: str
     method: MPFErrorMethod
     scope: MPFErrorScope
     rigorous: bool
@@ -131,9 +132,11 @@ class MPFBoundCandidateSummary:
     """Compact provenance for one estimator considered by a bound policy."""
 
     method: MPFErrorMethod
-    segments: int
-    error: float
+    segments: int | None
+    error: float | None
     rigorous: bool
+    available: bool = True
+    unavailable_reason: str | None = None
     fallback_reason: str | None = None
     max_exact_nested_commutator_order: int = 0
 
@@ -143,6 +146,8 @@ class MPFBoundCandidateSummary:
             "segments": self.segments,
             "error": self.error,
             "rigorous": self.rigorous,
+            "available": self.available,
+            "unavailable_reason": self.unavailable_reason,
             "fallback_reason": self.fallback_reason,
             "max_exact_nested_commutator_order": self.max_exact_nested_commutator_order,
         }
@@ -205,6 +210,10 @@ MPFScheduleCostSource: TypeAlias = Literal[
     "registered-exact",
     "extrapolated-0.418-m2-log-m",
 ]
+MPFCoefficientNormSource: TypeAlias = Literal[
+    "registered-coefficients-exact",
+    "extrapolated-schedule-upper-bound",
+]
 
 
 @dataclass(frozen=True)
@@ -217,18 +226,29 @@ class MPFScheduleCost:
     exponent_sum: int
     source: MPFScheduleCostSource
     exponents: tuple[int, ...] | None
+    coefficient_l1_norm: float
+    coefficient_l1_norm_source: MPFCoefficientNormSource
 
     def __post_init__(self) -> None:
         if self.term_count < 2 or self.formal_order != 2 * self.term_count:
             raise ValueError("invalid MPF branch count or formal order")
         if self.exponent_sum < 1:
             raise ValueError("MPF exponent sum must be positive")
+        if not math.isfinite(self.coefficient_l1_norm) or self.coefficient_l1_norm < 1:
+            raise ValueError("MPF coefficient 1-norm must be finite and at least one")
         if self.source == "registered-exact":
             if self.exponents is None or sum(self.exponents) != self.exponent_sum:
                 raise ValueError("exact MPF cost requires its registered exponent tuple")
+            if self.coefficient_l1_norm_source != "registered-coefficients-exact":
+                raise ValueError("registered MPF cost requires an exact coefficient norm")
         elif self.source == "extrapolated-0.418-m2-log-m":
             if self.exponents is not None or self.schedule != "new" or self.term_count <= 15:
                 raise ValueError("extrapolated MPF cost cannot contain explicit exponents")
+            if (
+                self.coefficient_l1_norm != _OAA_NORMALIZATION
+                or self.coefficient_l1_norm_source != "extrapolated-schedule-upper-bound"
+            ):
+                raise ValueError("extrapolated MPF cost requires the certified norm bound of two")
         else:
             raise ValueError("unknown MPF schedule-cost provenance")
 
@@ -320,6 +340,10 @@ def mpf_exponent_cost(
         raise ValueError("schedule must be 'new' or 'legacy'")
     if m <= 15:
         exponents = optimal_mpf_exponents(int(m), schedule=schedule)
+        coefficient_l1_norm = math.fsum(
+            abs(float(value))
+            for value in multiproduct_coefficients(int(m), schedule=schedule)
+        )
         return MPFScheduleCost(
             term_count=int(m),
             formal_order=2 * int(m),
@@ -327,6 +351,8 @@ def mpf_exponent_cost(
             exponent_sum=sum(exponents),
             source="registered-exact",
             exponents=exponents,
+            coefficient_l1_norm=coefficient_l1_norm,
+            coefficient_l1_norm_source="registered-coefficients-exact",
         )
     if schedule == "legacy":
         raise ValueError(
@@ -339,6 +365,8 @@ def mpf_exponent_cost(
         exponent_sum=math.ceil(0.418 * int(m) ** 2 * math.log(int(m))),
         source="extrapolated-0.418-m2-log-m",
         exponents=None,
+        coefficient_l1_norm=_OAA_NORMALIZATION,
+        coefficient_l1_norm_source="extrapolated-schedule-upper-bound",
     )
 
 
@@ -1543,6 +1571,47 @@ def _normalize_mpf_error_method(method: MPFErrorMethod) -> MPFErrorMethod:
     return method
 
 
+_EXPLICIT_SCHEDULE_ESTIMATORS = frozenset(
+    {
+        "childs2021-w2-triangle-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+        "mizuta2026-theorem3-legacy-ideal-rigorous",
+        "legacy-w2-proxy",
+    }
+)
+
+
+def mpf_estimator_unavailable_reason(
+    schedule_cost: MPFScheduleCost,
+    method: MPFErrorMethod,
+) -> str | None:
+    """Explain whether aggregate schedule data can support an estimator."""
+    normalized = _normalize_mpf_error_method(method)
+    if normalized in _EXPLICIT_SCHEDULE_ESTIMATORS and not schedule_cost.explicit_schedule_available:
+        return (
+            f"{normalized} requires explicit MPF coefficients and exponents; "
+            f"schedule {schedule_cost.schedule!r} at J={schedule_cost.term_count} "
+            "provides aggregate analytical data only"
+        )
+    return None
+
+
+def _require_explicit_mpf_components(
+    schedule_cost: MPFScheduleCost,
+    method: MPFErrorMethod,
+) -> tuple[tuple[int, ...], np.ndarray]:
+    reason = mpf_estimator_unavailable_reason(schedule_cost, method)
+    if reason is not None:
+        raise ValueError(reason)
+    if schedule_cost.exponents is None:
+        raise AssertionError("explicit estimator capability lacks registered exponents")
+    coefficients = multiproduct_coefficients(
+        schedule_cost.term_count,
+        schedule=schedule_cost.schedule,
+    )
+    return schedule_cost.exponents, coefficients
+
+
 def _estimate_mpf_error(
     hamiltonian: PauliHamiltonian,
     time: float,
@@ -1567,10 +1636,13 @@ def _estimate_mpf_error(
         raise ValueError("segments must be positive")
     if not np.isfinite(time):
         raise ValueError("time must be finite")
-    exponents = optimal_mpf_exponents(m, schedule=schedule)
-    coefficients = multiproduct_coefficients(m, schedule=schedule)
-    coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
     method = _normalize_mpf_error_method(method)
+    schedule_cost = mpf_exponent_cost(m, schedule=schedule)
+    exponents = schedule_cost.exponents
+    coefficient_l1_norm = schedule_cost.coefficient_l1_norm
+    coefficients: np.ndarray | None = None
+    if method in _EXPLICIT_SCHEDULE_ESTIMATORS:
+        exponents, coefficients = _require_explicit_mpf_components(schedule_cost, method)
     if (
         method == "mizuta2026-commutator-ideal-rigorous"
         and auxiliary_allocation_fraction is not None
@@ -1607,8 +1679,15 @@ def _estimate_mpf_error(
             "lambda is upper-bounded by the Pauli coefficient 1-norm",
             "the bound certifies the repeated ideal MPF operator only",
         )
+        if schedule_cost.coefficient_l1_norm_source == "extrapolated-schedule-upper-bound":
+            assumptions += (
+                "the extrapolated new schedule uses the analytical bound ||a||_1 <= 2",
+                "no explicit exponents, coefficients, LCU weights, or circuit are constructed",
+            )
         commutators: PauliNestedCommutatorBounds | None = None
     elif method == "childs2021-w2-triangle-ideal-rigorous":
+        if coefficients is None or exponents is None:
+            raise AssertionError("Childs W2 estimator capability was not resolved")
         _, w2 = suzuki_commutator_bounds(hamiltonian)
         error, prefactor, local_error, b2 = _w2_triangle_ideal_mpf_bound(
             w2,
@@ -1662,6 +1741,8 @@ def _estimate_mpf_error(
         "mizuta2026-commutator-ideal-rigorous",
         "mizuta2026-theorem3-legacy-ideal-rigorous",
     ):
+        if coefficients is None or exponents is None:
+            raise AssertionError("Mizuta estimator capability was not resolved")
         if target_error is None or not 0 < target_error <= 1:
             raise ValueError("target_error in (0, 1] is required for the Mizuta estimator")
         if method == "mizuta2026-commutator-ideal-rigorous":
@@ -1733,6 +1814,7 @@ def _estimate_mpf_error(
         schedule=schedule,
         exponents=exponents,
         coefficient_l1_norm=coefficient_l1_norm,
+        coefficient_l1_norm_source=schedule_cost.coefficient_l1_norm_source,
         method=method,
         scope="ideal-mpf",
         rigorous=rigorous,
@@ -1826,8 +1908,8 @@ def _select_mpf_segments(
         raise ValueError("time must be finite")
     if not 0 < target_error <= 1:
         raise ValueError("target_error must lie in (0, 1]")
-    optimal_mpf_exponents(m, schedule=schedule)
     method = _normalize_mpf_error_method(method)
+    schedule_cost = mpf_exponent_cost(m, schedule=schedule)
     if auxiliary_allocation_fraction is not None and method in (
         "mizuta2026-commutator-ideal-rigorous",
         "best-rigorous-ideal",
@@ -1837,8 +1919,31 @@ def _select_mpf_segments(
             "'mizuta2026-theorem3-legacy-ideal-rigorous'"
         )
     if method == "best-rigorous-ideal":
-        candidates = tuple(
-            _select_mpf_segments(
+        candidate_methods: tuple[MPFErrorMethod, ...] = (
+            "low2019-l1-ideal-rigorous",
+            "childs2021-w2-triangle-ideal-rigorous",
+            "mizuta2026-commutator-ideal-rigorous",
+        )
+        candidates: list[MPFErrorEstimate] = []
+        summaries: list[MPFBoundCandidateSummary] = []
+        for candidate_method in candidate_methods:
+            unavailable_reason = mpf_estimator_unavailable_reason(
+                schedule_cost,
+                candidate_method,
+            )
+            if unavailable_reason is not None:
+                summaries.append(
+                    MPFBoundCandidateSummary(
+                        method=candidate_method,
+                        segments=None,
+                        error=None,
+                        rigorous=False,
+                        available=False,
+                        unavailable_reason=unavailable_reason,
+                    )
+                )
+                continue
+            candidate = _select_mpf_segments(
                 hamiltonian,
                 time,
                 target_error,
@@ -1848,12 +1953,19 @@ def _select_mpf_segments(
                 auxiliary_allocation_fraction=auxiliary_allocation_fraction,
                 execution=execution,
             )
-            for candidate_method in (
-                "low2019-l1-ideal-rigorous",
-                "childs2021-w2-triangle-ideal-rigorous",
-                "mizuta2026-commutator-ideal-rigorous",
+            candidates.append(candidate)
+            summaries.append(
+                MPFBoundCandidateSummary(
+                    method=candidate.method,
+                    segments=candidate.segments,
+                    error=candidate.error,
+                    rigorous=candidate.rigorous,
+                    fallback_reason=candidate.fallback_reason,
+                    max_exact_nested_commutator_order=(
+                        candidate.max_exact_nested_commutator_order
+                    ),
+                )
             )
-        )
         tie_break_priority = {
             "low2019-l1-ideal-rigorous": 0,
             "childs2021-w2-triangle-ideal-rigorous": 1,
@@ -1867,27 +1979,18 @@ def _select_mpf_segments(
                 tie_break_priority[item.method],
             ),
         )
-        summaries = tuple(
-            MPFBoundCandidateSummary(
-                method=item.method,
-                segments=item.segments,
-                error=item.error,
-                rigorous=item.rigorous,
-                fallback_reason=item.fallback_reason,
-                max_exact_nested_commutator_order=item.max_exact_nested_commutator_order,
-            )
-            for item in candidates
-        )
         return replace(
             chosen,
             requested_method="best-rigorous-ideal",
-            bound_candidates=summaries,
+            bound_candidates=tuple(summaries),
         )
+    unavailable_reason = mpf_estimator_unavailable_reason(schedule_cost, method)
+    if unavailable_reason is not None:
+        raise ValueError(unavailable_reason)
     if method == "legacy-w2-proxy":
         segments = legacy_w2_proxy_segments(hamiltonian, time, target_error, m)
     elif method == "childs2021-w2-triangle-ideal-rigorous":
-        coefficients = multiproduct_coefficients(m, schedule=schedule)
-        exponents = optimal_mpf_exponents(m, schedule=schedule)
+        exponents, coefficients = _require_explicit_mpf_components(schedule_cost, method)
         b2 = _w2_triangle_b2(coefficients, exponents)
         _, w2 = suzuki_commutator_bounds(hamiltonian)
         if w2 == 0 or time == 0:
@@ -1924,8 +2027,7 @@ def _select_mpf_segments(
             if segments > 1 and satisfies_w2(segments - 1):
                 raise AssertionError("W2-triangle segment selection is not minimal")
     elif method == "low2019-l1-ideal-rigorous":
-        coefficients = multiproduct_coefficients(m, schedule=schedule)
-        coefficient_l1_norm = float(np.sum(np.abs(coefficients)))
+        coefficient_l1_norm = schedule_cost.coefficient_l1_norm
         scaled_time = hamiltonian.alpha * abs(float(time))
         if scaled_time == 0:
             segments = 1

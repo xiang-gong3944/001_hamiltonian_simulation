@@ -10,6 +10,7 @@ from .multiproduct import (
     MPFBranchCountPolicy,
     MPFErrorMethod,
     MPFSchedule,
+    mpf_estimator_unavailable_reason,
     mpf_exponent_cost,
     optimal_mpf_exponents,
 )
@@ -103,13 +104,36 @@ class MultiproductMethod:
         return f"MPF J=Mizuta Theorem 6 (resolved per point){suffix}"
 
     def validate(self) -> None:
+        allowed_error_methods = (
+            "low2019-l1-ideal-rigorous",
+            "childs2021-w2-triangle-ideal-rigorous",
+            "mizuta2026-commutator-ideal-rigorous",
+            "mizuta2026-theorem3-legacy-ideal-rigorous",
+            "best-rigorous-ideal",
+            "low-rigorous",
+            "legacy-w2-proxy",
+            "empirical-operator-norm",
+        )
+        if self.error_method not in allowed_error_methods:
+            raise ValueError(
+                "MPF error method must be 'low2019-l1-ideal-rigorous' "
+                "(historical alias 'low-rigorous'), "
+                "'childs2021-w2-triangle-ideal-rigorous', "
+                "'mizuta2026-commutator-ideal-rigorous', "
+                "'mizuta2026-theorem3-legacy-ideal-rigorous', "
+                "'best-rigorous-ideal', 'legacy-w2-proxy', or "
+                "'empirical-operator-norm'"
+            )
         if self.branch_count_policy == "fixed":
             if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
                 raise ValueError("fixed MPF branch-count policy requires an integer term_count")
-            if self.error_method == "empirical-operator-norm":
-                mpf_exponent_cost(int(self.term_count), schedule=self.schedule)
-            else:
-                optimal_mpf_exponents(int(self.term_count), schedule=self.schedule)
+            schedule_cost = mpf_exponent_cost(int(self.term_count), schedule=self.schedule)
+            unavailable_reason = mpf_estimator_unavailable_reason(
+                schedule_cost,
+                self.error_method,
+            )
+            if unavailable_reason is not None:
+                raise ValueError(unavailable_reason)
         elif self.branch_count_policy == "mizuta2026-theorem6":
             if self.term_count is not None:
                 raise ValueError(
@@ -120,25 +144,6 @@ class MultiproductMethod:
         else:
             raise ValueError(
                 "branch_count_policy must be 'fixed' or 'mizuta2026-theorem6'"
-            )
-        if self.error_method not in (
-            "low2019-l1-ideal-rigorous",
-            "childs2021-w2-triangle-ideal-rigorous",
-            "mizuta2026-commutator-ideal-rigorous",
-            "mizuta2026-theorem3-legacy-ideal-rigorous",
-            "best-rigorous-ideal",
-            "low-rigorous",
-            "legacy-w2-proxy",
-            "empirical-operator-norm",
-        ):
-            raise ValueError(
-                "MPF error method must be 'low2019-l1-ideal-rigorous' "
-                "(historical alias 'low-rigorous'), "
-                "'childs2021-w2-triangle-ideal-rigorous', "
-                "'mizuta2026-commutator-ideal-rigorous', "
-                "'mizuta2026-theorem3-legacy-ideal-rigorous', "
-                "'best-rigorous-ideal', 'legacy-w2-proxy', or "
-                "'empirical-operator-norm'"
             )
 
     def as_dict(self) -> dict[str, object]:

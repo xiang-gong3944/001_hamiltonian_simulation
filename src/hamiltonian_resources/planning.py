@@ -431,8 +431,6 @@ class MPFPlan:
         if self.implementation is None:
             if self.schedule_cost.explicit_schedule_available:
                 raise ValueError("registered MPF schedule cost requires implementation data")
-            if not isinstance(self.error_estimate, EmpiricalErrorEstimate):
-                raise ValueError("aggregate-only MPF plans require empirical sizing")
         elif self.implementation.exponents != self.schedule_cost.exponents:
             raise ValueError("MPF implementation does not match its schedule cost")
         if self.oaa_rounds_per_segment != 1:
@@ -483,6 +481,10 @@ class MPFPlan:
             "mpf_explicit_schedule_available": (
                 self.schedule_cost.explicit_schedule_available
             ),
+            "mpf_coefficient_l1_norm": self.schedule_cost.coefficient_l1_norm,
+            "mpf_coefficient_l1_norm_source": (
+                self.schedule_cost.coefficient_l1_norm_source
+            ),
         }
 
     @property
@@ -526,9 +528,10 @@ class MPFPlan:
                 schedule=self.method.schedule,
                 exponents=self.exponents,
                 coefficient_l1_norm=(
-                    self.lcu_structure.coefficient_l1_norm
-                    if self.lcu_structure is not None
-                    else None
+                    self.schedule_cost.coefficient_l1_norm
+                ),
+                coefficient_l1_norm_source=(
+                    self.schedule_cost.coefficient_l1_norm_source
                 ),
                 exponent_sum=self.schedule_cost.exponent_sum,
                 exponent_sum_source=self.schedule_cost.source,
@@ -610,6 +613,7 @@ class MPFPlan:
             schedule=error.schedule,
             exponents=error.exponents,
             coefficient_l1_norm=error.coefficient_l1_norm,
+            coefficient_l1_norm_source=error.coefficient_l1_norm_source,
             exponent_sum=self.schedule_cost.exponent_sum,
             exponent_sum_source=self.schedule_cost.source,
             explicit_schedule_available=self.schedule_cost.explicit_schedule_available,
@@ -667,6 +671,8 @@ class MPFPlan:
 
         circuit_claim = None
         if (
+            self.implementation is not None
+            and
             error.local_error_rigorous
             and error.local_error is not None
             and np.isfinite(error.local_error)
@@ -851,6 +857,10 @@ class MPFPlan:
                 "mpf_explicit_schedule_available": (
                     self.schedule_cost.explicit_schedule_available
                 ),
+                "mpf_coefficient_l1_norm": self.schedule_cost.coefficient_l1_norm,
+                "mpf_coefficient_l1_norm_source": (
+                    self.schedule_cost.coefficient_l1_norm_source
+                ),
             }
         circuit_entry = analysis.claim_for_scope("repeated-shared-ancilla-good-block")
         return {
@@ -882,6 +892,10 @@ class MPFPlan:
             "mpf_exponent_sum_source": self.schedule_cost.source,
             "mpf_explicit_schedule_available": (
                 self.schedule_cost.explicit_schedule_available
+            ),
+            "mpf_coefficient_l1_norm": self.schedule_cost.coefficient_l1_norm,
+            "mpf_coefficient_l1_norm_source": (
+                self.schedule_cost.coefficient_l1_norm_source
             ),
         }
 
@@ -1255,13 +1269,6 @@ def _plan_simulation(
                 budget.algorithm_error,
             )
         else:
-            if not schedule_cost.explicit_schedule_available:
-                raise ValueError(
-                    f"resolved MPF J={term_count} for N={canonical.num_qubits} has "
-                    f"aggregate {method.schedule!r} schedule cost only; rigorous and "
-                    "coefficient-dependent MPF estimators require an explicit "
-                    "registered schedule with 2 <= J <= 15"
-                )
             selected_error = select_mpf_segments(
                 canonical,
                 evolution_time,
