@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import time as wall_time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -19,6 +20,10 @@ from .multiproduct import (
     mpf_richardson_diagnostics,
 )
 from .trotter import suzuki_group_factors
+
+
+_FLINT_STATIC_CACHE: OrderedDict[tuple[Any, ...], tuple[Any, ...]] = OrderedDict()
+_FLINT_STATIC_CACHE_SIZE = 2
 
 if TYPE_CHECKING:
     from mpmath.ctx_mp import MPContext
@@ -263,6 +268,43 @@ def _flint_pauli_block_matrix(
     return result
 
 
+def _flint_pauli_global_x_block_matrix(
+    flint: Any,
+    label: str,
+    sector: int,
+) -> Any:
+    """Represent a global-X-preserving Pauli in the corresponding cat basis."""
+    num_qubits = len(label)
+    dimension = 2 ** (num_qubits - 1)
+    full_mask = 2**num_qubits - 1
+    x_mask = 0
+    z_mask = 0
+    y_count = 0
+    for offset, pauli in enumerate(reversed(label)):
+        if pauli in "XY":
+            x_mask |= 1 << offset
+        if pauli in "YZ":
+            z_mask |= 1 << offset
+        if pauli == "Y":
+            y_count += 1
+    if (label.count("Y") + label.count("Z")) & 1:
+        raise ValueError(f"Pauli term {label!r} does not preserve global X")
+    result = flint.acb_mat(dimension, dimension)
+    y_phase = flint.acb(0, 1) ** y_count
+    sector_sign = 1 if sector == 0 else -1
+    for column, state in enumerate(range(dimension)):
+        row_state = state ^ x_mask
+        cat_phase = 1
+        if row_state >= dimension:
+            row_state ^= full_mask
+            cat_phase = sector_sign
+        parity = (state & z_mask).bit_count() & 1
+        result[row_state, column] = (
+            y_phase * (-1 if parity else 1) * cat_phase
+        )
+    return result
+
+
 def _parity_labels_and_coefficients(
     hamiltonian: PauliHamiltonian,
 ) -> tuple[tuple[str, float], ...]:
@@ -314,6 +356,100 @@ def _flint_strang_step(
     return result
 
 
+def _flint_tfim_parity_strang_step(
+    flint: Any,
+    hamiltonian: PauliHamiltonian,
+    step_time: Any,
+    sector: int,
+) -> Any:
+    """Build the identical individual-term Strang step in a global-X block."""
+    metadata = hamiltonian.model_metadata
+    if metadata is None or metadata.model != "transverse_field_ising":
+        raise ValueError("TFIM parity step requires TFIM model metadata")
+    parameters = dict(metadata.parameters)
+    if bool(parameters.get("periodic", False)):
+        raise ValueError("TFIM parity step currently supports open boundaries only")
+    coupling = flint.arb(str(parameters["coupling"]))
+    field = flint.arb(str(parameters["field"]))
+    num_qubits = hamiltonian.num_qubits
+    dimension = 2 ** (num_qubits - 1)
+    representatives = tuple(range(dimension))
+    full_mask = 2**num_qubits - 1
+    half_step = step_time / 2
+    diagonal: list[Any] = []
+    for state in representatives:
+        interaction_sum = sum(
+            1 if ((state >> site) & 1) == ((state >> (site + 1)) & 1) else -1
+            for site in range(num_qubits - 1)
+        )
+        angle = -coupling * interaction_sum * half_step
+        diagonal.append(angle.cos() - flint.acb(0, 1) * angle.sin())
+    field_angle = -field * step_time
+    stay = field_angle.cos()
+    flip = -flint.acb(0, 1) * field_angle.sin()
+    sign = 1 if sector == 0 else -1
+    result = flint.acb_mat(dimension, dimension)
+    for row, left_state in enumerate(representatives):
+        for column, right_state in enumerate(representatives):
+            distance = (left_state ^ right_state).bit_count()
+            complement_distance = (
+                left_state ^ (right_state ^ full_mask)
+            ).bit_count()
+            field_entry = (
+                stay ** (num_qubits - distance) * flip**distance
+                + sign
+                * stay ** (num_qubits - complement_distance)
+                * flip**complement_distance
+            )
+            result[row, column] = (
+                diagonal[row] * field_entry * diagonal[column]
+            )
+    return result
+
+
+def _flint_heisenberg_parity_strang_step(
+    flint: Any,
+    hamiltonian: PauliHamiltonian,
+    terms: tuple[tuple[Any, Any], ...],
+    step_time: Any,
+) -> Any:
+    """Group contiguous commuting XXX and field terms without changing Strang."""
+    metadata = hamiltonian.model_metadata
+    if metadata is None or metadata.model != "heisenberg_chain":
+        raise ValueError("Heisenberg parity step requires model metadata")
+    parameters = dict(metadata.parameters)
+    coupling = flint.arb(str(parameters["coupling"]))
+    num_qubits = hamiltonian.num_qubits
+    dimension = terms[0][0].nrows()
+    identity = _flint_identity(flint, dimension)
+    half_angle = coupling * step_time / 2
+    phase = half_angle.cos() + flint.acb(0, 1) * half_angle.sin()
+    swap_cosine = (2 * half_angle).cos()
+    swap_sine = -flint.acb(0, 1) * (2 * half_angle).sin()
+    bond_steps: list[Any] = []
+    for bond in range(num_qubits - 1):
+        offset = 3 * bond
+        swap = (
+            identity
+            + terms[offset][0]
+            + terms[offset + 1][0]
+            + terms[offset + 2][0]
+        ) / 2
+        bond_steps.append(phase * (swap_cosine * identity + swap_sine * swap))
+    field_hamiltonian = flint.acb_mat(dimension, dimension)
+    for pauli, weight in terms[3 * (num_qubits - 1) :]:
+        field_hamiltonian += weight * pauli
+    field_step = flint.acb_mat(dimension, dimension)
+    minus_i = flint.acb(0, -1)
+    for index in range(dimension):
+        angle = step_time * field_hamiltonian[index, index]
+        field_step[index, index] = angle.cos() + minus_i * angle.sin()
+    result = identity
+    for unitary in (*bond_steps, field_step, *reversed(bond_steps)):
+        result = unitary * result
+    return result
+
+
 def _flatten_eigenvalues(values: list[Any]) -> list[Any]:
     flattened: list[Any] = []
     for value in values:
@@ -327,15 +463,15 @@ def _flatten_eigenvalues(values: list[Any]) -> list[Any]:
 def _flint_sector_norm(
     flint: Any,
     terms: tuple[tuple[Any, Any], ...],
+    exact: Any,
     time_ball: Any,
     segments: int,
     diagnostics: Any,
+    hamiltonian: PauliHamiltonian,
+    symmetry_reduction: Literal["none", "parity"],
+    sector: int,
 ) -> tuple[Any, float, bool]:
     dimension = terms[0][0].nrows()
-    hamiltonian_matrix = flint.acb_mat(dimension, dimension)
-    for pauli, weight in terms:
-        hamiltonian_matrix += weight * pauli
-    exact = (flint.acb(0, -1) * time_ball * hamiltonian_matrix).exp()
     step_time = time_ball / segments
     mpf_step = flint.acb_mat(dimension, dimension)
     for coefficient, exponent in zip(
@@ -343,7 +479,30 @@ def _flint_sector_norm(
         diagnostics.exponents,
         strict=True,
     ):
-        base = _flint_strang_step(flint, terms, step_time / exponent)
+        if (
+            symmetry_reduction == "parity"
+            and hamiltonian.model_metadata is not None
+            and hamiltonian.model_metadata.model == "transverse_field_ising"
+        ):
+            base = _flint_tfim_parity_strang_step(
+                flint,
+                hamiltonian,
+                step_time / exponent,
+                sector,
+            )
+        elif (
+            symmetry_reduction == "parity"
+            and hamiltonian.model_metadata is not None
+            and hamiltonian.model_metadata.model == "heisenberg_chain"
+        ):
+            base = _flint_heisenberg_parity_strang_step(
+                flint,
+                hamiltonian,
+                terms,
+                step_time / exponent,
+            )
+        else:
+            base = _flint_strang_step(flint, terms, step_time / exponent)
         coefficient_ball = flint.arb(coefficient.numerator) / coefficient.denominator
         mpf_step += coefficient_ball * _flint_matrix_power(
             flint,
@@ -376,36 +535,58 @@ def _flint_sector_norm(
     return value, relative_width, interval_certified
 
 
-def _flint_operator_norm_at_precision(
+def _flint_static_sector_data(
+    flint: Any,
     hamiltonian: PauliHamiltonian,
-    time: float,
-    segments: int,
-    branch_count: int,
+    time_ball: Any,
     *,
-    schedule: MPFSchedule,
     decimal_digits: int,
     symmetry_reduction: Literal["none", "parity"],
-) -> tuple[str, float, float, bool]:
-    flint = _require_flint()
-    previous_dps = flint.ctx.dps
-    flint.ctx.dps = decimal_digits
-    try:
-        time_ball = flint.arb(str(time))
-        diagnostics = mpf_richardson_diagnostics(branch_count, schedule=schedule)
-        if symmetry_reduction == "none":
-            term_sets = (
-                tuple(
-                    (
-                        _flint_pauli_matrix(flint, label),
-                        flint.arb(str(coefficient)),
+) -> tuple[tuple[tuple[tuple[Any, Any], ...], Any], ...]:
+    key = (
+        hamiltonian.terms,
+        hamiltonian.model_metadata,
+        str(time_ball),
+        decimal_digits,
+        symmetry_reduction,
+    )
+    cached = _FLINT_STATIC_CACHE.get(key)
+    if cached is not None:
+        _FLINT_STATIC_CACHE.move_to_end(key)
+        return cached  # type: ignore[return-value]
+    if symmetry_reduction == "none":
+        term_sets = (
+            tuple(
+                (
+                    _flint_pauli_matrix(flint, label),
+                    flint.arb(str(coefficient)),
+                )
+                for label, coefficient in hamiltonian.terms
+            ),
+        )
+    elif symmetry_reduction == "parity":
+        blocks: list[tuple[tuple[Any, Any], ...]] = []
+        if (
+            hamiltonian.model_metadata is not None
+            and hamiltonian.model_metadata.model == "transverse_field_ising"
+        ):
+            for sector in (0, 1):
+                blocks.append(
+                    tuple(
+                        (
+                            _flint_pauli_global_x_block_matrix(
+                                flint,
+                                label,
+                                sector,
+                            ),
+                            flint.arb(str(coefficient)),
+                        )
+                        for label, coefficient in hamiltonian.terms
                     )
-                    for label, coefficient in hamiltonian.terms
-                ),
-            )
-        elif symmetry_reduction == "parity":
+                )
+        else:
             labels = _parity_labels_and_coefficients(hamiltonian)
             full_dimension = 2**hamiltonian.num_qubits
-            blocks: list[tuple[tuple[Any, Any], ...]] = []
             for sector in (0, 1):
                 basis_states = tuple(
                     state
@@ -429,18 +610,66 @@ def _flint_operator_norm_at_precision(
                         for label, coefficient in labels
                     )
                 )
-            term_sets = tuple(blocks)
-        else:
-            raise ValueError("symmetry_reduction must be 'none' or 'parity'")
+        term_sets = tuple(blocks)
+    else:
+        raise ValueError("symmetry_reduction must be 'none' or 'parity'")
+    result: tuple[tuple[tuple[tuple[Any, Any], ...], Any], ...] = tuple(
+        (
+            terms,
+            (
+                flint.acb(0, -1)
+                * time_ball
+                * sum(
+                    (weight * pauli for pauli, weight in terms),
+                    flint.acb_mat(terms[0][0].nrows(), terms[0][0].ncols()),
+                )
+            ).exp(),
+        )
+        for terms in term_sets
+    )
+    _FLINT_STATIC_CACHE[key] = result
+    _FLINT_STATIC_CACHE.move_to_end(key)
+    while len(_FLINT_STATIC_CACHE) > _FLINT_STATIC_CACHE_SIZE:
+        _FLINT_STATIC_CACHE.popitem(last=False)
+    return result
+
+
+def _flint_operator_norm_at_precision(
+    hamiltonian: PauliHamiltonian,
+    time: float,
+    segments: int,
+    branch_count: int,
+    *,
+    schedule: MPFSchedule,
+    decimal_digits: int,
+    symmetry_reduction: Literal["none", "parity"],
+) -> tuple[str, float, float, bool]:
+    flint = _require_flint()
+    previous_dps = flint.ctx.dps
+    flint.ctx.dps = decimal_digits
+    try:
+        time_ball = flint.arb(str(time))
+        diagnostics = mpf_richardson_diagnostics(branch_count, schedule=schedule)
+        sector_data = _flint_static_sector_data(
+            flint,
+            hamiltonian,
+            time_ball,
+            decimal_digits=decimal_digits,
+            symmetry_reduction=symmetry_reduction,
+        )
         sector_results = tuple(
             _flint_sector_norm(
                 flint,
                 terms,
+                exact,
                 time_ball,
                 segments,
                 diagnostics,
+                hamiltonian,
+                symmetry_reduction,
+                sector,
             )
-            for terms in term_sets
+            for sector, (terms, exact) in enumerate(sector_data)
         )
         value, relative_width, interval_certified = max(
             sector_results,
