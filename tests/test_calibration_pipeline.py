@@ -16,12 +16,21 @@ def _config():
     return {
         "study_id": "synthetic-pipeline",
         "models": ["transverse_field_ising"],
+        "model_parameters": {
+            "transverse_field_ising": {
+                "coupling": 1.0,
+                "field": 3.0,
+                "periodic": False,
+            }
+        },
         "formal_orders": [18],
         "sizes": [4],
         "segment_ratios": {"18": [3, 4, 5, 6]},
         "downstream_benchmark": {"system_sizes": [4, 20, 50, 100]},
         "reviewed_size_max": 100,
         "backend": "flint",
+        "formula": "ordered-individual-pauli-strang-mpf-v1",
+        "schedule": "new",
     }
 
 

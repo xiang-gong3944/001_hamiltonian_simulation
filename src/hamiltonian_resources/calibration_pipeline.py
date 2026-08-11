@@ -52,12 +52,15 @@ def load_calibration_config(path: Path) -> dict[str, Any]:
     required = {
         "study_id",
         "models",
+        "model_parameters",
         "formal_orders",
         "sizes",
         "segment_ratios",
         "reviewed_size_max",
         "downstream_benchmark",
         "backend",
+        "formula",
+        "schedule",
     }
     missing = required - raw.keys()
     if missing:
@@ -76,6 +79,22 @@ def load_calibration_config(path: Path) -> dict[str, Any]:
     raw["reviewed_size_max"] = reviewed_size_max
     if reviewed_size_max < max(int(value) for value in raw["sizes"]):
         raise ValueError("reviewed_size_max is below the observed size matrix")
+    expected_parameters = {
+        "transverse_field_ising": {
+            "coupling": 1.0,
+            "field": 3.0,
+            "periodic": False,
+        },
+        "heisenberg_chain": {"coupling": 1.0, "field_z": 0.3},
+    }
+    if raw["model_parameters"] != {
+        model: expected_parameters[str(model)] for model in raw["models"]
+    }:
+        raise ValueError("model_parameters must match the registered calibration models")
+    if raw["formula"] != "ordered-individual-pauli-strang-mpf-v1":
+        raise ValueError("unsupported calibration formula")
+    if raw["schedule"] != "new":
+        raise ValueError("high-order calibration requires the registered new schedule")
     return raw
 
 

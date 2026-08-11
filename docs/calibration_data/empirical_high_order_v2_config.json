@@ -5,6 +5,15 @@
     "source": "high-order empirical MPF resource comparison",
     "system_sizes": [4, 8, 12, 20, 50, 100]
   },
+  "environment_lock": {
+    "flint": "0.9.0",
+    "mpmath": "1.4.1",
+    "numpy": "2.5.1",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10",
+    "scipy": "1.18.0"
+  },
+  "formula": "ordered-individual-pauli-strang-mpf-v1",
   "formal_orders": [18, 20, 22, 24, 26, 28, 30],
   "external_validation": {
     "formal_orders": [24, 26, 28, 30],
@@ -20,9 +29,21 @@
     }
   },
   "max_digits": 256,
+  "model_parameters": {
+    "heisenberg_chain": {
+      "coupling": 1.0,
+      "field_z": 0.3
+    },
+    "transverse_field_ising": {
+      "coupling": 1.0,
+      "field": 3.0,
+      "periodic": false
+    }
+  },
   "models": ["transverse_field_ising", "heisenberg_chain"],
   "relative_tolerance": 1e-08,
   "reviewed_size_max": 100,
+  "schedule": "new",
   "symmetry_reduction": "parity",
   "segment_ratios": {
     "18": [3.0, 4.0, 5.0, 6.0],
