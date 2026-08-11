@@ -885,6 +885,55 @@ def test_best_rigorous_ideal_policy_selects_low_and_retains_candidates():
     assert all(candidate.rigorous for candidate in estimate.bound_candidates)
 
 
+def test_aggregate_only_low_and_best_rigorous_capabilities_at_j16():
+    hamiltonian = transverse_field_ising(2, coupling=1.0, field=0.7, periodic=False)
+
+    low = select_mpf_segments(
+        hamiltonian,
+        0.1,
+        1e-4,
+        16,
+        method="low2019-l1-ideal-rigorous",
+    )
+    best = select_mpf_segments(
+        hamiltonian,
+        0.1,
+        1e-4,
+        16,
+        method="best-rigorous-ideal",
+    )
+
+    assert low.exponents is None
+    assert low.coefficient_l1_norm == 2.0
+    assert low.coefficient_l1_norm_source == "extrapolated-schedule-upper-bound"
+    assert best.method == "low2019-l1-ideal-rigorous"
+    assert best.requested_method == "best-rigorous-ideal"
+    assert [candidate.available for candidate in best.bound_candidates] == [True, False, False]
+    assert best.bound_candidates[0].segments == best.segments
+    assert all(
+        "requires explicit MPF coefficients and exponents" in candidate.unavailable_reason
+        for candidate in best.bound_candidates[1:]
+    )
+
+
+@pytest.mark.parametrize(
+    "method",
+    (
+        "childs2021-w2-triangle-ideal-rigorous",
+        "mizuta2026-commutator-ideal-rigorous",
+    ),
+)
+def test_explicit_branch_estimators_remain_unavailable_at_j16(method):
+    with pytest.raises(ValueError, match="requires explicit MPF coefficients and exponents"):
+        select_mpf_segments(
+            transverse_field_ising(2, field=0.7),
+            0.1,
+            1e-4,
+            16,
+            method=method,
+        )
+
+
 def test_best_rigorous_ideal_policy_can_select_w2_and_break_ties_with_low():
     identity_heavy = PauliHamiltonian.from_terms(
         1,

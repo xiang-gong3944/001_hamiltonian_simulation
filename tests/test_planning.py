@@ -8,6 +8,8 @@ from hamiltonian_resources.benchmark_suite import (
     TrotterMethod,
 )
 from hamiltonian_resources.hamiltonians import PauliHamiltonian, transverse_field_ising
+from hamiltonian_resources.analytical import compile_resources_analytically
+from hamiltonian_resources.multiproduct import build_multiproduct_circuit_from_plan
 from hamiltonian_resources.planning import (
     ErrorBudget,
     MPFPlan,
@@ -97,6 +99,34 @@ def test_mpf_plan_owns_logical_structure_not_backend_decomposition():
         "pauli_evolution": 105,
     }
     assert "temporary_and" not in counts["totals"]
+
+
+def test_aggregate_only_low_plan_supports_resources_but_not_circuits():
+    plan = plan_simulation(
+        transverse_field_ising(2, field=0.7),
+        MultiproductMethod(16, error_method="low2019-l1-ideal-rigorous"),
+        0.1,
+        1e-4,
+    )
+    resources, provenance = compile_resources_analytically(plan)
+
+    assert plan.implementation is None
+    assert plan.exponents is None
+    assert plan.schedule_cost.exponent_sum == 297
+    assert plan.schedule_cost.coefficient_l1_norm == 2.0
+    assert plan.logical_counts.as_dict()["per_segment"]["controlled_s2"] == 3 * 297
+    assert resources.t_count >= 0
+    assert any(
+        "does not imply an implementable MPF circuit" in assumption
+        for assumption in provenance.assumptions
+    )
+    assert plan.error_analysis.ideal_algorithm_target_certified
+    assert not plan.error_analysis.implemented_circuit_target_certified
+    assert plan.error_metadata["mpf_coefficient_l1_norm_source"] == (
+        "extrapolated-schedule-upper-bound"
+    )
+    with pytest.raises(ValueError, match="circuit construction is unavailable"):
+        build_multiproduct_circuit_from_plan(plan)
 
 
 def test_dynamic_mpf_policy_resolves_once_from_the_algorithm_budget():

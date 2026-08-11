@@ -395,6 +395,10 @@ def test_registered_mpf_schedule_cost_is_the_exact_exponent_sum(schedule, m):
     assert cost.exponents is not None
     assert cost.exponent_sum == sum(cost.exponents)
     assert cost.source == "registered-exact"
+    assert cost.coefficient_l1_norm == pytest.approx(
+        sum(abs(value) for value in multiproduct_coefficients(m, schedule=schedule))
+    )
+    assert cost.coefficient_l1_norm_source == "registered-coefficients-exact"
     assert cost.explicit_schedule_available
 
 
@@ -404,6 +408,8 @@ def test_mpf_schedule_cost_extrapolates_only_new_aggregate_cost():
     assert cost.exponent_sum == 297
     assert cost.source == "extrapolated-0.418-m2-log-m"
     assert cost.exponents is None
+    assert cost.coefficient_l1_norm == 2.0
+    assert cost.coefficient_l1_norm_source == "extrapolated-schedule-upper-bound"
     assert not cost.explicit_schedule_available
     with pytest.raises(ValueError, match="legacy"):
         mpf_exponent_cost(16, schedule="legacy")
@@ -412,8 +418,10 @@ def test_mpf_schedule_cost_extrapolates_only_new_aggregate_cost():
         multiproduct_coefficients(16)
     with pytest.raises(ValueError, match="between 2 and 15"):
         mpf_lcu_structure(16)
-    with pytest.raises(ValueError, match="between 2 and 15"):
-        estimate_mpf_error(hamiltonian, 1.0, 1, 16)
+    estimate = estimate_mpf_error(hamiltonian, 1.0, 1, 16)
+    assert estimate.exponents is None
+    assert estimate.coefficient_l1_norm == 2.0
+    assert estimate.coefficient_l1_norm_source == "extrapolated-schedule-upper-bound"
 
 
 def test_calibration_analysis_helpers_enforce_formal_order_and_fit_affine_law():

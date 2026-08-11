@@ -131,7 +131,7 @@ def test_dynamic_mpf_rows_store_the_resolved_policy_order_and_inputs():
     )
 
 
-def test_unsupported_dynamic_order_is_an_explicit_benchmark_error_row():
+def test_aggregate_dynamic_order_produces_an_analytical_benchmark_row():
     from hamiltonian_resources import PauliHamiltonian
 
     config = BenchmarkConfig(
@@ -152,12 +152,15 @@ def test_unsupported_dynamic_order_is_an_explicit_benchmark_error_row():
 
     row = run_benchmark(config, sweeps="system-size").iloc[0]
 
-    assert row["status"] == "error"
-    assert row["error_type"] == "ValueError"
-    assert "resolved MPF J=16" in row["error_message"]
-    assert "N=1" in row["error_message"]
-    assert "aggregate" in row["error_message"]
-    assert "2 <= J <= 15" in row["error_message"]
+    assert row["status"] == "ok"
+    assert row["mpf_term_count"] == 16
+    assert row["mpf_exponent_sum"] == 297
+    assert row["mpf_coefficient_l1_norm"] == 2.0
+    assert row["mpf_exponent_sum_source"] == "extrapolated-0.418-m2-log-m"
+    assert not row["mpf_explicit_schedule_available"]
+    assert row["bound_method"] == "low2019-l1-ideal-rigorous"
+    assert row["bound_rigorous"]
+    assert not row["circuit_bound_rigorous"]
 
 
 def test_config_is_mutable_and_revalidated_before_run():

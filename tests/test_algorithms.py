@@ -868,14 +868,14 @@ def test_multiproduct_schedule_propagates_through_consumers():
     assert result["fidelity"] > 0.99
 
 
-def test_evaluation_config_allows_aggregate_only_m_only_for_empirical_policy():
-    with pytest.raises(ValueError, match="between 2 and 15"):
-        _EvaluationConfig(mpf_m=16)
-    config = _EvaluationConfig(
+def test_evaluation_config_allows_aggregate_only_m_for_low_and_empirical_policies():
+    low_config = _EvaluationConfig(mpf_m=16)
+    empirical_config = _EvaluationConfig(
         mpf_m=16,
         mpf_error_method="empirical-operator-norm",
     )
-    assert config.mpf_m == 16
+    assert low_config.mpf_m == 16
+    assert empirical_config.mpf_m == 16
 
 
 def test_suzuki_commutator_bounds_vanish_for_commuting_terms():
