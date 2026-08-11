@@ -1,0 +1,1930 @@
+{
+  "accepted_windows": [
+    {
+      "coefficient_b_2j": 3.591919343951207e-07,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.042931636062088295,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.012774955174550705,
+      "running_exponents": [
+        17.87623766004544,
+        17.926125754481678,
+        17.95090307075725
+      ],
+      "segments": [
+        15,
+        20,
+        25,
+        30
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 1.5074785855873345e-13,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.00046261126933174027,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.00021933598549286423,
+      "running_exponents": [
+        19.997999352525426,
+        20.001566126198334,
+        20.002406290401886
+      ],
+      "segments": [
+        15,
+        20,
+        25,
+        30
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 4.911520593112126e-20,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.006372948493372417,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.002574539152049708,
+      "running_exponents": [
+        26.01678480144854,
+        26.01367015781777,
+        26.011540549470602
+      ],
+      "segments": [
+        30,
+        40,
+        50,
+        60
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 3.774336597215159e-21,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.0016438275436549416,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.00046477082960488304,
+      "running_exponents": [
+        25.995333842838225,
+        25.997286370025332,
+        25.99822367615181
+      ],
+      "segments": [
+        24,
+        32,
+        40,
+        48
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 8.775772214054618e-09,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.0379970775933536,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.011286438503723613,
+      "running_exponents": [
+        19.89076098166808,
+        19.934704392759407,
+        19.956595550192517
+      ],
+      "segments": [
+        15,
+        20,
+        25,
+        30
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 6.179797478522105e-21,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.03877998261433417,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.017304918448418888,
+      "running_exponents": [
+        28.132368793495154,
+        28.09374872358601,
+        28.061966999834333
+      ],
+      "segments": [
+        64,
+        80,
+        96,
+        128
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 6.060937116886636e-12,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.010116214650619198,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0049499963245181215,
+      "running_exponents": [
+        23.962789507889525,
+        23.97651746730182,
+        23.98597750849225
+      ],
+      "segments": [
+        30,
+        36,
+        48,
+        60
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.1822796117180396e-13,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.007232759923329497,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.002111522568076018,
+      "running_exponents": [
+        25.979521433699635,
+        25.987749655515277,
+        25.991847791559554
+      ],
+      "segments": [
+        36,
+        48,
+        60,
+        72
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 5.373389769333135e-07,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.04621692505219385,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.01388082373616251,
+      "running_exponents": [
+        17.866763380822746,
+        17.91978985806906,
+        17.94663942218337
+      ],
+      "segments": [
+        21,
+        28,
+        35,
+        42
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 2.6784050629191877e-14,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.02943886261942297,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.012925242547243527,
+      "running_exponents": [
+        21.894958234996704,
+        21.929565361878733,
+        21.95535666377289
+      ],
+      "segments": [
+        36,
+        45,
+        54,
+        72
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 4.747097864580429e-07,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.04505926671121398,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.013479456428086902,
+      "running_exponents": [
+        17.87008284024576,
+        17.922082667550846,
+        17.948193983892104
+      ],
+      "segments": [
+        18,
+        24,
+        30,
+        36
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.0858589249866478e-14,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.001838872298161851,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0009829363999688664,
+      "running_exponents": [
+        19.995515639284605,
+        19.995067359348347,
+        19.995259274657236
+      ],
+      "segments": [
+        12,
+        16,
+        20,
+        24
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 1.327026489773412e-16,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.0037489129516588356,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0015912140742718626,
+      "running_exponents": [
+        21.986749531485067,
+        21.991236559790032,
+        21.994500362123222
+      ],
+      "segments": [
+        16,
+        20,
+        24,
+        32
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 7.207677915407224e-11,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.012436712131405342,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0055013932808937365,
+      "running_exponents": [
+        21.95618669481564,
+        21.9700057347151,
+        21.980867998938983
+      ],
+      "segments": [
+        16,
+        20,
+        24,
+        32
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 3.5122957190208747e-17,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.009019071106209881,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0048148254641604835,
+      "running_exponents": [
+        24.0317170004465,
+        24.022254238431216,
+        24.014533896908755
+      ],
+      "segments": [
+        30,
+        36,
+        48,
+        60
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.2235050787730526e-14,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.045562515915394154,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.017806159038490164,
+      "running_exponents": [
+        26.118027058051076,
+        26.095521965754326,
+        26.079845082200187
+      ],
+      "segments": [
+        48,
+        64,
+        80,
+        96
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 2.1506989019895815e-16,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.020809391729969564,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0020629027554321935,
+      "running_exponents": [
+        28.08543216698849,
+        28.022641301155083,
+        27.996311023294066
+      ],
+      "segments": [
+        32,
+        40,
+        48,
+        64
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 1.3975524193997823e-15,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.002974123390633719,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0012734587386484864,
+      "running_exponents": [
+        27.989510004321666,
+        27.993006019095443,
+        27.995584893963287
+      ],
+      "segments": [
+        48,
+        60,
+        72,
+        96
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.226435006512963e-19,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.01743830278537774,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.008887990540388514,
+      "running_exponents": [
+        24.06205550284701,
+        24.04165637278419,
+        24.026190733808054
+      ],
+      "segments": [
+        40,
+        48,
+        64,
+        80
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 4.4677924791524133e-13,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.040665926232552135,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.013735582880918673,
+      "running_exponents": [
+        20.10866129450856,
+        20.077423026317938,
+        20.05669776628976
+      ],
+      "segments": [
+        18,
+        24,
+        30,
+        36
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 3.259884152670273e-10,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.01743741848635791,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.007523947547729989,
+      "running_exponents": [
+        21.938040214822838,
+        21.958773362630446,
+        21.974015698515668
+      ],
+      "segments": [
+        24,
+        30,
+        36,
+        48
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.1832632408613972e-11,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.011279804986894387,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.005516959413365907,
+      "running_exponents": [
+        23.958468970707365,
+        23.97382655364603,
+        23.984381804965064
+      ],
+      "segments": [
+        45,
+        54,
+        72,
+        90
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 1.964361090620418e-18,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.011222710036249839,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0033422075078867624,
+      "running_exponents": [
+        26.031308446810804,
+        26.01932072146797,
+        26.013059818814806
+      ],
+      "segments": [
+        48,
+        64,
+        80,
+        96
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 4.926743582492769e-10,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.018662003533572127,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.008058766071150511,
+      "running_exponents": [
+        21.9336485267691,
+        21.955854534552504,
+        21.9721760807395
+      ],
+      "segments": [
+        32,
+        40,
+        48,
+        64
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 4.141888816278894e-18,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.024966449189718114,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.014568216919704011,
+      "running_exponents": [
+        30.08422337304958,
+        30.06498725028553,
+        30.047484099993405
+      ],
+      "segments": [
+        100,
+        120,
+        160,
+        200
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 3.0372589837209824e-18,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.018582698535379655,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.009519245903034903,
+      "running_exponents": [
+        24.065944447173596,
+        24.044560279967367,
+        24.028140037917503
+      ],
+      "segments": [
+        50,
+        60,
+        80,
+        100
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 5.301631241337205e-10,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.03814206120240832,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.008068939286637131,
+      "running_exponents": [
+        22.222280162205063,
+        21.955486925707103,
+        21.971886468953034
+      ],
+      "segments": [
+        36,
+        45,
+        54,
+        72
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 1.4183351114257002e-12,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.009682746345125838,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.003455203069028948,
+      "running_exponents": [
+        20.02600664281561,
+        20.019331502647777,
+        20.014291877888816
+      ],
+      "segments": [
+        21,
+        28,
+        35,
+        42
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 1.3547304175302852e-17,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.012767441809842494,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.008184111394019748,
+      "running_exponents": [
+        30.041475392259994,
+        30.035719753690312,
+        30.027527893472183
+      ],
+      "segments": [
+        60,
+        72,
+        96,
+        120
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 3.0372693346457884e-23,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.0013865152142985455,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0006852392758177764,
+      "running_exponents": [
+        30.005042514655614,
+        30.003241804283736,
+        30.001963623416653
+      ],
+      "segments": [
+        70,
+        84,
+        112,
+        140
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 2.5839514095453127e-15,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.003438992960040564,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.001468452689102997,
+      "running_exponents": [
+        27.98786038751475,
+        27.991928842873303,
+        27.994913790408763
+      ],
+      "segments": [
+        56,
+        70,
+        84,
+        112
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 3.739577381628398e-24,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.0007200890502707519,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0003682015180754315,
+      "running_exponents": [
+        29.99741431006861,
+        29.998269683961254,
+        29.99893102752272
+      ],
+      "segments": [
+        60,
+        72,
+        96,
+        120
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 4.815724228184128e-14,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.005825895130795719,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0016993562144429373,
+      "running_exponents": [
+        25.983515986591392,
+        25.99013933833399,
+        25.9934383107804
+      ],
+      "segments": [
+        30,
+        40,
+        50,
+        60
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 6.657313430516323e-25,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.004740576564052435,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.002346202918258276,
+      "running_exponents": [
+        30.017193466436275,
+        30.01109495144229,
+        30.00674058992279
+      ],
+      "segments": [
+        50,
+        60,
+        80,
+        100
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 1.385342654239944e-15,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.00016363702652798427,
+      "model": "heisenberg_chain",
+      "relative_mad": 4.697478458440205e-05,
+      "running_exponents": [
+        21.99905737669007,
+        21.99999688698511,
+        22.000326574199693
+      ],
+      "segments": [
+        20,
+        25,
+        30,
+        40
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 3.0983775694589233e-12,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.008984933287753676,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.004391829415907633,
+      "running_exponents": [
+        23.966962706721777,
+        23.979160066899503,
+        23.987558633106307
+      ],
+      "segments": [
+        25,
+        30,
+        40,
+        50
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 7.1544445199947884e-12,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.017732070635596803,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0043030630533091255,
+      "running_exponents": [
+        18.08585878313445,
+        17.97484082839926,
+        17.983456733887117
+      ],
+      "segments": [
+        15,
+        20,
+        25,
+        30
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 4.676648815882478e-19,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.011739323233001578,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0009490457816636705,
+      "running_exponents": [
+        26.045998707659983,
+        25.9945114461784,
+        25.996300389858817
+      ],
+      "segments": [
+        42,
+        56,
+        70,
+        84
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 2.5619893027943802e-20,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.003890222310017161,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.001677250509465231,
+      "running_exponents": [
+        28.013646533931674,
+        28.009191342621378,
+        28.005845141006585
+      ],
+      "segments": [
+        72,
+        90,
+        108,
+        144
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 4.157557429375712e-09,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.03199806691631758,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.009822214275711175,
+      "running_exponents": [
+        19.9090235024866,
+        19.943275436538595,
+        19.96205086420004
+      ],
+      "segments": [
+        12,
+        16,
+        20,
+        24
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 2.478074569324751e-15,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.0015916773090011759,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0009508767282119054,
+      "running_exponents": [
+        21.995843384284203,
+        21.994651682532368,
+        21.996165996733318
+      ],
+      "segments": [
+        24,
+        30,
+        36,
+        48
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.4398609738546655e-14,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.006910759938025984,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.003198055037684103,
+      "running_exponents": [
+        22.023865324267696,
+        22.017143535875313,
+        22.011404854343684
+      ],
+      "segments": [
+        28,
+        35,
+        42,
+        56
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 1.5647381598890007e-08,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.04191647157089085,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.012494097307753053,
+      "running_exponents": [
+        19.879286395494873,
+        19.927753345942993,
+        19.95196506229916
+      ],
+      "segments": [
+        21,
+        28,
+        35,
+        42
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 4.875790710626721e-16,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.02092186637715825,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.011503132622047987,
+      "running_exponents": [
+        28.069509066380572,
+        28.057141646222416,
+        28.044267153850413
+      ],
+      "segments": [
+        80,
+        100,
+        120,
+        160
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 3.6568594568692155e-15,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.0036214215830748806,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0015464702777580523,
+      "running_exponents": [
+        27.987215178827466,
+        27.991500245751087,
+        27.994643844778267
+      ],
+      "segments": [
+        64,
+        80,
+        96,
+        128
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 1.2891021769826954e-08,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.04051651309619332,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.012056946508441354,
+      "running_exponents": [
+        19.883380231439226,
+        19.930264716756447,
+        19.953645737451048
+      ],
+      "segments": [
+        18,
+        24,
+        30,
+        36
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.3246870719710879e-21,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.007075320971872003,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.003120707142609362,
+      "running_exponents": [
+        28.02466722574688,
+        28.01697301217425,
+        28.010972962447237
+      ],
+      "segments": [
+        48,
+        60,
+        72,
+        96
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 5.658406033619548e-17,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.0022326709179033588,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0010860021700255565,
+      "running_exponents": [
+        29.991812487318015,
+        29.994840612769163,
+        29.996921285217734
+      ],
+      "segments": [
+        90,
+        108,
+        144,
+        180
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 4.582745442907093e-21,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.0053466091892462415,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0014903523633843562,
+      "running_exponents": [
+        28.020589948104575,
+        28.0080969590566,
+        28.005237380977434
+      ],
+      "segments": [
+        56,
+        70,
+        84,
+        112
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 1.712635987106068e-08,
+      "formal_order": 20,
+      "maximum_relative_deviation": 0.04487222361293468,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.00960404213087059,
+      "running_exponents": [
+        19.858195040072427,
+        19.954268108804076,
+        19.951087468634995
+      ],
+      "segments": [
+        24,
+        32,
+        40,
+        48
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 1.1628823751698043e-23,
+      "formal_order": 28,
+      "maximum_relative_deviation": 4.383529841960973e-05,
+      "model": "heisenberg_chain",
+      "relative_mad": 1.6633134975457147e-05,
+      "running_exponents": [
+        27.99984236883643,
+        27.99990498277641,
+        27.999944583558808
+      ],
+      "segments": [
+        32,
+        40,
+        48,
+        64
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 9.289815170294456e-11,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.039324894534058366,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.004849000447785205,
+      "running_exponents": [
+        18.1188734752332,
+        18.039285930100892,
+        18.005134854980344
+      ],
+      "segments": [
+        21,
+        28,
+        35,
+        42
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 3.7695656713715925e-18,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.0032058896587917147,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.002144555639821877,
+      "running_exponents": [
+        30.009107804042273,
+        30.009124666668598,
+        30.008504286513087
+      ],
+      "segments": [
+        40,
+        48,
+        64,
+        80
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 2.4448798549205112e-14,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.021383277468095888,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.009972570814582993,
+      "running_exponents": [
+        22.073126311215322,
+        22.05322430316013,
+        22.035958211751563
+      ],
+      "segments": [
+        32,
+        40,
+        48,
+        64
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 3.89968442628827e-18,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.009006159708088823,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.002681967785031992,
+      "running_exponents": [
+        26.025157885179755,
+        26.015504546601015,
+        26.010472270969014
+      ],
+      "segments": [
+        54,
+        72,
+        90,
+        108
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    },
+    {
+      "coefficient_b_2j": 2.040084572759863e-07,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.03859767784138922,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.011544292628272146,
+      "running_exponents": [
+        17.889160387451852,
+        17.933244742890917,
+        17.955576297972698
+      ],
+      "segments": [
+        12,
+        16,
+        20,
+        24
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 6.818745681863757e-07,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.046975279595361574,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.014167971408111544,
+      "running_exponents": [
+        17.864639333729098,
+        17.91815220479603,
+        17.94552476763002
+      ],
+      "segments": [
+        24,
+        32,
+        40,
+        48
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 3.321406769455735e-22,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.0001874784349071871,
+      "model": "heisenberg_chain",
+      "relative_mad": 7.412100029808156e-05,
+      "running_exponents": [
+        27.999330393115965,
+        27.99958231128733,
+        27.999749435198265
+      ],
+      "segments": [
+        40,
+        50,
+        60,
+        80
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 1.0647190190348363e-11,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.01108666480398118,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.005421573204313374,
+      "running_exponents": [
+        23.959182731397455,
+        23.97427808109355,
+        23.984651672247846
+      ],
+      "segments": [
+        40,
+        48,
+        64,
+        80
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 2.2894828543918759e-26,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.00023758118289880897,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.00011082367411538045,
+      "running_exponents": [
+        30.000882751292366,
+        30.000532610941434,
+        30.00030667394435
+      ],
+      "segments": [
+        40,
+        48,
+        64,
+        80
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 8.336382179608869e-13,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.03133317603938317,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.01835440076000932,
+      "running_exponents": [
+        24.06616641077869,
+        24.084903386746806,
+        24.087600103417174
+      ],
+      "segments": [
+        20,
+        24,
+        32,
+        40
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 4.350781418106948e-17,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.0021524323891586785,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0010469671034638768,
+      "running_exponents": [
+        29.992107141639686,
+        29.995026050589868,
+        29.997031843562656
+      ],
+      "segments": [
+        80,
+        96,
+        128,
+        160
+      ],
+      "status": "accepted-window",
+      "system_size": 8,
+      "time": 8.0
+    },
+    {
+      "coefficient_b_2j": 1.8976077926322752e-13,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.00790044675886084,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0023018046125080445,
+      "running_exponents": [
+        25.97761304358406,
+        25.986641926289074,
+        25.99111944348369
+      ],
+      "segments": [
+        42,
+        56,
+        70,
+        84
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 6.476177433092588e-11,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.002604098466270797,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.00046923952874533423,
+      "running_exponents": [
+        17.992117474106877,
+        17.996954642715945,
+        17.998580498058818
+      ],
+      "segments": [
+        18,
+        24,
+        30,
+        36
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 1.9559012537925692e-10,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.016057161374578906,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.006920324667626939,
+      "running_exponents": [
+        21.942980319428838,
+        21.962067877341216,
+        21.976094208601758
+      ],
+      "segments": [
+        20,
+        25,
+        30,
+        40
+      ],
+      "status": "accepted-window",
+      "system_size": 5,
+      "time": 5.0
+    },
+    {
+      "coefficient_b_2j": 3.6517620418384497e-19,
+      "formal_order": 26,
+      "maximum_relative_deviation": 0.001848198838896936,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0005915801993859593,
+      "running_exponents": [
+        26.00511017939025,
+        26.003374122899647,
+        26.002361220243134
+      ],
+      "segments": [
+        36,
+        48,
+        60,
+        72
+      ],
+      "status": "accepted-window",
+      "system_size": 6,
+      "time": 6.0
+    },
+    {
+      "coefficient_b_2j": 8.717480412840424e-12,
+      "formal_order": 24,
+      "maximum_relative_deviation": 0.010760118037088007,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.005259947111876219,
+      "running_exponents": [
+        23.96038808999289,
+        23.975042740565677,
+        23.98510960857432
+      ],
+      "segments": [
+        35,
+        42,
+        56,
+        70
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 4.281397406472584e-10,
+      "formal_order": 22,
+      "maximum_relative_deviation": 0.018248116651533152,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.007870955126595157,
+      "running_exponents": [
+        21.935121059502887,
+        21.9568715708024,
+        21.972826879735926
+      ],
+      "segments": [
+        28,
+        35,
+        42,
+        56
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 1.806066226350256e-12,
+      "formal_order": 18,
+      "maximum_relative_deviation": 0.0031481662030696145,
+      "model": "heisenberg_chain",
+      "relative_mad": 0.0010922026913493873,
+      "running_exponents": [
+        18.008548894954952,
+        18.00613140081684,
+        18.004481727552715
+      ],
+      "segments": [
+        12,
+        16,
+        20,
+        24
+      ],
+      "status": "accepted-window",
+      "system_size": 4,
+      "time": 4.0
+    },
+    {
+      "coefficient_b_2j": 2.789682823420541e-17,
+      "formal_order": 30,
+      "maximum_relative_deviation": 0.001996546464104724,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0009711283022348519,
+      "running_exponents": [
+        29.99267949402699,
+        29.995386323782064,
+        29.997246668213155
+      ],
+      "segments": [
+        70,
+        84,
+        112,
+        140
+      ],
+      "status": "accepted-window",
+      "system_size": 7,
+      "time": 7.0
+    },
+    {
+      "coefficient_b_2j": 4.480431037003135e-15,
+      "formal_order": 28,
+      "maximum_relative_deviation": 0.0037229209307929555,
+      "model": "transverse_field_ising",
+      "relative_mad": 0.0015898577481866345,
+      "running_exponents": [
+        27.986856104683792,
+        27.99126186153768,
+        27.994493759257704
+      ],
+      "segments": [
+        72,
+        90,
+        108,
+        144
+      ],
+      "status": "accepted-window",
+      "system_size": 9,
+      "time": 9.0
+    }
+  ],
+  "assembled_digest": "c4a7ab32c3a904d98c2796acfed262b78a262d168b25d84a0807aa774df67444",
+  "configuration_digest": "1a9b76696fac71ff8d6ddcebd8464af2c5fc4e46ea2abf5493507a0accaf37b8",
+  "failures": [
+    {
+      "formal_order": 18,
+      "model": "heisenberg_chain",
+      "reason": "insufficient-window: no consecutive observations satisfy precision, formal-order, and B_2J plateau criteria",
+      "status": "truncation-dominated",
+      "system_size": 8,
+      "task_id": "1ca1607bc026c3afca734f0b"
+    },
+    {
+      "formal_order": 20,
+      "model": "transverse_field_ising",
+      "reason": "insufficient-window: no consecutive observations satisfy precision, formal-order, and B_2J plateau criteria",
+      "status": "truncation-dominated",
+      "system_size": 9,
+      "task_id": "3c06ed8ffaf248573c2e9eb5"
+    },
+    {
+      "formal_order": 18,
+      "model": "transverse_field_ising",
+      "reason": "insufficient-window: no consecutive observations satisfy precision, formal-order, and B_2J plateau criteria",
+      "status": "truncation-dominated",
+      "system_size": 9,
+      "task_id": "574fc6785f3be7e4384f2919"
+    },
+    {
+      "formal_order": 24,
+      "model": "heisenberg_chain",
+      "reason": "insufficient-window: no consecutive observations satisfy precision, formal-order, and B_2J plateau criteria",
+      "status": "truncation-dominated",
+      "system_size": 7,
+      "task_id": "8c6f91aae0b4427103e2d763"
+    }
+  ],
+  "promotion": [
+    {
+      "automatic_promotion": false,
+      "formal_order": 18,
+      "model": "transverse_field_ising",
+      "status": "truncation-dominated"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 20,
+      "model": "transverse_field_ising",
+      "status": "truncation-dominated"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 22,
+      "model": "transverse_field_ising",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 24,
+      "model": "transverse_field_ising",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 26,
+      "model": "transverse_field_ising",
+      "status": "time-law-failed"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 28,
+      "model": "transverse_field_ising",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 30,
+      "model": "transverse_field_ising",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 18,
+      "model": "heisenberg_chain",
+      "status": "time-law-failed"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 20,
+      "model": "heisenberg_chain",
+      "status": "time-law-failed"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 22,
+      "model": "heisenberg_chain",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 24,
+      "model": "heisenberg_chain",
+      "status": "time-law-failed"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 26,
+      "model": "heisenberg_chain",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 28,
+      "model": "heisenberg_chain",
+      "status": "insufficient-window"
+    },
+    {
+      "automatic_promotion": false,
+      "formal_order": 30,
+      "model": "heisenberg_chain",
+      "status": "time-law-failed"
+    }
+  ],
+  "reviewed_size_max": 100,
+  "schema_version": "assembled-1.0",
+  "size_fits": [
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 18,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 20,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 22,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 24,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 26,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 28,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 30,
+      "model": "transverse_field_ising",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 18,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 20,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 22,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 24,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 26,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 28,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    },
+    {
+      "failure_reasons": [
+        "N=4..10 observations are incomplete"
+      ],
+      "formal_order": 30,
+      "model": "heisenberg_chain",
+      "selected_model": null,
+      "status": "insufficient-window"
+    }
+  ],
+  "study_id": "empirical-high-order-mpf-v2",
+  "time_law_checks": [
+    {
+      "accepted": true,
+      "fitted_exponent": 20.9687730822753,
+      "formal_order": 20,
+      "maximum_relative_coefficient_deviation": 0.007438783985804089,
+      "model": "transverse_field_ising",
+      "segments": 24,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": false,
+      "fitted_exponent": 23.54248463544835,
+      "formal_order": 24,
+      "maximum_relative_coefficient_deviation": 0.5611208350661697,
+      "model": "heisenberg_chain",
+      "segments": 120,
+      "status": "time-law-failed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 31.051305249171282,
+      "formal_order": 30,
+      "maximum_relative_coefficient_deviation": 0.019673786544256357,
+      "model": "transverse_field_ising",
+      "segments": 80,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 28.946665972223325,
+      "formal_order": 28,
+      "maximum_relative_coefficient_deviation": 0.018367023947241965,
+      "model": "heisenberg_chain",
+      "segments": 64,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 18.963341250321637,
+      "formal_order": 18,
+      "maximum_relative_coefficient_deviation": 0.008154765182700478,
+      "model": "transverse_field_ising",
+      "segments": 24,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 22.992256743193266,
+      "formal_order": 22,
+      "maximum_relative_coefficient_deviation": 0.0019776974656422635,
+      "model": "heisenberg_chain",
+      "segments": 32,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 28.98165270876727,
+      "formal_order": 28,
+      "maximum_relative_coefficient_deviation": 0.00500551179751131,
+      "model": "transverse_field_ising",
+      "segments": 64,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 22.991773203346813,
+      "formal_order": 22,
+      "maximum_relative_coefficient_deviation": 0.0035723963187958016,
+      "model": "transverse_field_ising",
+      "segments": 32,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 24.976749989962045,
+      "formal_order": 24,
+      "maximum_relative_coefficient_deviation": 0.006543573825947692,
+      "model": "transverse_field_ising",
+      "segments": 80,
+      "status": "time-law-passed",
+      "system_size": 8
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 18.95960854917674,
+      "formal_order": 18,
+      "maximum_relative_coefficient_deviation": 0.00987802834076533,
+      "model": "transverse_field_ising",
+      "segments": 48,
+      "status": "time-law-passed",
+      "system_size": 8
+    },
+    {
+      "accepted": false,
+      "fitted_exponent": 19.510511095062608,
+      "formal_order": 18,
+      "maximum_relative_coefficient_deviation": 0.24026040329404783,
+      "model": "heisenberg_chain",
+      "segments": 48,
+      "status": "time-law-failed",
+      "system_size": 8
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 25.12904572586199,
+      "formal_order": 24,
+      "maximum_relative_coefficient_deviation": 0.04828646687044064,
+      "model": "transverse_field_ising",
+      "segments": 40,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 18.912538668374005,
+      "formal_order": 18,
+      "maximum_relative_coefficient_deviation": 0.030637089109488806,
+      "model": "heisenberg_chain",
+      "segments": 24,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": false,
+      "fitted_exponent": 20.85340337631208,
+      "formal_order": 20,
+      "maximum_relative_coefficient_deviation": 0.05050717009415125,
+      "model": "heisenberg_chain",
+      "segments": 48,
+      "status": "time-law-failed",
+      "system_size": 4
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 30.997005958937212,
+      "formal_order": 30,
+      "maximum_relative_coefficient_deviation": 0.0006964069031268901,
+      "model": "transverse_field_ising",
+      "segments": 160,
+      "status": "time-law-passed",
+      "system_size": 8
+    },
+    {
+      "accepted": true,
+      "fitted_exponent": 26.98333347580989,
+      "formal_order": 26,
+      "maximum_relative_coefficient_deviation": 0.005344685082063911,
+      "model": "heisenberg_chain",
+      "segments": 48,
+      "status": "time-law-passed",
+      "system_size": 4
+    },
+    {
+      "accepted": false,
+      "fitted_exponent": 30.778352639059236,
+      "formal_order": 30,
+      "maximum_relative_coefficient_deviation": 0.07814021882577096,
+      "model": "heisenberg_chain",
+      "segments": 160,
+      "status": "time-law-failed",
+      "system_size": 4
+    },
+    {
+      "accepted": false,
+      "fitted_exponent": 27.343423263092586,
+      "formal_order": 26,
+      "maximum_relative_coefficient_deviation": 0.12503225802916515,
+      "model": "transverse_field_ising",
+      "segments": 96,
+      "status": "time-law-failed",
+      "system_size": 4
+    }
+  ]
+}

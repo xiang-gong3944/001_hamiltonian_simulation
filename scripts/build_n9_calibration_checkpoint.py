@@ -105,6 +105,7 @@ def _markdown(checkpoint: Mapping[str, Any]) -> str:
             f"{', '.join(str(size) for size in row['missing_or_rejected_sizes'])} | "
             f"{row['time_law_gate']['status']} |"
         )
+    lines.append("")
     lines.extend(
         [
             "## B_2J(N) observations",
