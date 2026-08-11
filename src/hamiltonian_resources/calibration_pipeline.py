@@ -1,0 +1,452 @@
+"""Resumable high-precision calibration tasks and deterministic reduction."""
+
+from __future__ import annotations
+
+import json
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+import mpmath as mp
+
+from .calibration_high_precision import adaptive_mpf_operator_norm_error
+from .calibration_study import (
+    select_asymptotic_window,
+    select_size_law_model,
+    validate_time_law,
+)
+from .empirical import canonical_json_digest
+from .hamiltonians import PauliHamiltonian, heisenberg_chain, transverse_field_ising
+from .multiproduct import mpf_richardson_diagnostics
+
+
+@dataclass(frozen=True)
+class CalibrationPoint:
+    time: float
+    segments: int
+
+
+@dataclass(frozen=True)
+class CalibrationTask:
+    kind: str
+    model: str
+    formal_order: int
+    system_size: int
+    points: tuple[CalibrationPoint, ...]
+
+    @property
+    def branch_count(self) -> int:
+        return self.formal_order // 2
+
+    @property
+    def task_id(self) -> str:
+        return canonical_json_digest(asdict(self))[:24]
+
+
+def load_calibration_config(path: Path) -> dict[str, Any]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise TypeError("calibration configuration must be an object")
+    required = {
+        "study_id",
+        "models",
+        "formal_orders",
+        "sizes",
+        "segment_ratios",
+        "reviewed_size_max",
+        "backend",
+    }
+    missing = required - raw.keys()
+    if missing:
+        raise ValueError(f"calibration configuration is missing {sorted(missing)}")
+    reviewed_size_max = int(raw["reviewed_size_max"])
+    if reviewed_size_max < max(int(value) for value in raw["sizes"]):
+        raise ValueError("reviewed_size_max is below the observed size matrix")
+    return raw
+
+
+def expand_calibration_tasks(config: Mapping[str, Any]) -> tuple[CalibrationTask, ...]:
+    tasks: list[CalibrationTask] = []
+    ratios_by_order = config["segment_ratios"]
+    if not isinstance(ratios_by_order, Mapping):
+        raise TypeError("segment_ratios must be an object keyed by formal order")
+    for model in config["models"]:
+        for formal_order_raw in config["formal_orders"]:
+            formal_order = int(formal_order_raw)
+            if formal_order % 2 or not 4 <= formal_order <= 30:
+                raise ValueError("MPF formal orders must be even and lie in [4, 30]")
+            ratios = ratios_by_order[str(formal_order)]
+            for size_raw in config["sizes"]:
+                size = int(size_raw)
+                points = tuple(
+                    CalibrationPoint(float(size), max(1, round(float(ratio) * size)))
+                    for ratio in ratios
+                )
+                tasks.append(
+                    CalibrationTask("primary", str(model), formal_order, size, points)
+                )
+    for raw in config.get("time_law_checks", []):
+        size = int(raw["system_size"])
+        fixed_segments = int(raw["segments"])
+        points = tuple(
+            CalibrationPoint(float(factor) * size, fixed_segments)
+            for factor in raw.get("time_factors", (0.8, 1.0, 1.2))
+        )
+        tasks.append(
+            CalibrationTask(
+                "time-law",
+                str(raw["model"]),
+                int(raw["formal_order"]),
+                size,
+                points,
+            )
+        )
+    identifiers = [task.task_id for task in tasks]
+    if len(identifiers) != len(set(identifiers)):
+        raise ValueError("calibration configuration expands to duplicate tasks")
+    return tuple(sorted(tasks, key=lambda task: task.task_id))
+
+
+def _hamiltonian(model: str, size: int) -> PauliHamiltonian:
+    if model == "transverse_field_ising":
+        return transverse_field_ising(size, coupling=1.0, field=3.0, periodic=False)
+    if model == "heisenberg_chain":
+        return heisenberg_chain(size, coupling=1.0, field_z=0.3)
+    raise ValueError(f"unsupported calibration model: {model!r}")
+
+
+def _coefficient_strings(
+    error_decimal: str,
+    *,
+    time: float,
+    segments: int,
+    formal_order: int,
+    digits: int,
+) -> tuple[str, str, str]:
+    diagnostics = mpf_richardson_diagnostics(formal_order // 2)
+    with mp.workdps(digits):
+        error = mp.mpf(error_decimal)
+        coefficient = error * segments**formal_order / mp.mpf(str(time)) ** (
+            formal_order + 1
+        )
+        sigma = mp.mpf(abs(diagnostics.leading_omitted_moment.numerator)) / (
+            diagnostics.leading_omitted_moment.denominator
+        )
+        normalized = coefficient / sigma
+        gamma = normalized ** (mp.mpf(1) / (formal_order + 1))
+        return tuple(
+            mp.nstr(value, n=digits)
+            for value in (coefficient, normalized, gamma)
+        )  # type: ignore[return-value]
+
+
+def run_calibration_task(
+    config: Mapping[str, Any],
+    task: CalibrationTask,
+) -> dict[str, Any]:
+    hamiltonian = _hamiltonian(task.model, task.system_size)
+    observations: list[dict[str, Any]] = []
+    for point in task.points:
+        estimate = adaptive_mpf_operator_norm_error(
+            hamiltonian,
+            point.time,
+            point.segments,
+            task.branch_count,
+            backend=str(config["backend"]),  # type: ignore[arg-type]
+            digit_increment=int(config.get("digit_increment", 32)),
+            max_digits=int(config.get("max_digits", 512)),
+            relative_tolerance=float(config.get("relative_tolerance", 1e-8)),
+        )
+        coefficient, normalized, gamma = _coefficient_strings(
+            estimate.value_decimal,
+            time=point.time,
+            segments=point.segments,
+            formal_order=task.formal_order,
+            digits=estimate.decimal_digits,
+        )
+        observations.append(
+            {
+                "time": str(point.time),
+                "segments": point.segments,
+                "error": estimate.value_decimal,
+                "coefficient_b_2j": coefficient,
+                "normalized_c_2j": normalized,
+                "gamma_2j": gamma,
+                "precision_converged": estimate.converged,
+                "decimal_digits": estimate.decimal_digits,
+                "attempted_digits": list(estimate.attempted_digits),
+                "relative_precision_change": estimate.relative_precision_change,
+                "backend": estimate.backend,
+                "backend_version": estimate.backend_version,
+                "interval_certified": estimate.interval_certified,
+                "interval_relative_width": estimate.interval_relative_width,
+                "schedule_digest": estimate.schedule_digest,
+                "term_order_digest": estimate.term_order_digest,
+                "wall_seconds": estimate.wall_seconds,
+            }
+        )
+    payload = {
+        "schema_version": "task-1.0",
+        "study_id": config["study_id"],
+        "configuration_digest": canonical_json_digest(config),
+        "task": asdict(task),
+        "task_id": task.task_id,
+        "observations": observations,
+    }
+    payload["scientific_digest"] = canonical_json_digest(
+        {
+            **payload,
+            "observations": [
+                {key: value for key, value in row.items() if key != "wall_seconds"}
+                for row in observations
+            ],
+        }
+    )
+    return payload
+
+
+def _atomic_json_write(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    temporary.replace(path)
+
+
+def run_and_write_task(
+    config: Mapping[str, Any],
+    task: CalibrationTask,
+    shard_directory: Path,
+) -> Path:
+    destination = shard_directory / f"{task.task_id}.json"
+    if destination.exists():
+        existing = json.loads(destination.read_text(encoding="utf-8"))
+        if (
+            existing.get("configuration_digest") == canonical_json_digest(config)
+            and existing.get("task_id") == task.task_id
+        ):
+            return destination
+    _atomic_json_write(destination, run_calibration_task(config, task))
+    return destination
+
+
+def run_calibration_matrix(
+    config: Mapping[str, Any],
+    shard_directory: Path,
+    *,
+    workers: int = 1,
+) -> tuple[Path, ...]:
+    tasks = expand_calibration_tasks(config)
+    if workers <= 1:
+        return tuple(run_and_write_task(config, task, shard_directory) for task in tasks)
+    completed: list[Path] = []
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(run_and_write_task, config, task, shard_directory): task
+            for task in tasks
+        }
+        for future in as_completed(futures):
+            completed.append(future.result())
+    return tuple(sorted(completed))
+
+
+def reduce_calibration_shards(
+    config: Mapping[str, Any],
+    shard_paths: Iterable[Path],
+    *,
+    require_complete: bool = True,
+) -> dict[str, Any]:
+    expected = {task.task_id: task for task in expand_calibration_tasks(config)}
+    configuration_digest = canonical_json_digest(config)
+    shards: dict[str, dict[str, Any]] = {}
+    for path in shard_paths:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        task_id = str(raw["task_id"])
+        if raw.get("configuration_digest") != configuration_digest:
+            raise ValueError(f"shard {path} has a different configuration digest")
+        if task_id not in expected:
+            raise ValueError(f"shard {path} is not in the configured task inventory")
+        if task_id in shards:
+            raise ValueError(f"duplicate shard for task {task_id}")
+        shards[task_id] = raw
+    missing = sorted(expected.keys() - shards.keys())
+    if require_complete and missing:
+        raise ValueError(f"missing {len(missing)} configured calibration shards")
+    reduced_tasks = []
+    for task_id in sorted(shards):
+        raw = shards[task_id]
+        reduced_tasks.append(
+            {
+                "task_id": task_id,
+                "task": raw["task"],
+                "scientific_digest": raw["scientific_digest"],
+                "observations": sorted(
+                    raw["observations"],
+                    key=lambda row: (float(row["time"]), int(row["segments"])),
+                ),
+            }
+        )
+    payload = {
+        "schema_version": "reduced-1.0",
+        "study_id": config["study_id"],
+        "configuration": dict(config),
+        "configuration_digest": configuration_digest,
+        "reviewed_size_max": int(config["reviewed_size_max"]),
+        "expected_task_ids": sorted(expected),
+        "missing_task_ids": missing,
+        "tasks": reduced_tasks,
+    }
+    payload["reduced_digest"] = canonical_json_digest(payload)
+    return payload
+
+
+def _fit_payload(selection: Any) -> dict[str, Any]:
+    return {
+        "selected_model": selection.selected.model if selection.selected else None,
+        "selected_parameters": (
+            dict(selection.selected.parameters) if selection.selected else None
+        ),
+        "failure_reasons": list(selection.failure_reasons),
+        "candidates": [
+            {
+                "model": fit.model,
+                "parameters": dict(fit.parameters),
+                "aicc": fit.aicc,
+                "converged": fit.converged,
+                "holdout_errors": list(dict(selection.holdout_errors)[fit.model]),
+                "stability": {
+                    "accepted": stability.accepted,
+                    "prediction_spreads": dict(stability.prediction_spreads),
+                    "parameter_stable": stability.parameter_stable,
+                    "residual_drift_free": stability.residual_drift_free,
+                    "failure_reasons": list(stability.failure_reasons),
+                },
+            }
+            for fit, stability in zip(
+                selection.candidates,
+                selection.stability,
+                strict=True,
+            )
+        ],
+    }
+
+
+def assemble_calibration_artifacts(reduced: Mapping[str, Any]) -> dict[str, Any]:
+    accepted_windows: list[dict[str, Any]] = []
+    time_checks: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for task_result in reduced["tasks"]:
+        task = task_result["task"]
+        observations = task_result["observations"]
+        try:
+            if task["kind"] == "primary":
+                time = float(observations[0]["time"])
+                window = select_asymptotic_window(
+                    tuple(
+                        (
+                            int(row["segments"]),
+                            float(row["error"]),
+                            bool(row["precision_converged"]),
+                        )
+                        for row in observations
+                    ),
+                    time,
+                    int(task["formal_order"]),
+                )
+                accepted_windows.append(
+                    {
+                        "model": task["model"],
+                        "formal_order": int(task["formal_order"]),
+                        "system_size": int(task["system_size"]),
+                        "time": time,
+                        "segments": [point[0] for point in window.observations],
+                        "running_exponents": list(window.running_exponents),
+                        "coefficient_b_2j": window.median_coefficient_b_2j,
+                        "maximum_relative_deviation": (
+                            window.maximum_relative_deviation
+                        ),
+                        "relative_mad": window.relative_median_absolute_deviation,
+                    }
+                )
+            else:
+                validation = validate_time_law(
+                    tuple(
+                        (
+                            float(row["time"]),
+                            int(row["segments"]),
+                            float(row["error"]),
+                            bool(row["precision_converged"]),
+                        )
+                        for row in observations
+                    ),
+                    int(task["formal_order"]),
+                )
+                time_checks.append(
+                    {
+                        "model": task["model"],
+                        "formal_order": int(task["formal_order"]),
+                        "system_size": int(task["system_size"]),
+                        "segments": int(observations[0]["segments"]),
+                        "fitted_exponent": validation.fitted_exponent,
+                        "maximum_relative_coefficient_deviation": (
+                            validation.maximum_relative_coefficient_deviation
+                        ),
+                        "accepted": validation.accepted,
+                    }
+                )
+        except ValueError as error:
+            failures.append(
+                {
+                    "task_id": task_result["task_id"],
+                    "model": task["model"],
+                    "formal_order": int(task["formal_order"]),
+                    "system_size": int(task["system_size"]),
+                    "reason": str(error),
+                }
+            )
+    fits: list[dict[str, Any]] = []
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for row in accepted_windows:
+        grouped.setdefault((row["model"], row["formal_order"]), []).append(row)
+    for (model, formal_order), rows in sorted(grouped.items()):
+        rows.sort(key=lambda row: row["system_size"])
+        sizes = tuple(int(row["system_size"]) for row in rows)
+        if all(size in sizes for size in range(4, 11)):
+            selection = select_size_law_model(
+                sizes,
+                tuple(float(row["coefficient_b_2j"]) for row in rows),
+                reviewed_size_max=int(reduced["reviewed_size_max"]),
+            )
+            fits.append(
+                {
+                    "model": model,
+                    "formal_order": formal_order,
+                    **_fit_payload(selection),
+                }
+            )
+        else:
+            fits.append(
+                {
+                    "model": model,
+                    "formal_order": formal_order,
+                    "selected_model": None,
+                    "failure_reasons": ["N=4..10 observations are incomplete"],
+                }
+            )
+    payload = {
+        "schema_version": "assembled-1.0",
+        "study_id": reduced["study_id"],
+        "configuration_digest": reduced["configuration_digest"],
+        "reviewed_size_max": int(reduced["reviewed_size_max"]),
+        "accepted_windows": accepted_windows,
+        "time_law_checks": time_checks,
+        "size_fits": fits,
+        "failures": failures,
+    }
+    payload["assembled_digest"] = canonical_json_digest(payload)
+    return payload

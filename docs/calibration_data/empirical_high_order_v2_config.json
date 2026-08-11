@@ -1,0 +1,42 @@
+{
+  "backend": "flint",
+  "digit_increment": 32,
+  "formal_orders": [18, 20, 22, 24, 26, 28, 30],
+  "max_digits": 256,
+  "models": ["transverse_field_ising", "heisenberg_chain"],
+  "relative_tolerance": 1e-08,
+  "reviewed_size_max": 100,
+  "segment_ratios": {
+    "18": [3.0, 4.0, 5.0, 6.0],
+    "20": [3.0, 4.0, 5.0, 6.0],
+    "22": [4.0, 5.0, 6.0, 8.0],
+    "24": [5.0, 6.0, 8.0, 10.0],
+    "26": [6.0, 8.0, 10.0, 12.0],
+    "28": [8.0, 10.0, 12.0, 16.0],
+    "30": [10.0, 12.0, 16.0, 20.0]
+  },
+  "sizes": [4, 5, 6, 7, 8, 9, 10],
+  "study_id": "empirical-high-order-mpf-v2",
+  "time_law_checks": [
+    {"formal_order": 18, "model": "transverse_field_ising", "segments": 24, "system_size": 4},
+    {"formal_order": 20, "model": "transverse_field_ising", "segments": 24, "system_size": 4},
+    {"formal_order": 22, "model": "transverse_field_ising", "segments": 32, "system_size": 4},
+    {"formal_order": 24, "model": "transverse_field_ising", "segments": 40, "system_size": 4},
+    {"formal_order": 26, "model": "transverse_field_ising", "segments": 48, "system_size": 4},
+    {"formal_order": 28, "model": "transverse_field_ising", "segments": 64, "system_size": 4},
+    {"formal_order": 30, "model": "transverse_field_ising", "segments": 80, "system_size": 4},
+    {"formal_order": 18, "model": "heisenberg_chain", "segments": 24, "system_size": 4},
+    {"formal_order": 20, "model": "heisenberg_chain", "segments": 24, "system_size": 4},
+    {"formal_order": 22, "model": "heisenberg_chain", "segments": 32, "system_size": 4},
+    {"formal_order": 24, "model": "heisenberg_chain", "segments": 40, "system_size": 4},
+    {"formal_order": 26, "model": "heisenberg_chain", "segments": 48, "system_size": 4},
+    {"formal_order": 28, "model": "heisenberg_chain", "segments": 64, "system_size": 4},
+    {"formal_order": 30, "model": "heisenberg_chain", "segments": 80, "system_size": 4},
+    {"formal_order": 18, "model": "transverse_field_ising", "segments": 48, "system_size": 8},
+    {"formal_order": 24, "model": "transverse_field_ising", "segments": 80, "system_size": 8},
+    {"formal_order": 30, "model": "transverse_field_ising", "segments": 160, "system_size": 8},
+    {"formal_order": 18, "model": "heisenberg_chain", "segments": 48, "system_size": 8},
+    {"formal_order": 24, "model": "heisenberg_chain", "segments": 80, "system_size": 8},
+    {"formal_order": 30, "model": "heisenberg_chain", "segments": 160, "system_size": 8}
+  ]
+}
