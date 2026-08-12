@@ -29,6 +29,7 @@ dev = ["pytest>=8,<9", "ruff>=0.5,<1"]
 
 [project.scripts]
 hamiltonian-benchmark = "hamiltonian_resources.benchmark_cli:main"
+hamiltonian-resource-grid = "hamiltonian_resources.resource_grid_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

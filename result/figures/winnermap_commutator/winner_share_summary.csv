@@ -1,0 +1,13 @@
+model,metric,winner,count,fraction
+TFIM,cnot_count,Trotter,62714,0.9277218934911242
+TFIM,cnot_count,MPF,0,0.0
+TFIM,cnot_count,QSVT,4886,0.07227810650887574
+TFIM,t_count,Trotter,31598,0.4674260355029586
+TFIM,t_count,MPF,0,0.0
+TFIM,t_count,QSVT,36002,0.5325739644970414
+Heisenberg,cnot_count,Trotter,57610,0.8522189349112426
+Heisenberg,cnot_count,MPF,0,0.0
+Heisenberg,cnot_count,QSVT,9990,0.1477810650887574
+Heisenberg,t_count,Trotter,23875,0.3531804733727811
+Heisenberg,t_count,MPF,0,0.0
+Heisenberg,t_count,QSVT,43725,0.646819526627219

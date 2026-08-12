@@ -103,7 +103,8 @@ def test_reviewed_package_calibrations_match_the_reviewed_artifacts():
     fits_path = (
         project_root / "docs" / "calibration_data" / "empirical_1d_v1_fits.json"
     )
-    source_digest = hashlib.sha256(accepted_path.read_bytes()).hexdigest()
+    canonical_source = accepted_path.read_bytes().replace(b"\r\n", b"\n")
+    source_digest = hashlib.sha256(canonical_source).hexdigest()
     accepted = json.loads(accepted_path.read_text(encoding="utf-8"))
     fits = json.loads(fits_path.read_text(encoding="utf-8"))
     registry = default_empirical_calibrations()
