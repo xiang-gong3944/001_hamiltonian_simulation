@@ -1,0 +1,3058 @@
+{
+  "config_digest": "c1ad72de628f71283ac69037e9bbe97c3e773952f5abde5eac91397ca322d1a6",
+  "configuration": {
+    "log10_target_errors": [
+      -1.0,
+      -1.1,
+      -1.2,
+      -1.3,
+      -1.4,
+      -1.5,
+      -1.6,
+      -1.7,
+      -1.8,
+      -1.9,
+      -2.0,
+      -2.1,
+      -2.2,
+      -2.3,
+      -2.4,
+      -2.5,
+      -2.6,
+      -2.7,
+      -2.8,
+      -2.9,
+      -3.0,
+      -3.1,
+      -3.2,
+      -3.3,
+      -3.4,
+      -3.5,
+      -3.6,
+      -3.7,
+      -3.8,
+      -3.9,
+      -4.0
+    ],
+    "methods": [
+      {
+        "family": "trotter",
+        "order": 2
+      },
+      {
+        "error_policy": "empirical-operator-norm",
+        "family": "trotter",
+        "order": 2
+      },
+      {
+        "family": "trotter",
+        "order": 4
+      },
+      {
+        "error_policy": "empirical-operator-norm",
+        "family": "trotter",
+        "order": 4
+      },
+      {
+        "family": "trotter",
+        "order": 6
+      },
+      {
+        "error_policy": "empirical-operator-norm",
+        "family": "trotter",
+        "order": 6
+      },
+      {
+        "family": "qsvt"
+      },
+      {
+        "branch_count_policy": "mizuta2026-theorem6",
+        "error_method": "empirical-operator-norm",
+        "family": "multiproduct",
+        "schedule": "new"
+      },
+      {
+        "branch_count_policy": "mizuta2026-theorem6",
+        "error_method": "mizuta2026-commutator-ideal-rigorous",
+        "family": "multiproduct",
+        "schedule": "new"
+      }
+    ],
+    "models": [
+      {
+        "model": "transverse_field_ising",
+        "parameters": {
+          "coupling": 1.0,
+          "field": 3.0,
+          "periodic": false
+        }
+      },
+      {
+        "model": "heisenberg_chain",
+        "parameters": {
+          "coupling": 1.0,
+          "field_z": 0.3
+        }
+      }
+    ],
+    "synthesis_error_fraction": 0.1,
+    "system_sizes": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120
+    ],
+    "time": {
+      "coefficient": 1.0,
+      "mode": "proportional"
+    },
+    "trotter_partition": "auto"
+  },
+  "execution_digest": "47bed9c088a2186f2da2678e794654d11e3521d16e4e07461cf158e45364b681",
+  "grid_schema_version": "1.0",
+  "run": {
+    "created_at_utc": "2026-08-12T00:11:58.358108+00:00",
+    "run_id": "a8fa234e-a646-4911-8402-a67c302db4ae",
+    "status": "running",
+    "updated_at_utc": "2026-08-12T01:22:06.890607+00:00"
+  },
+  "shards": {
+    "heisenberg_chain:N003": {
+      "checksum_sha256": "413ffa888474b7f41d8057470146da20a1f28bc612b69ce1159530200beace27",
+      "completed_at_utc": "2026-08-12T00:31:04.751751+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N003.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 124,
+        "ok": 155
+      }
+    },
+    "heisenberg_chain:N004": {
+      "checksum_sha256": "59fa6e250dc46b71c1b60f38f59f1497adad7a754c94e802468a6300ac77be72",
+      "completed_at_utc": "2026-08-12T00:31:25.367431+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N004.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N005": {
+      "checksum_sha256": "2c0ee5a26a23f7539601ece5a153bf435ae91631d2ba178cea12e840fea55e54",
+      "completed_at_utc": "2026-08-12T00:31:34.882515+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N005.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N006": {
+      "checksum_sha256": "4764931e792f25eba606066f66015af5189d8628a6910c100bbfd5bd13ef3250",
+      "completed_at_utc": "2026-08-12T00:31:44.329819+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N006.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N007": {
+      "checksum_sha256": "2226722c1aa50d3ca95b690977526cdd69c9b9054f1af496d7c9b53ed5d3b35f",
+      "completed_at_utc": "2026-08-12T00:32:04.504119+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N007.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N008": {
+      "checksum_sha256": "debd543aeff523057d217c26aa6af51930e5ae1d83a5b4c5c7bd11f24ab15b18",
+      "completed_at_utc": "2026-08-12T00:33:13.833973+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N008.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N009": {
+      "checksum_sha256": "29519e5121d27fa3674f6c6e40e2aa96df2186921809afc58497493f55ddb7ae",
+      "completed_at_utc": "2026-08-12T00:33:27.809032+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N009.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N010": {
+      "checksum_sha256": "36b6532cd94f3bdfcefde3d05d5f4f78c8d9dd5c9c32e3610f79ad9ec75f0c94",
+      "completed_at_utc": "2026-08-12T00:33:33.389906+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N010.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N011": {
+      "checksum_sha256": "429deb74be13c13c1e00352ecb8c092c0ab58bcefeef4f2c6922f58debe54962",
+      "completed_at_utc": "2026-08-12T00:33:44.258073+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N011.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "heisenberg_chain:N012": {
+      "checksum_sha256": "c7af5493080b78959ab44ff920b1aa949e60984c15ed2e9f4094b29e8f85ff93",
+      "completed_at_utc": "2026-08-12T00:33:51.306535+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N012.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 1,
+        "ok": 278
+      }
+    },
+    "heisenberg_chain:N013": {
+      "checksum_sha256": "54cd0a2e2ea3f3bc7edae3c8cf79190d4ffe13728a90860da151064725b7eb0f",
+      "completed_at_utc": "2026-08-12T00:34:15.669046+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N013.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 2,
+        "ok": 277
+      }
+    },
+    "heisenberg_chain:N014": {
+      "checksum_sha256": "05f15dc2a81911ccd3098e131a10ab7b8c00d3df17115322e901c40718cf99e1",
+      "completed_at_utc": "2026-08-12T00:34:21.843651+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N014.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 2,
+        "ok": 277
+      }
+    },
+    "heisenberg_chain:N015": {
+      "checksum_sha256": "6d9ff813b176ce37ab6a54198f62f0226b5fc1356d02e7814057e323cda67dd6",
+      "completed_at_utc": "2026-08-12T00:34:26.213455+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N015.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 3,
+        "ok": 276
+      }
+    },
+    "heisenberg_chain:N016": {
+      "checksum_sha256": "31e837a442ee186106af5befa86a1bf9cd5b58af8947e29f19b821a9fd64a077",
+      "completed_at_utc": "2026-08-12T00:34:40.885414+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N016.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 4,
+        "ok": 275
+      }
+    },
+    "heisenberg_chain:N017": {
+      "checksum_sha256": "40fe5234b09303ca368e97b680c17f0fe2c6377e651173c80e84888a86135de8",
+      "completed_at_utc": "2026-08-12T00:35:23.631910+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N017.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 4,
+        "ok": 275
+      }
+    },
+    "heisenberg_chain:N018": {
+      "checksum_sha256": "80b983226ecf0d8bdd8b54dae4a1c24593416dd426e7192f580b8a1c32b5f1eb",
+      "completed_at_utc": "2026-08-12T00:35:42.692773+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N018.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 5,
+        "ok": 274
+      }
+    },
+    "heisenberg_chain:N019": {
+      "checksum_sha256": "cb2cef674ee4eac344518ca9bb27958a1055d720fc4c53fea2be697b9b5492dd",
+      "completed_at_utc": "2026-08-12T00:35:51.607986+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N019.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 5,
+        "ok": 274
+      }
+    },
+    "heisenberg_chain:N020": {
+      "checksum_sha256": "ba59e60d907c1bcf4df08c2bb00670fed38ff3b530ec8b8fa1a5600c10423018",
+      "completed_at_utc": "2026-08-12T00:36:05.361673+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N020.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 5,
+        "ok": 274
+      }
+    },
+    "heisenberg_chain:N021": {
+      "checksum_sha256": "38655720c05c2cc92bb237c2cac819d78da115f9378dface9454587850b52fb5",
+      "completed_at_utc": "2026-08-12T00:36:08.730459+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N021.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 6,
+        "ok": 273
+      }
+    },
+    "heisenberg_chain:N022": {
+      "checksum_sha256": "12a8f15e449f280d052a75e1dd71f18cd86da7780bb8fc25f1994d9aba5e30c5",
+      "completed_at_utc": "2026-08-12T00:36:22.683985+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N022.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 6,
+        "ok": 273
+      }
+    },
+    "heisenberg_chain:N023": {
+      "checksum_sha256": "4a712b712bb5116b6ece86927245639ff34781db8ff6bf06ca6400391384828f",
+      "completed_at_utc": "2026-08-12T00:36:26.281181+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N023.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "heisenberg_chain:N024": {
+      "checksum_sha256": "2a8f9a5025980c8c3dd8eee26c0853508366dec3e4413664664d20068d2f7c57",
+      "completed_at_utc": "2026-08-12T00:36:35.106735+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N024.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "heisenberg_chain:N025": {
+      "checksum_sha256": "e3d04d0e11f9839cf6baf70eca098d8724f0c244b937c0fac99d8c5ae3634132",
+      "completed_at_utc": "2026-08-12T00:36:38.442314+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N025.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "heisenberg_chain:N026": {
+      "checksum_sha256": "dd1141e3dffd996a834210318636c9a72abc9159cebd7d0652bee3e9358df50e",
+      "completed_at_utc": "2026-08-12T00:37:02.048942+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N026.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "heisenberg_chain:N027": {
+      "checksum_sha256": "a65f45c11f0c14bb8ec1a100b7712b36e3c2b0e17938386e2f44654efe1c724d",
+      "completed_at_utc": "2026-08-12T00:37:03.599446+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N027.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "heisenberg_chain:N028": {
+      "checksum_sha256": "9d93275b8c99a0d415fa66b278c8431be7183e8ecf1bfb4b616b73c32c2a66a7",
+      "completed_at_utc": "2026-08-12T00:37:14.434156+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N028.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "heisenberg_chain:N029": {
+      "checksum_sha256": "9af456233b4c448957c8c90250ca494409ade18d6ebcb7bc75329ecd8cbb9985",
+      "completed_at_utc": "2026-08-12T00:37:14.852436+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N029.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "heisenberg_chain:N030": {
+      "checksum_sha256": "740e861af6d5d0b50be34d53e532627024cda0444fb933e5c9e4663136f070b6",
+      "completed_at_utc": "2026-08-12T00:37:22.318695+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N030.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "heisenberg_chain:N031": {
+      "checksum_sha256": "7cdfcfb41af907b48e7af87e32e2a46b84dc0250b28cf2358b6e6d1bcd8c78e6",
+      "completed_at_utc": "2026-08-12T00:37:40.526576+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N031.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "heisenberg_chain:N032": {
+      "checksum_sha256": "45de3401b925271a32af402431cb01ac27081240c2fcb4ea6d0c7e191dab287b",
+      "completed_at_utc": "2026-08-12T00:37:43.905199+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N032.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "heisenberg_chain:N033": {
+      "checksum_sha256": "9d44e3062e805f31d4a5332b81afcef86fdf1d9e3e74d36b05e636b0f94795a3",
+      "completed_at_utc": "2026-08-12T00:38:32.910115+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N033.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "heisenberg_chain:N034": {
+      "checksum_sha256": "2dd19b8a3cb8937de86130feba3a5bbf4abe735653a8d28fa1c5eb227b04d98f",
+      "completed_at_utc": "2026-08-12T00:38:56.510193+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N034.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "heisenberg_chain:N035": {
+      "checksum_sha256": "6425ed50ce911200c59a2aa3620acfe19420b392739496925ba7dcb52185cc7e",
+      "completed_at_utc": "2026-08-12T00:39:10.897340+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N035.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "heisenberg_chain:N036": {
+      "checksum_sha256": "24274456857c6bc9567dd9bb1cffd182c5c3232756f2dd31ad535d981d47c564",
+      "completed_at_utc": "2026-08-12T00:39:23.235502+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N036.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "heisenberg_chain:N037": {
+      "checksum_sha256": "797fb21b30c88c2fc6fa9ae9ad6be09b10f54728ed1a7fbeec88107e8110ecf9",
+      "completed_at_utc": "2026-08-12T00:39:31.747843+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N037.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "heisenberg_chain:N038": {
+      "checksum_sha256": "c70bec943afb69a892bd5fe2e3b177ead7eb7eccb9bd41d7d9ab340cc4120b1c",
+      "completed_at_utc": "2026-08-12T00:39:50.194450+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N038.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "heisenberg_chain:N039": {
+      "checksum_sha256": "b79a051b02091ff10ebce96dc239d623b42c96cb97bf93d56ce1e342b4bf05d4",
+      "completed_at_utc": "2026-08-12T00:39:53.874755+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N039.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "heisenberg_chain:N040": {
+      "checksum_sha256": "3451d5522c6397116f8c6a3cc263907c488a4cb6b78c9b274c9f3fa811dce625",
+      "completed_at_utc": "2026-08-12T00:40:06.404197+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N040.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "heisenberg_chain:N041": {
+      "checksum_sha256": "9d9873708d695b92946749767801a3d79138abda388295d003e7c4217d91acda",
+      "completed_at_utc": "2026-08-12T00:40:12.730957+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N041.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "heisenberg_chain:N042": {
+      "checksum_sha256": "5d824a0e4bee152409e94f91cece1cc999d236be4e6e80bb9feb1224b0b8fe3e",
+      "completed_at_utc": "2026-08-12T00:40:38.730842+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N042.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "heisenberg_chain:N043": {
+      "checksum_sha256": "b04771cb342420013c76817930edd71cf4d2c8eff14a6ded6cd31a560e5c7af0",
+      "completed_at_utc": "2026-08-12T00:40:39.742200+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N043.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "heisenberg_chain:N044": {
+      "checksum_sha256": "11622ccb936fcbd1400659de13ee0295d39cb998ea270295847f60c656082a0f",
+      "completed_at_utc": "2026-08-12T00:40:55.609603+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N044.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "heisenberg_chain:N045": {
+      "checksum_sha256": "c598287bdc9fb33b396bd5fd111904d6bfb85f6e957477ea798daf3ce07c802d",
+      "completed_at_utc": "2026-08-12T00:40:58.928669+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N045.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N046": {
+      "checksum_sha256": "aca865d031d4661becdad06933dc484898b330be36fe86260aef12dd1f679312",
+      "completed_at_utc": "2026-08-12T00:41:10.738170+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N046.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N047": {
+      "checksum_sha256": "1f5ca2aebec976c249a287cd81f3b0f30c4a517f44708ad167b2e4e68a4acc37",
+      "completed_at_utc": "2026-08-12T00:41:26.889696+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N047.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N048": {
+      "checksum_sha256": "15a4892c0124b2f0007e8afd0ec66285373ff941b14a0734a4e7ae8f493d3c6b",
+      "completed_at_utc": "2026-08-12T00:41:32.926213+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N048.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N049": {
+      "checksum_sha256": "af27b2fc9bc5625895286eab16424c24fb8918eb3cc5cc85728d6d2ccce028fc",
+      "completed_at_utc": "2026-08-12T00:42:23.784672+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N049.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N050": {
+      "checksum_sha256": "bdb24e02a173e5a0bf5f7e31e3d4821cb8d37204be3b99832b0341c8d30426e3",
+      "completed_at_utc": "2026-08-12T00:42:48.891701+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N050.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "heisenberg_chain:N051": {
+      "checksum_sha256": "709a641806f0b83141f1bd52b4dcf7ca027444d7419a565baa506dd582dd61f9",
+      "completed_at_utc": "2026-08-12T00:43:10.211888+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N051.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N052": {
+      "checksum_sha256": "b5281c819564dcb761ddf24b11e9dfb004be698958f3908f6661c333d0c548b2",
+      "completed_at_utc": "2026-08-12T00:43:26.111705+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N052.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N053": {
+      "checksum_sha256": "6238895b5825ffaad19dc0da1654d42aadff43fc1217708a1665a010bbecc427",
+      "completed_at_utc": "2026-08-12T00:43:38.102855+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N053.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N054": {
+      "checksum_sha256": "c3a71854f4e5de80508c87f5d407683791a6974367ed2ceeecffe0325611fc3e",
+      "completed_at_utc": "2026-08-12T00:44:01.263634+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N054.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N055": {
+      "checksum_sha256": "49ecbece74e18c5153a5350ee4590823a14394648ccf68f0047683d99655e5f6",
+      "completed_at_utc": "2026-08-12T00:44:01.365526+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N055.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N056": {
+      "checksum_sha256": "e833b812f6a0f642a6c84ea62ac9b0733653c49735f848fc52ade6c88f96e69c",
+      "completed_at_utc": "2026-08-12T00:44:26.045198+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N056.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "heisenberg_chain:N057": {
+      "checksum_sha256": "7a373d46f9c814f5c4addb63cf596c601ac9c303e1f68f542dce9c014fe85880",
+      "completed_at_utc": "2026-08-12T00:44:32.389801+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N057.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N058": {
+      "checksum_sha256": "a70535379600926445a58604017b1136d9a18cf2923ed098877cf8c71509c863",
+      "completed_at_utc": "2026-08-12T00:45:05.300799+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N058.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N059": {
+      "checksum_sha256": "e12f10be5121d303e1da52e40f300f7f08a46b00f1c97261a6e81cba9357d279",
+      "completed_at_utc": "2026-08-12T00:45:07.513467+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N059.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N060": {
+      "checksum_sha256": "9789e94966e04f02a148e4b83db392d0d0a26e2e686e45c0c031f51e5fe6e31c",
+      "completed_at_utc": "2026-08-12T00:45:30.089408+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N060.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N061": {
+      "checksum_sha256": "8b0e50d9c92b744564c288b09a0741c5ad698240a3d8eb2bc71c2845fa42d051",
+      "completed_at_utc": "2026-08-12T00:45:37.207159+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N061.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N062": {
+      "checksum_sha256": "3d9b1a3241afcb5b3f46755f6e02d793ff2a37e89387de62d5aec8531a6268ff",
+      "completed_at_utc": "2026-08-12T00:45:54.151286+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N062.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N063": {
+      "checksum_sha256": "097ac547408090b53b978c003021ecfb02c69c7806cf5e233f381a2ded5a3621",
+      "completed_at_utc": "2026-08-12T00:46:04.949604+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N063.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "heisenberg_chain:N064": {
+      "checksum_sha256": "6082aa6ec61e5709badec88cdf415cbd11a117956c39b8048312f2dec657659c",
+      "completed_at_utc": "2026-08-12T00:46:20.588933+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N064.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N065": {
+      "checksum_sha256": "672553f06314d82ae37abd5caeefbca7c70300f8a166fed9a8fcad972cf6a97b",
+      "completed_at_utc": "2026-08-12T00:47:05.339425+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N065.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N066": {
+      "checksum_sha256": "3de80bf4ae6972a6fbde58367e16f7a35dae8e4cb6b1d567fbfe0cde37faba50",
+      "completed_at_utc": "2026-08-12T00:47:40.381764+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N066.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N067": {
+      "checksum_sha256": "68287cca8e4c6a40374e79eda7332c395433ca8406e07518b6ccbc2d0201ef68",
+      "completed_at_utc": "2026-08-12T00:48:08.276342+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N067.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N068": {
+      "checksum_sha256": "049dbd9704bf21d3f49d13f1647bce7fe3a871cced385e823dcb53d368afbe2a",
+      "completed_at_utc": "2026-08-12T00:48:33.207672+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N068.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N069": {
+      "checksum_sha256": "c642b40dcfdaf8e735574d7ef74957e4db91f29d8901ad68f338c6b6ac75f261",
+      "completed_at_utc": "2026-08-12T00:48:52.847808+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N069.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N070": {
+      "checksum_sha256": "ec94896d9e38d991f8f549f3b87b0ffeaaee1e23117bf5878c362300c204de4f",
+      "completed_at_utc": "2026-08-12T00:49:27.128324+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N070.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N071": {
+      "checksum_sha256": "3db1f2d6fb2eb408747e321157555718ae01a83c014f1582d76a78bae920fea5",
+      "completed_at_utc": "2026-08-12T00:49:29.410173+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N071.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "heisenberg_chain:N072": {
+      "checksum_sha256": "dba767eeb0ca580d348da6780f161e4ad8a251cf638a49e40ef95bef71688a31",
+      "completed_at_utc": "2026-08-12T00:50:08.229860+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N072.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N073": {
+      "checksum_sha256": "16038a730c59f7b162954eb37479b118cc18495b8989e6f456a49e2449e9e4c7",
+      "completed_at_utc": "2026-08-12T00:50:18.460446+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N073.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N074": {
+      "checksum_sha256": "f21b955e9a38196f0da0c928bd22e4ec88512a6dab5f63296ac470a1acd820ac",
+      "completed_at_utc": "2026-08-12T00:50:59.188118+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N074.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N075": {
+      "checksum_sha256": "8232daf00d4cf4422cca4a1ff397c8b4c480bbb496aaf70e6d45993d51d14cdb",
+      "completed_at_utc": "2026-08-12T00:51:09.084840+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N075.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N076": {
+      "checksum_sha256": "53e482b32f86288d439b501a058a979595900ad7564809e12d91833b3f854322",
+      "completed_at_utc": "2026-08-12T00:51:39.632010+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N076.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N077": {
+      "checksum_sha256": "a40529e50d3b21bda2cba8b8c4d3b5604a985f65c791d16f84a80184c2c12850",
+      "completed_at_utc": "2026-08-12T00:51:51.244712+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N077.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N078": {
+      "checksum_sha256": "a964b0335ca4cce5762337d751d34e50865fbbfc85dffe46e98b4a267cc1928a",
+      "completed_at_utc": "2026-08-12T00:52:11.403124+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N078.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N079": {
+      "checksum_sha256": "192b81dfff6524c42d19c6fcd8badfddf230dcf2aeca3ca771baa4021c4182f8",
+      "completed_at_utc": "2026-08-12T00:52:23.967949+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N079.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "heisenberg_chain:N080": {
+      "checksum_sha256": "17a42d7cbd51faa43c3215536da50c31c47aa7a1808ffe789d21633ebb542fb7",
+      "completed_at_utc": "2026-08-12T00:52:42.725662+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N080.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N081": {
+      "checksum_sha256": "61f6a5a0c3ab835ba802172635d4ee657758db798846aa90d801743538bce4ed",
+      "completed_at_utc": "2026-08-12T00:53:33.870712+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N081.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N082": {
+      "checksum_sha256": "63f0aed78024f62a21ae39b5ee6f3a7253905997ac7472414c3f81f658a39b0c",
+      "completed_at_utc": "2026-08-12T00:54:18.080199+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N082.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N083": {
+      "checksum_sha256": "bc4018ef20ddbcb422d476b19519d2a94f19079603c0d9b30484f51454698469",
+      "completed_at_utc": "2026-08-12T00:54:48.279992+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N083.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N084": {
+      "checksum_sha256": "6c67acde6d1ba84e13feb08c044a47cc812f963da82133258f92cee29aa85ec8",
+      "completed_at_utc": "2026-08-12T00:55:33.312656+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N084.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N085": {
+      "checksum_sha256": "4a2fe0757a08624d3e1767ff3e30b0192d341bd445a2494d84ad7def4c703482",
+      "completed_at_utc": "2026-08-12T00:55:52.351287+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N085.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N086": {
+      "checksum_sha256": "6ca35349551ca51c4de0f82a07439470456e0dab476e2d37b94fcfbb53d783ba",
+      "completed_at_utc": "2026-08-12T00:56:51.378373+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N086.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N087": {
+      "checksum_sha256": "04682e98524a810dede2df715077e983ce7b795aeceb9ac1b51c7e0fcf3c1bd2",
+      "completed_at_utc": "2026-08-12T00:57:06.543328+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N087.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N088": {
+      "checksum_sha256": "cef06a1ad80f044e7c4a4b5ba45ed613cf40b73a39202c339b4d00bcd40c7112",
+      "completed_at_utc": "2026-08-12T00:57:59.959724+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N088.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N089": {
+      "checksum_sha256": "d47b5842b327dad89fbde65ac1d51cb8723fcde331c6222dc828cccdc57c09d2",
+      "completed_at_utc": "2026-08-12T00:58:20.709494+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N089.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "heisenberg_chain:N090": {
+      "checksum_sha256": "58deaee7f2c5f047afcd73b88a0a2e3dca72b2ff7fb9611651ec0da8e2df5237",
+      "completed_at_utc": "2026-08-12T00:59:22.171421+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N090.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N091": {
+      "checksum_sha256": "e24666aa12bd539c543f703df75b76bf5d47033fc460330e9c05f407fee11f4a",
+      "completed_at_utc": "2026-08-12T00:59:32.940638+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N091.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N092": {
+      "checksum_sha256": "113ea6e399a946973e007e4c253b2361ced87fe887e6c7473005c2611b5e8329",
+      "completed_at_utc": "2026-08-12T01:00:21.356974+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N092.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N093": {
+      "checksum_sha256": "3f842968df906f96d19a3fd69eeaf61eca17624470b84d74768c61bed170514a",
+      "completed_at_utc": "2026-08-12T01:00:34.644259+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N093.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N094": {
+      "checksum_sha256": "f46866859bd96184a74e8b2baf3e3468190594daf6a59c5c90a686fe52eb44eb",
+      "completed_at_utc": "2026-08-12T01:01:09.972422+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N094.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N095": {
+      "checksum_sha256": "d6fd5d4c07d46e61dcc4e02fbceedda55061ff57203e3fb081772646e92985b1",
+      "completed_at_utc": "2026-08-12T01:01:25.480084+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N095.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N096": {
+      "checksum_sha256": "a9ba26d14ec90d4b8ea30dbc0efdd785da6b51ca538c754dac352a08acc7d8ef",
+      "completed_at_utc": "2026-08-12T01:01:51.983449+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N096.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N097": {
+      "checksum_sha256": "f702b41242c5ddf1073aad78e61c3cae808ff8c9df22a313e16b28702771e3d3",
+      "completed_at_utc": "2026-08-12T01:02:49.662310+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N097.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N098": {
+      "checksum_sha256": "11f8320e2c81d85cd627765dc7d557435d14f5f3295525439412d199ca545115",
+      "completed_at_utc": "2026-08-12T01:03:39.938686+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N098.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N099": {
+      "checksum_sha256": "94efa2bbde602e4890e91f49601ecc42560d030f182921978958cb5e3cbb4c37",
+      "completed_at_utc": "2026-08-12T01:04:18.711114+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N099.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N100": {
+      "checksum_sha256": "7f1f615c656c976dbcc07f1a4964d72f7208eb534788a757d50905c949c3e1e6",
+      "completed_at_utc": "2026-08-12T01:05:16.090096+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N100.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "heisenberg_chain:N101": {
+      "checksum_sha256": "b09fa583fec452bd3a2461795a14f1b2947f22e149491457c4e1aa78c79dbad3",
+      "completed_at_utc": "2026-08-12T01:05:42.491029+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N101.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N102": {
+      "checksum_sha256": "6a49ef553d893eef267aec55e9b1b2cc1375a84c2ad07aa9f8b8a419d3003201",
+      "completed_at_utc": "2026-08-12T01:07:05.059587+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N102.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N103": {
+      "checksum_sha256": "f61889fc28123bf91ef93c53606dad261bd914f8f910b7cc816909564e054bb9",
+      "completed_at_utc": "2026-08-12T01:07:32.456484+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N103.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N104": {
+      "checksum_sha256": "846eaa6198559fae8c5f4ceadeb405e57e21f3384f49aa49c190a38e357e9254",
+      "completed_at_utc": "2026-08-12T01:08:55.189197+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N104.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N105": {
+      "checksum_sha256": "8b944ed7180b89091cd17867a38f6a73e127c0532015ad9ca3a8814ab18e6ab9",
+      "completed_at_utc": "2026-08-12T01:09:41.141172+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N105.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N106": {
+      "checksum_sha256": "4fdcaaf30606b0bd4033e29338e86e7af5be15dd6efbae900c05a9a394fffa2d",
+      "completed_at_utc": "2026-08-12T01:11:24.727578+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N106.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N107": {
+      "checksum_sha256": "7d2057450ccacedb4f7aa09ba87e122091f93237f186091a2d264b03e14923c1",
+      "completed_at_utc": "2026-08-12T01:11:35.647148+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N107.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N108": {
+      "checksum_sha256": "aa6aaa1e163a2180d09fc6dbb810d5c04c5e54ccc40a7300432313a9aae0966a",
+      "completed_at_utc": "2026-08-12T01:13:24.715975+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N108.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N109": {
+      "checksum_sha256": "5daf05705ed28b6ce52e81f5283ea02762c9266c3cba66bc9e3683f8d1d99f38",
+      "completed_at_utc": "2026-08-12T01:14:14.654115+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N109.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N110": {
+      "checksum_sha256": "4cfaf20019d22d168ee55277bef9f63c6ad5759d83d8d292bfbd455f7ab5cb4e",
+      "completed_at_utc": "2026-08-12T01:15:08.994628+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N110.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N111": {
+      "checksum_sha256": "758a8c15367135366329de292cd88fde7d26482c64eb3b8f887d37e1013c425a",
+      "completed_at_utc": "2026-08-12T01:16:00.052754+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N111.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N112": {
+      "checksum_sha256": "5b034c06ba7d724dd96b7ac4f55480f235a0e1ee9ef097954e2ea166c92171df",
+      "completed_at_utc": "2026-08-12T01:16:29.197975+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N112.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "heisenberg_chain:N113": {
+      "checksum_sha256": "69602f567db84b1b6657209bea978f9f58ca3293d597d6e3d90c7fc4ee6e2ef0",
+      "completed_at_utc": "2026-08-12T01:17:54.840672+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N113.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N114": {
+      "checksum_sha256": "8c7da0378c7db8c9404670dfcc996a81d15a5069f69cb66f85cf39613cc401b1",
+      "completed_at_utc": "2026-08-12T01:18:47.874384+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N114.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N115": {
+      "checksum_sha256": "884fa5b506090c48112764f2476ca4a58158fdc01702ec5e7173d956b7b4af62",
+      "completed_at_utc": "2026-08-12T01:19:25.126616+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N115.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N116": {
+      "checksum_sha256": "4c6ee757b05d4c42d1cf45aa31d4541dbf8982928da345b19a7b0a9e26c5ed01",
+      "completed_at_utc": "2026-08-12T01:20:05.715115+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N116.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N117": {
+      "checksum_sha256": "00a6e98acde2139266fc5f4bc7ac3474fd08bb0f48b6083ab845934b38c362c4",
+      "completed_at_utc": "2026-08-12T01:20:19.307956+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N117.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N118": {
+      "checksum_sha256": "29c782d408a89f0ae1e9a2e5cf83fe92fb667fd53a6708e80b602548894a46a5",
+      "completed_at_utc": "2026-08-12T01:21:15.421721+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N118.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N119": {
+      "checksum_sha256": "16497c1b563b1b1b486db01c0b7fa5014107ade72ecbe4ea602201a87fb95368",
+      "completed_at_utc": "2026-08-12T01:21:36.847875+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N119.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "heisenberg_chain:N120": {
+      "checksum_sha256": "4b7a81175ee3cfe061e3843e8b95fb51e023e366286bac16a40f27c716829f7d",
+      "completed_at_utc": "2026-08-12T01:22:06.890607+00:00",
+      "expected_rows": 279,
+      "relative_path": "heisenberg_chain/N120.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 21,
+        "ok": 258
+      }
+    },
+    "transverse_field_ising:N003": {
+      "checksum_sha256": "4f63a22deda5cc1d76e77b46c4a0c3c4470642dfb025a0a845e68b296620259c",
+      "completed_at_utc": "2026-08-12T00:12:27.783563+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N003.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 124,
+        "ok": 155
+      }
+    },
+    "transverse_field_ising:N004": {
+      "checksum_sha256": "e9ad89ec317bdf91b29a0a4747f34cbcfb6aa081eebb5fa12fee44eb69b116c2",
+      "completed_at_utc": "2026-08-12T00:12:33.493145+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N004.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N005": {
+      "checksum_sha256": "86116a9719876b0e11f775bb5e3b3a66d266f5759f00dfee6698dba318dc96b2",
+      "completed_at_utc": "2026-08-12T00:12:38.883204+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N005.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N006": {
+      "checksum_sha256": "115a26a53c483a9a0c26242ec1dac960e0f1696242ac182e4f2147d920b7fca3",
+      "completed_at_utc": "2026-08-12T00:12:42.227805+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N006.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N007": {
+      "checksum_sha256": "8c9eaceaada89be1fe78dac3714ae44b3b265ea4aaa5117dc05500ccab571efb",
+      "completed_at_utc": "2026-08-12T00:12:45.643248+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N007.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N008": {
+      "checksum_sha256": "0efd76ffdde0532dd0c606f635aeaf8ad2f9326b983fee7db5e8cc4b828df1ac",
+      "completed_at_utc": "2026-08-12T00:12:51.479867+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N008.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N009": {
+      "checksum_sha256": "c563af03673f9b2c15ed6f74acf656d5cce974856786ba75c6a852c5267e4c7c",
+      "completed_at_utc": "2026-08-12T00:13:02.142181+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N009.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N010": {
+      "checksum_sha256": "93bd63707c1482293e228484b7d475d92066b752a0fb381307c66b406fc9b306",
+      "completed_at_utc": "2026-08-12T00:13:07.196208+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N010.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N011": {
+      "checksum_sha256": "06a8970d3b00e97b2649077624b2a1534d3f176fd4ffc90d2563bba8c185fa62",
+      "completed_at_utc": "2026-08-12T00:13:10.589445+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N011.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N012": {
+      "checksum_sha256": "f4d05a9a2395c09e8d86c7f7e0308ae547998828a8d7227cb4bf960ffdd4869a",
+      "completed_at_utc": "2026-08-12T00:13:11.947014+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N012.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "ok": 279
+      }
+    },
+    "transverse_field_ising:N013": {
+      "checksum_sha256": "5e521f4df2ef1386a8a1904ee89f224c5dd14db69d7e41f801ca301cc261d690",
+      "completed_at_utc": "2026-08-12T00:13:14.461904+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N013.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 1,
+        "ok": 278
+      }
+    },
+    "transverse_field_ising:N014": {
+      "checksum_sha256": "28065c3ad9817ac4318835e5e205b232cb14ac11c74160aadb931ff709c24e4f",
+      "completed_at_utc": "2026-08-12T00:13:20.742461+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N014.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 1,
+        "ok": 278
+      }
+    },
+    "transverse_field_ising:N015": {
+      "checksum_sha256": "ed815e3e86fbfe3d0eb6b178dd9ee7272d9f6dc162afa6067e41f868ad1b0228",
+      "completed_at_utc": "2026-08-12T00:13:26.551619+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N015.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 2,
+        "ok": 277
+      }
+    },
+    "transverse_field_ising:N016": {
+      "checksum_sha256": "1e742f531de7c56f849829299c07ecd54126f563f80cd674e8c152b0438323b5",
+      "completed_at_utc": "2026-08-12T00:13:25.845942+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N016.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 3,
+        "ok": 276
+      }
+    },
+    "transverse_field_ising:N017": {
+      "checksum_sha256": "ace3140a411ec8197b5f90232ea158f4b46b485b4677a41c33ce99b285cc314c",
+      "completed_at_utc": "2026-08-12T00:13:26.195557+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N017.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 3,
+        "ok": 276
+      }
+    },
+    "transverse_field_ising:N018": {
+      "checksum_sha256": "422e0f9540af864de4f39640f1d721200dd5399d3ecec8fdd34fc61adf768df0",
+      "completed_at_utc": "2026-08-12T00:13:25.693751+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N018.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 4,
+        "ok": 275
+      }
+    },
+    "transverse_field_ising:N019": {
+      "checksum_sha256": "6b5e64fc3fd239ec472c5a429be543d23d08c8f7c3fa3897b14efdc64785f1d7",
+      "completed_at_utc": "2026-08-12T00:13:58.792959+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N019.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 4,
+        "ok": 275
+      }
+    },
+    "transverse_field_ising:N020": {
+      "checksum_sha256": "cab5aa729f88c9bf2763979bee2e2fc8af4443195812fda09a4f91b19a7990b1",
+      "completed_at_utc": "2026-08-12T00:14:06.725761+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N020.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 4,
+        "ok": 275
+      }
+    },
+    "transverse_field_ising:N021": {
+      "checksum_sha256": "81d5698d97ac8f16e92f1ac8d959c22a48e4ba90f32b11cd9a7418c9e9220cdb",
+      "completed_at_utc": "2026-08-12T00:14:16.489941+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N021.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 5,
+        "ok": 274
+      }
+    },
+    "transverse_field_ising:N022": {
+      "checksum_sha256": "8c93d819d9e8183953d92c389d74d504be36ff6735cdd6ede580dc4df2dbc293",
+      "completed_at_utc": "2026-08-12T00:14:22.140509+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N022.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 5,
+        "ok": 274
+      }
+    },
+    "transverse_field_ising:N023": {
+      "checksum_sha256": "f498df17e80bbd70a70edab0b3803e991cb8be261e3744461b1c624461fbbd56",
+      "completed_at_utc": "2026-08-12T00:14:29.098294+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N023.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 6,
+        "ok": 273
+      }
+    },
+    "transverse_field_ising:N024": {
+      "checksum_sha256": "99eb2fa5ecaf2f17fadeae24d80eab1b44190651280857319251a9f620b2f8f6",
+      "completed_at_utc": "2026-08-12T00:14:36.028639+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N024.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 6,
+        "ok": 273
+      }
+    },
+    "transverse_field_ising:N025": {
+      "checksum_sha256": "4db913c50ec73a7297b49a83edc793e966624611c7d091fab1c7aee4ed03234c",
+      "completed_at_utc": "2026-08-12T00:14:51.661507+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N025.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 6,
+        "ok": 273
+      }
+    },
+    "transverse_field_ising:N026": {
+      "checksum_sha256": "2cfb3fa43270c0903c8c161b7032f3f1cd2c36bcec9ca1726269fb3e3a0755c3",
+      "completed_at_utc": "2026-08-12T00:14:58.858349+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N026.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "transverse_field_ising:N027": {
+      "checksum_sha256": "17451e4178e652a854ebd3839d13022e9dc2306fe993e0dbdf85b99488cf2264",
+      "completed_at_utc": "2026-08-12T00:15:08.145465+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N027.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "transverse_field_ising:N028": {
+      "checksum_sha256": "48e29c2ecaf4b1144973376f74df2ef95b4eed3817e6b4911794d4d3d26fd4ea",
+      "completed_at_utc": "2026-08-12T00:15:09.915549+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N028.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 7,
+        "ok": 272
+      }
+    },
+    "transverse_field_ising:N029": {
+      "checksum_sha256": "9afc3be9d995cc08610a3f98673b123cf46dc1c32a00e0341f1933e721998dec",
+      "completed_at_utc": "2026-08-12T00:15:14.406325+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N029.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "transverse_field_ising:N030": {
+      "checksum_sha256": "d206fa06ad674017795a142841aa89a8043939d980e63e9c052377687f2d3104",
+      "completed_at_utc": "2026-08-12T00:15:24.121906+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N030.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "transverse_field_ising:N031": {
+      "checksum_sha256": "fb2b4bafb1ea9ef16d27d2401b0fc7bf19b392bf428199f87539e775ae6f20a2",
+      "completed_at_utc": "2026-08-12T00:15:31.184909+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N031.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 8,
+        "ok": 271
+      }
+    },
+    "transverse_field_ising:N032": {
+      "checksum_sha256": "93e9c999b1e167ea8bb9e0df0b96417c9b880ac748051db16dfeef845367a27d",
+      "completed_at_utc": "2026-08-12T00:15:32.020330+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N032.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "transverse_field_ising:N033": {
+      "checksum_sha256": "9086e91638b407a413fd04c59931abcd9d4814780398aeaf21b7e896ee4832bd",
+      "completed_at_utc": "2026-08-12T00:15:35.530783+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N033.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "transverse_field_ising:N034": {
+      "checksum_sha256": "61166d6c030d6d7dabb0ff79c18b8579ffc405fd4c417af7fd55dd83a5153aa0",
+      "completed_at_utc": "2026-08-12T00:15:32.951343+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N034.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "transverse_field_ising:N035": {
+      "checksum_sha256": "2965a745ec8b3b25fd4d1329c71e7f6482505d056a15e4c4e741dc713e744bdc",
+      "completed_at_utc": "2026-08-12T00:16:07.135745+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N035.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 9,
+        "ok": 270
+      }
+    },
+    "transverse_field_ising:N036": {
+      "checksum_sha256": "bbcb119e306f5dfafb3f77e128ab9224273437d0a7a37ccf1959e0aafdf29042",
+      "completed_at_utc": "2026-08-12T00:16:18.559269+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N036.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "transverse_field_ising:N037": {
+      "checksum_sha256": "0b1e31cb59458b41f3fdc5a109645065cd9070fb53e18a8125973b247d330af8",
+      "completed_at_utc": "2026-08-12T00:16:33.393114+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N037.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "transverse_field_ising:N038": {
+      "checksum_sha256": "c0cfcb8fd4315e8805c255c2e5658624a885e910653e4e68a6a53a97d3ec3e38",
+      "completed_at_utc": "2026-08-12T00:16:38.900617+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N038.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "transverse_field_ising:N039": {
+      "checksum_sha256": "34354d03de67a3e1fdc757e58e1df55bc4cd6616c063c471e88ac91fa059a425",
+      "completed_at_utc": "2026-08-12T00:16:45.782947+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N039.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 10,
+        "ok": 269
+      }
+    },
+    "transverse_field_ising:N040": {
+      "checksum_sha256": "a4d49767ea2e566c6600b522b2b36a91471314ac6983b857e189d91517b229e2",
+      "completed_at_utc": "2026-08-12T00:16:51.995816+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N040.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "transverse_field_ising:N041": {
+      "checksum_sha256": "c918f58b190e065984aee36fa9ca07b309f0f6a5b63b072a766bdc84d2fc1615",
+      "completed_at_utc": "2026-08-12T00:17:11.262196+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N041.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "transverse_field_ising:N042": {
+      "checksum_sha256": "3ad24245f1bf77747ecf94572794cc55f0ecfcf5978acae7572ce414d8e9439c",
+      "completed_at_utc": "2026-08-12T00:17:18.923074+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N042.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "transverse_field_ising:N043": {
+      "checksum_sha256": "5259f6b2162891ba193f94cc76ed9fbfa55cee72d374259213cbbcdf933a64da",
+      "completed_at_utc": "2026-08-12T00:17:32.860618+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N043.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "transverse_field_ising:N044": {
+      "checksum_sha256": "db112be28af71749a1423676eb02e2c95ed2740ca87142ff781330fe7e67a5d1",
+      "completed_at_utc": "2026-08-12T00:17:34.014271+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N044.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 11,
+        "ok": 268
+      }
+    },
+    "transverse_field_ising:N045": {
+      "checksum_sha256": "0f5a386c59fb7214e1227567229298f21047604722aa2d83433af80d0d0c0f96",
+      "completed_at_utc": "2026-08-12T00:17:39.635531+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N045.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N046": {
+      "checksum_sha256": "aa9b624f1ded4e0d853829247f1e45b5d62808f06e08f096a040342f2ec9fbf7",
+      "completed_at_utc": "2026-08-12T00:17:47.521872+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N046.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N047": {
+      "checksum_sha256": "ccbd60adf9da6d62808361bccc92face7359221f575bffcb6ff9f9248788422c",
+      "completed_at_utc": "2026-08-12T00:18:03.408509+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N047.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N048": {
+      "checksum_sha256": "64bb714c38ac7cb216edf0a9c9ae9b0dddaaae63245bc2cfca554d32605dbe9d",
+      "completed_at_utc": "2026-08-12T00:18:08.410783+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N048.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N049": {
+      "checksum_sha256": "0c75471eb4ca1f14528a802efa12db493e6cf3e6e25fae61b4cd35f37c7dca9f",
+      "completed_at_utc": "2026-08-12T00:18:04.031103+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N049.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N050": {
+      "checksum_sha256": "2bf9d33f4486628e6d29dec88c1ea8625e38a8d17103db272be96e1181a7a1f6",
+      "completed_at_utc": "2026-08-12T00:18:17.612886+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N050.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 12,
+        "ok": 267
+      }
+    },
+    "transverse_field_ising:N051": {
+      "checksum_sha256": "b16726a5abcd9cc21bd1734e07814bd53180500f57a97aa64a7dc34cb332ec55",
+      "completed_at_utc": "2026-08-12T00:18:45.586526+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N051.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N052": {
+      "checksum_sha256": "33f1c4ec6869a801e7880e539b4704f2a9b1a9da06113ed084533dad5cf02ef9",
+      "completed_at_utc": "2026-08-12T00:19:03.556896+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N052.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N053": {
+      "checksum_sha256": "7f1881b37c198ff41f13d7654ae7222851d68c7b59f3cf7a6b91b7fa625c5f10",
+      "completed_at_utc": "2026-08-12T00:19:16.927496+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N053.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N054": {
+      "checksum_sha256": "15add37e101ce4e8b6eea8d31afd3d42035874b5c2160200c58c0b958adf984f",
+      "completed_at_utc": "2026-08-12T00:19:27.286460+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N054.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N055": {
+      "checksum_sha256": "e497a4b8c4ba47d1d3e7a36d1baf59602a1ed34744d58e4016aef0662623b090",
+      "completed_at_utc": "2026-08-12T00:19:28.985257+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N055.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N056": {
+      "checksum_sha256": "f7b75210ab3e6fee0d77c55e44cf194f5207f7c870fcb12f157a04d1ff4d0e98",
+      "completed_at_utc": "2026-08-12T00:19:34.483321+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N056.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 13,
+        "ok": 266
+      }
+    },
+    "transverse_field_ising:N057": {
+      "checksum_sha256": "75fc7fa8ccd89ac5ebfffa1239bbc2222f17ce1deb508d6fefb108137b26451e",
+      "completed_at_utc": "2026-08-12T00:19:55.007841+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N057.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N058": {
+      "checksum_sha256": "2f477a6876c2cda5b15d8675e23b441e6ccefaba6e195b5f4503269856c94cb9",
+      "completed_at_utc": "2026-08-12T00:20:06.857034+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N058.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N059": {
+      "checksum_sha256": "cc160f69422eb38fc5d4a6e9a462c8722baba9103c5086b50a33313de98d677a",
+      "completed_at_utc": "2026-08-12T00:20:20.005162+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N059.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N060": {
+      "checksum_sha256": "246f2791f254dc50fc89ce07704d8b8a876eeadea93bb78d914f2dcb296a9e77",
+      "completed_at_utc": "2026-08-12T00:20:20.838297+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N060.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N061": {
+      "checksum_sha256": "e35988b546f47c37a5a69e218343a208cec871adfdbdf3954177dcdae4960fbb",
+      "completed_at_utc": "2026-08-12T00:20:26.996376+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N061.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N062": {
+      "checksum_sha256": "aca21cfbe66c8be2f923667a82f9516dd946b80a285e1885a60064553f1f8166",
+      "completed_at_utc": "2026-08-12T00:20:38.242486+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N062.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N063": {
+      "checksum_sha256": "e525595705913d93ac14cf7187c9f4507343a74b3659000080c3619de765de36",
+      "completed_at_utc": "2026-08-12T00:20:56.706768+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N063.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 14,
+        "ok": 265
+      }
+    },
+    "transverse_field_ising:N064": {
+      "checksum_sha256": "3912436b13e1749a3514e19ccb10f373581d91a78670768eb33eb8968e65ac3b",
+      "completed_at_utc": "2026-08-12T00:20:57.401111+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N064.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N065": {
+      "checksum_sha256": "af3f00d02dcfe1e555c91758c96aebbd471e96a41a0674512b37e2bc9eab7156",
+      "completed_at_utc": "2026-08-12T00:21:05.752385+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N065.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N066": {
+      "checksum_sha256": "70e6358797da1c7d95424b881bd9a190a4ef058dbcf3a4db014165df1598087b",
+      "completed_at_utc": "2026-08-12T00:21:16.681500+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N066.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N067": {
+      "checksum_sha256": "a45a38038437ee164ae4678aae576c365a07d02b5eb07e4c11be0e4d342c4f1b",
+      "completed_at_utc": "2026-08-12T00:21:46.466781+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N067.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N068": {
+      "checksum_sha256": "6073e7095ffaa1446360b666ffc58d38f0028da2cd4e32a45c562cd220f958b6",
+      "completed_at_utc": "2026-08-12T00:22:02.626998+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N068.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N069": {
+      "checksum_sha256": "a9cc258fd8b39d29e62e5e5c48b417dc9b656c820eaeee5370bb168767b45233",
+      "completed_at_utc": "2026-08-12T00:22:17.282290+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N069.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N070": {
+      "checksum_sha256": "3d246c8c688d71b3a75ef50249ce67265a6f9371e73102c6463a17758f7ecb66",
+      "completed_at_utc": "2026-08-12T00:22:30.004377+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N070.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N071": {
+      "checksum_sha256": "e00af0e0d0d6e70db3cf284e02b8c3ffceca88cb57f746f52a97d65f5ecd17d1",
+      "completed_at_utc": "2026-08-12T00:22:30.375466+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N071.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 15,
+        "ok": 264
+      }
+    },
+    "transverse_field_ising:N072": {
+      "checksum_sha256": "529c078b8a1b998b3d894af8dfefa0532c5a37c422a3dd88cb40e8e5e76793e2",
+      "completed_at_utc": "2026-08-12T00:22:38.967816+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N072.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N073": {
+      "checksum_sha256": "eb974729049143dfc4f1989e258393db798d40333e7b5d6f1865dd8c99eb62ba",
+      "completed_at_utc": "2026-08-12T00:22:58.741223+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N073.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N074": {
+      "checksum_sha256": "7a476d4add34e6f5ee7c727974f469f0b0b43ccb7000b9c147bc09a281ceb8ee",
+      "completed_at_utc": "2026-08-12T00:23:08.946558+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N074.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N075": {
+      "checksum_sha256": "349917664adc707ef72f6aa3b15118d40bd037ee89194b550032b21050da78ad",
+      "completed_at_utc": "2026-08-12T00:23:24.202440+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N075.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N076": {
+      "checksum_sha256": "65dec3646bb95fff285b0f5fd692bbb340f18df2cc369df875655f90e22299e9",
+      "completed_at_utc": "2026-08-12T00:23:31.568647+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N076.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N077": {
+      "checksum_sha256": "fb76761707b2e9241bf5a5ae6526a2815b44ff48a1213a8f20f2d973700cbe90",
+      "completed_at_utc": "2026-08-12T00:23:39.054695+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N077.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N078": {
+      "checksum_sha256": "53513bb01f1f91b2a44bbbc2fc5de2ab789a3026d12b1e5ec2e788162d99860a",
+      "completed_at_utc": "2026-08-12T00:23:45.450502+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N078.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N079": {
+      "checksum_sha256": "255dca4c0434c3003497a1d5639184c6541b97d374f3b531977068780a30c49f",
+      "completed_at_utc": "2026-08-12T00:24:04.419676+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N079.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 16,
+        "ok": 263
+      }
+    },
+    "transverse_field_ising:N080": {
+      "checksum_sha256": "b5bdf36481b71a1c13e7a5d56c4de136012c3d8048c3058bd1a5373fa8576094",
+      "completed_at_utc": "2026-08-12T00:24:06.260946+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N080.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N081": {
+      "checksum_sha256": "db1db01a223baaf276aab6245cb533a951ac7ca2cd042076e93aade95ac8f9d8",
+      "completed_at_utc": "2026-08-12T00:24:12.850943+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N081.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N082": {
+      "checksum_sha256": "7fc874bb8aa0a565127bf3abb9db75c0ebd6ebf58cb82996ec4f55b2a466f8bf",
+      "completed_at_utc": "2026-08-12T00:24:47.757332+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N082.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N083": {
+      "checksum_sha256": "40684ce5b79dafb06e1db7d9b14fa99f9c4f0f32cee160bf59c99f7eca93c86a",
+      "completed_at_utc": "2026-08-12T00:25:14.234360+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N083.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N084": {
+      "checksum_sha256": "f27364e18db66dc8266bac346a43ce05086150da61b6e73beb73b627bdc4084a",
+      "completed_at_utc": "2026-08-12T00:25:34.596783+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N084.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N085": {
+      "checksum_sha256": "5efccd4c326ab86f3ec9c41834531c0804e0a5676bd72c0a265bd48b67c993cb",
+      "completed_at_utc": "2026-08-12T00:25:48.304190+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N085.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N086": {
+      "checksum_sha256": "c8b8cbfadb08ca7ba3a00825e44d2b062711ee2de910928d360bf390169967d1",
+      "completed_at_utc": "2026-08-12T00:26:08.279580+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N086.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N087": {
+      "checksum_sha256": "e50e53e912b62e9bd72cddd8aa5d2dd1cd2a349ad16f9d7ca566b1d357e96d29",
+      "completed_at_utc": "2026-08-12T00:26:07.642779+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N087.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N088": {
+      "checksum_sha256": "5ff4403ae9e2c97c8a7f188118aed4fdeff87fb437244c48db7304cb50d39cbb",
+      "completed_at_utc": "2026-08-12T00:26:19.766586+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N088.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N089": {
+      "checksum_sha256": "efd097e6eef4df8b4ded98db562074f0e0a9aeeb378c1f933a2febae52608191",
+      "completed_at_utc": "2026-08-12T00:26:38.240663+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N089.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 17,
+        "ok": 262
+      }
+    },
+    "transverse_field_ising:N090": {
+      "checksum_sha256": "f8fb3b612c73ed0ab48f86ee8a4349e13fb38d7e45f1bb531e291bbe042874f3",
+      "completed_at_utc": "2026-08-12T00:26:48.532899+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N090.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N091": {
+      "checksum_sha256": "95229d500d5c7a1637aa84e41d7a682a2a9dca151cda510ec58995009d5fe4e5",
+      "completed_at_utc": "2026-08-12T00:27:35.243692+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N091.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N092": {
+      "checksum_sha256": "80b299f570b741ce9b9b9e300b13b4599b51dd6fcd29d80c0b1daa064c58bc7f",
+      "completed_at_utc": "2026-08-12T00:27:12.866330+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N092.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N093": {
+      "checksum_sha256": "73a0019a3ffaac703d7ae205c91d53e1674f8e7dcecb48451dc8b3144d199cf2",
+      "completed_at_utc": "2026-08-12T00:27:22.044048+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N093.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N094": {
+      "checksum_sha256": "5f55b3a1886940485902c910f9d19c8daddfa0adaa7bcee9a2dd7c0d8f131ec6",
+      "completed_at_utc": "2026-08-12T00:27:34.534796+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N094.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N095": {
+      "checksum_sha256": "ea3f4dfed0659513e44d70077591e9a0e019cd83c6e7635200eb2c6a0659bfa1",
+      "completed_at_utc": "2026-08-12T00:28:00.236701+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N095.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N096": {
+      "checksum_sha256": "dca557e2734ed470654325b84c407c36307500d140093bd91b85df786e594635",
+      "completed_at_utc": "2026-08-12T00:27:55.898787+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N096.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N097": {
+      "checksum_sha256": "c836a7b2f2d8729f370b29289277df670d7647ea044eb2c8b7f91b5331837995",
+      "completed_at_utc": "2026-08-12T00:28:10.596590+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N097.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N098": {
+      "checksum_sha256": "edb69244b802c237703bf7a6b2b70f9d53e989639d0aa055cdc6eada3a1adc14",
+      "completed_at_utc": "2026-08-12T00:28:45.775143+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N098.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N099": {
+      "checksum_sha256": "44e7b05a25b00ecf25cec9a6062f5c9cce008354ea23aa2541cf6c95ef3044bf",
+      "completed_at_utc": "2026-08-12T00:29:11.353011+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N099.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N100": {
+      "checksum_sha256": "a33f854b1a8bc247c494a3fbbb66586e305eb0c0046e1b5b1717c9daff3076fa",
+      "completed_at_utc": "2026-08-12T00:29:33.310185+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N100.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 18,
+        "ok": 261
+      }
+    },
+    "transverse_field_ising:N101": {
+      "checksum_sha256": "c74a1036758ebeb2a9b59d56c3741fb389f2644822e758bbb95667b54b0cba03",
+      "completed_at_utc": "2026-08-12T00:29:45.949468+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N101.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N102": {
+      "checksum_sha256": "705fbd34abb9b83098228b1f3da1c0c416169fa0a4d9155de6b5f99a0a6910ce",
+      "completed_at_utc": "2026-08-12T00:30:07.331516+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N102.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N103": {
+      "checksum_sha256": "c4bdc05b6a785723bbd846a5f09dca5fbd4ccbbbb55324ded9f5b2e3df938911",
+      "completed_at_utc": "2026-08-12T00:30:09.259150+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N103.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N104": {
+      "checksum_sha256": "9a4e393c571c5c448d2bf4012d3bc83b577847b6e362f53e34567372a3c89a2d",
+      "completed_at_utc": "2026-08-12T00:30:20.080610+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N104.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N105": {
+      "checksum_sha256": "5674fce43617b22df0be8f1316d0aeca0277ae528540dee25cdb7cc353c6325f",
+      "completed_at_utc": "2026-08-12T00:30:41.677856+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N105.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N106": {
+      "checksum_sha256": "181aedfb2b3010134f33b8c13b2bca23881610a1f1d74d06a15a6092f8831998",
+      "completed_at_utc": "2026-08-12T00:30:54.217587+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N106.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N107": {
+      "checksum_sha256": "94d8317d973807d0a13797f2321136625ad635fc6aaa1f9a10eb425530282c22",
+      "completed_at_utc": "2026-08-12T00:31:13.060698+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N107.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N108": {
+      "checksum_sha256": "e261c9db33d2453a2922770270226a7e1bb1397d2619975a3425a2e71e2741bc",
+      "completed_at_utc": "2026-08-12T00:31:24.599844+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N108.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N109": {
+      "checksum_sha256": "f46400eda1d3e12e4c7b9f065c672bac54fb13b80156113a6718da978e0f965f",
+      "completed_at_utc": "2026-08-12T00:31:37.560236+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N109.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N110": {
+      "checksum_sha256": "dd8c2bcaf7a6fdeb672e87e89d1aababe5169bcd02d5c9626eccf491ff224ea3",
+      "completed_at_utc": "2026-08-12T00:31:42.370311+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N110.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N111": {
+      "checksum_sha256": "74ff6c0370edc03072596680fcb265546c5f63a9e25d21e78205a487ea9c41ab",
+      "completed_at_utc": "2026-08-12T00:32:08.482664+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N111.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N112": {
+      "checksum_sha256": "437cdb0bfe360cfdbd4dbfa2cad7c1d75aef06870acbd7c381056d274e2ebc5b",
+      "completed_at_utc": "2026-08-12T00:32:05.081484+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N112.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 19,
+        "ok": 260
+      }
+    },
+    "transverse_field_ising:N113": {
+      "checksum_sha256": "a18f7ed70abbfd702f8f29ed53a2b1417bd6807007eb84cd91bf313fc28d481f",
+      "completed_at_utc": "2026-08-12T00:32:16.404056+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N113.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N114": {
+      "checksum_sha256": "21203d0fff2ea2a34ae473a4d72b14809ea31378a7f4444fbc05b539dda6562a",
+      "completed_at_utc": "2026-08-12T00:32:55.088476+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N114.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N115": {
+      "checksum_sha256": "e2db9979171e6f2616e4649070828c6fadb6161a67f7c0a6ebd6f6977a049e5d",
+      "completed_at_utc": "2026-08-12T00:33:21.031794+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N115.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N116": {
+      "checksum_sha256": "c11a0aa70590f2507f77717e55254242c52b4778ef9c2752c36e9132486a98b7",
+      "completed_at_utc": "2026-08-12T00:33:44.375167+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N116.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N117": {
+      "checksum_sha256": "7c6e4ce29a123fb7b4ba2beaa1d59ecdbf9279e74ab3002ad2e99c121f90bd3e",
+      "completed_at_utc": "2026-08-12T00:33:51.803016+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N117.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N118": {
+      "checksum_sha256": "83ae8509e7aac0011a4507d3b859fdf44d5144f6786f420dcfa08390597ea5a4",
+      "completed_at_utc": "2026-08-12T00:34:16.519150+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N118.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N119": {
+      "checksum_sha256": "d05e2606d7ad5acae30b7659f2d3461f9c278db0ce14a79a44f6ca881ed44340",
+      "completed_at_utc": "2026-08-12T00:34:22.377200+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N119.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    },
+    "transverse_field_ising:N120": {
+      "checksum_sha256": "639304fa034279c57e35e0494b7844e0cde88ef30643b8b897a8153542af1ee6",
+      "completed_at_utc": "2026-08-12T00:34:36.415409+00:00",
+      "expected_rows": 279,
+      "relative_path": "transverse_field_ising/N120.csv",
+      "row_count": 279,
+      "state": "complete",
+      "status_counts": {
+        "missing_empirical": 20,
+        "ok": 259
+      }
+    }
+  },
+  "software": {
+    "git_commit": "b58b31db18364511c43757e27fffc7abce8df2c1",
+    "git_dirty": true,
+    "package_version": "0.1.0",
+    "python_version": "3.11.9",
+    "qiskit_version": "2.5.0"
+  },
+  "source_digest": "1def5b2f7d4aaad1960257fe6cbdf7414934a64ef80196779eb51778062999bc"
+}
