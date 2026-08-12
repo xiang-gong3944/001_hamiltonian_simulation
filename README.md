@@ -1,18 +1,12 @@
 # Hamiltonian simulation resource comparison
 
-Pauli 和で与えたハミルトニアンについて、次の回路レベルの比較を行う Python パッケージです。
+Pauli 項で与えたハミルトニアンを対象に、量子ハミルトニアンシミュレーションの回路レベル資源を比較する Python パッケージです。Lie--Trotter / Suzuki 公式、Pauli-LCU を使う QSVT、well-conditioned multiproduct formula (MPF) を扱い、T 数、CNOT 数、補助量子ビット数を見積もります。
 
-- Lie–Trotter / 高次 Suzuki 公式
-- Pauli-LCU block encoding と QSVT 射影位相列
-- well-conditioned multiproduct formula (MPF) の coherent LCU
-- 小規模系の statevector 計算と厳密行列指数との比較
-- 大規模系の、許容誤差を固定した T / CNOT / 補助量子ビット数の比較
+回路構成と資源見積りは密行列を作りません。密行列を使うのは、小規模系で厳密解と比較する検証だけです。
 
-回路構成関数はハミルトニアンの密行列を作りません。密行列を使うのは、小規模検証の厳密解だけです。
+## セットアップ
 
-## セットアップ（VS Code）
-
-Python 3.10 以上と、VS Code の Python・Jupyter 拡張を用意します。スクリプトは `.venv` の作成と依存関係の導入だけを行い、ブラウザ版 Jupyter は起動しません。
+Python 3.10 以上が必要です。セットアップスクリプトはローカルの `.venv` を作成し、依存関係を導入します。
 
 ### Windows PowerShell
 
@@ -21,11 +15,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup_venv.ps1
 ```
 
-`python` 以外のコマンド名を使う場合は、たとえば次のように指定できます。
-
-```powershell
-.\setup_venv.ps1 -PythonCommand py
-```
+`python` 以外を使う場合は、たとえば `./setup_venv.ps1 -PythonCommand py` を指定します。
 
 ### macOS / Linux
 
@@ -33,238 +23,55 @@ Set-ExecutionPolicy -Scope Process Bypass
 bash setup_venv.sh
 ```
 
-特定の Python を使う場合:
+別の Python を指定する場合は `PYTHON=python3.12 bash setup_venv.sh` を使います。
 
-```bash
-PYTHON=python3.12 bash setup_venv.sh
+## 最小の Python 例
+
+```python
+from hamiltonian_resources import MultiproductMethod, estimate_resources, transverse_field_ising
+
+hamiltonian = transverse_field_ising(2, field=0.7)
+report = estimate_resources(
+    hamiltonian,
+    MultiproductMethod(3),
+    time=0.2,
+    target_error=1e-3,
+)
+
+print(report.resources.t_count, report.resources.cnot_count)
+print(report.selected_parameters)
 ```
 
-セットアップ後、VS Code で `notebooks/resource_comparison.ipynb` を直接開きます。カーネルが自動選択されない場合は、Notebook 右上のカーネル選択から次を指定してください。
+`estimate_resources` は選択したパラメータ、論理的な計画、解析的な資源見積りを返します。小規模の回路検証には `build_simulation_circuit(report.plan)` と `compare_plan_with_exact(report.plan)` を使用します。
 
-```text
-Windows: .venv\Scripts\python.exe
-macOS/Linux: .venv/bin/python
-```
+## 標準ベンチマーク
 
-`.vscode/settings.json` が workspace 内の `.venv` を検索対象として指定します。ユーザー領域への Jupyter kernelspec 登録は行わないため、環境はプロジェクト内で完結します。
-
-## 構造
-
-```text
-src/hamiltonian_resources/
-  hamiltonians.py    # Pauli 和入力、TFIM、Heisenberg 鎖
-  trotter.py         # 積公式回路
-  circuit_utils.py   # PREPARE / SELECT / block encoding / robust OAA
-  qsvt.py            # Jacobi--Anger 位相合成、QSVT、LCU、robust OAA
-  multiproduct.py    # MPF 係数、segment LCU、robust OAA
-  method_specs.py    # backend 非依存の手法指定
-  planning.py        # 単一回のparameter選択とimmutable algorithm plan
-  analytical.py      # planを消費する構造化解析resource backend
-  evaluation.py      # 単一点API、report、reference Qiskit dispatch
-  simulation.py      # 小規模な厳密解との比較
-  resources.py       # transpile 後の CX と T 見積り
-  benchmark.py       # 旧parameter/resource APIの互換wrapper
-  benchmark_suite.py # 8構成の解析スイープ、CSV、再現性metadata
-  benchmark_plotting.py # 保存済みCSVから一貫した図を生成
-notebooks/
-  resource_comparison.ipynb
-  qsvt_validation.ipynb
-  mpf_validation.ipynb
-tests/
-docs/
-  error_semantics.md # sizing、数学claim、empirical observationの区別
-  empirical_error_estimation.md # 非厳密operator-norm校正policyと適用範囲
-  mpf_error_bounds.md # ideal MPF、OAA、shared-ancilla good-block上界
-  resource_scaling_benchmarks.md # スイープ設定、schema、実行方法
-  suzuki_error_bounds.md  # 積公式の分割、厳密誤差上界、fallback
-```
-
-## notebook-first解析スケーリングbenchmark
-
-既定設定は開放境界TFIM `J=1, h=3`について、Trotter `p=1,2,4,6`、
-MPF `m=3,5,7`、QSVTを独立に評価します。system-size sweepでは局所相互作用が
-系全体へ広がる時間を比較するため、`t(n)=n`を使います。この比例則は伝播速度の
-厳密な推定ではなく、明記された無次元の比較規約です。
-
-`notebooks/resource_comparison.ipynb`では、NumPy配列を含むパラメータセルを変更し、
-計算とlog10サイズ軸での描画までnotebook内で完結できます。benchmark APIは結果を
-メモリ上のDataFrameとして返し、自動保存しません。
+ルートの [`benchmark_config.json`](benchmark_config.json) は、CLI が既定で読む動作する標準比較設定です。現在の `new` MPF スケジュールを使い、Trotter、MPF、QSVT を比較します。
 
 ```powershell
 hamiltonian-benchmark generate --config benchmark_config.json --sweep all --progress
-```
-
-生成とplotを続けて行う場合:
-
-```powershell
-hamiltonian-benchmark run --config benchmark_config.json
-```
-
-各CLI実行は`benchmark_outputs/<timestamp>_<digest>_<run-id>/`を新規作成するため、
-以前の結果を上書きしません。単体CSVはsidecarなしで再描画できます。
-
-```powershell
 hamiltonian-benchmark plot --data benchmark_outputs/<run>/benchmark.csv --summary
 ```
 
-設定、schema、failure row、解析上の仮定は
-[`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)に記載しています。
-校正済みモデルに限定した非厳密operator-norm sizingと比較notebookは
-[`docs/empirical_error_estimation.md`](docs/empirical_error_estimation.md)および
-`notebooks/empirical_resource_comparison.ipynb`に記載しています。既定の解析上界は
-変更されず、empirical rowを図に含める場合は`certification_policy="unconstrained"`を
-明示します。
+`run` はデータ生成と標準プロットをまとめて実行します。出力は `benchmark_outputs/` に新しい実行ディレクトリとして保存され、既存の結果を上書きしません。
 
-## 単一点resource API
+過去の比較を再現するための `schedule="legacy"`、`legacy-w2-proxy`、旧 schema-2 CSV の読み込みは維持されています。ただし、これらは新しい実験の既定値ではありません。用途と制約は下記の資料を確認してください。
 
-1つのHamiltonian・手法・時刻・目標誤差を評価するためにsweepやDataFrameは不要です。
-`estimate_resources`はparameterを1回だけ選択し、immutable planと構造化解析backendの
-resource結果を返します。同じplanをreference Qiskit回路と小規模検証へ渡せます。
+## ドキュメント
 
-```python
-from hamiltonian_resources import (
-    MultiproductMethod,
-    build_simulation_circuit,
-    compare_plan_with_exact,
-    estimate_resources,
-    transverse_field_ising,
-)
+ドキュメントの入口は [`docs/README.md`](docs/README.md) です。
 
-H = transverse_field_ising(2, field=0.7)
-report = estimate_resources(H, MultiproductMethod(3), time=0.2, target_error=1e-3)
+- 現行のベンチマーク API・JSON・CSV schema: [`docs/resource_scaling_benchmarks.md`](docs/resource_scaling_benchmarks.md)
+- 大規模 resource-grid の実行・再開: [`docs/resource_grid.md`](docs/resource_grid.md)
+- 誤差の意味と保証範囲: [`docs/error_semantics.md`](docs/error_semantics.md)
+- Suzuki と MPF の評価式: [`docs/suzuki_error_bounds.md`](docs/suzuki_error_bounds.md)、[`docs/mpf_error_bounds.md`](docs/mpf_error_bounds.md)
 
-print(report.selected_parameters)
-print(report.logical_counts.as_dict())
-print(report.resources.t_count, report.resources.cnot_count)
-print(report.resource_provenance.as_dict())
-print(report.parameter_selection_succeeded)
-print(report.ideal_algorithm_target_certified)
-print(report.implemented_circuit_target_certified)
+## 開発
 
-circuit = build_simulation_circuit(report.plan)  # 小規模なreference構成向け
-check = compare_plan_with_exact(report.plan)
-report_with_observations = report.with_observations(check.observations)
-```
-
-planは論理構造だけを保持します。temporary-AND、分解後の回転/CNOT、backend work qubitは
-解析結果またはQiskit metadata側に属します。MPF/QSVTの構造化解析backendとgeneric
-Qiskit `.control()` 回路は同じplanを使いますが、異なるcompilation仮定を明記します。
-
-## benchmark最小例
-
-```python
-import numpy as np
-from hamiltonian_resources import BenchmarkConfig, QSVTMethod, run_benchmark
-
-config = BenchmarkConfig(
-    system_sizes=np.arange(2, 21, 2),
-    target_errors=np.logspace(-1, -3, 5),
-    methods=[QSVTMethod()],
-)
-table = run_benchmark(config, workers=1, show_progress=True)
-print(table[["sweep", "system_qubits", "evolution_time", "method_label", "t_count"]])
-```
-
-4次・6次 Suzuki 公式では、可換な Pauli 項を同じgroupにまとめた回路と、
-その回路に対応する交換子上界を同時に使用できます。
-
-```python
-from hamiltonian_resources import estimate_suzuki_error, transverse_field_ising
-
-H = transverse_field_ising(6, field=0.7)
-estimate = estimate_suzuki_error(H, time=0.5, reps=4, order=4)
-print(estimate.error, estimate.rigorous, estimate.method)
-```
-
-`auto` は1次・2次では従来どおり個別Pauli項を使い、4次以上では完全可換groupを
-使います。回路、誤差評価、解析リソース式は同じgroup順序を共有します。詳細は
-[`docs/suzuki_error_bounds.md`](docs/suzuki_error_bounds.md)を参照してください。
-
-QSVT回路は時刻と回路近似誤差を直接指定します。既定では、cos/sinの
-coherent LCUに続けて1回のrobust oblivious amplitude amplificationを行います。
-
-```python
-from hamiltonian_resources import (
-    build_hamiltonian_qsvt_circuit,
-    compare_with_exact,
-    transverse_field_ising,
-)
-
-H = transverse_field_ising(2)
-circuit = build_hamiltonian_qsvt_circuit(H, time=0.2, epsilon=1e-3)
-check = compare_with_exact(H, 0.2, method="qsvt", qsvt_epsilon=1e-3)
-print(check)
-```
-
-`amplitude_amplification=False`では、all-zero ancilla blockは概ね
-`scale * exp(-i H t) / 2`で、成功確率は`scale**2 / 4`です。増幅後は同じblockが
-`exp(-i H t)`に近づきます。
-
-`run_benchmark`は大規模向けの明示的な解析分解コストモデルを使い、具体回路や密行列を構築しません。
-
-MPF では LCU の項数 `m` を指定すると、登録済みの well-conditioned な
-Trotter 分割数が自動的に選ばれます。明示scheduleと回路構築の対応範囲は
-`m=2` から `m=15` です。`mpf_exponent_cost`は`new` scheduleの`m>15`に限って
-`ceil(0.418*m**2*log(m))`というaggregate \(K\) を返せますが、指数・係数・LCU
-構造を捏造しないため、そのplanは解析resource proxy専用で回路構築できません。
-既定の`schedule="new"`は3-step OAA込みのquery数を抑える表で、
-`schedule="legacy"`を指定すると以前の1-normが小さい表を使用できます。
-時間を `segments` 個に分け、各segment内で
-`sum_j a_j S_2(step_time / k_j)**k_j` をcoherent LCUとして作ります。
-係数1-normは正負の相殺identity branchで2へpaddingされ、既定では各segmentを
-1回の3-step robust OAAで増幅してから同じbranch register上で反復します。
-
-```python
-from hamiltonian_resources import (
-    build_multiproduct_circuit, optimal_mpf_exponents, transverse_field_ising,
-)
-
-print(optimal_mpf_exponents(3))                    # (1, 2, 4)
-print(optimal_mpf_exponents(3, schedule="legacy")) # (1, 2, 6)
-H = transverse_field_ising(2)
-mpf = build_multiproduct_circuit(H, time=0.2, m=3, segments=2)
-```
-
-`amplitude_amplification=False`は単一segmentのLCU検証専用です。このとき
-zero-branch blockはMPF stepのちょうど1/2になります。
-
-## 比較上の重要な前提
-
-1. **誤差予算**: アルゴリズム誤差と単一量子ビット回転合成誤差に分けます。`synthesis_error_fraction` で後者の割合を指定します。
-2. **T 数**: 任意角 `Rz` は無料ではありません。各非 Clifford 回転に均等に精度を配り、`3 log2(1/epsilon_rot) + log2 log2(1/epsilon_rot)` 型の ancilla-free 合成コストで見積もります。解析モデルでは多重制御ゲートの Toffoli 相当コストも temporary-AND（1 対あたり 4 T）で `t_count` に計上し、`toffoli_count` 列に対数を保存します。
-3. **固定誤差の次数選択**: `plan_simulation` は次数1・2にChilds–Su–Tran–Wiebe–Zhuの厳密上界 `W1 t^2 / r`、`W2 t^3 / r^2`を使い、次数4・6にはSchubert–Mendl Theorem 1の明示的な高次交換子上界 `Wp t^(p+1) / r^p`を使います。互換用の`choose_parameters`も同じplanning pathを使用します。4次は可換group数5以下、6次は3以下で厳密評価し、この制限を超える場合と8次以上では従来の`alpha^(p+1)` proxyにfallbackします。MPFは既定で`low2019-l1-ideal-rigorous`を使い、Low–Kliuchnikov–Wiebe Eq. (16)を上側bracketとしてEq. (14)–(15)を満たす最小segment数を二分探索します。有限サイズの厳密なW2診断には、Strang boundをbranch・MPF・反復のtriangle inequalityで合成する`childs2021-w2-triangle-ideal-rigorous`を指定できます。このboundはMPF cancellationを仮定しないため、誤差scalingは意図的に2次相当です。Mizuta Theorem 4の有限次数交換子上界をexact Pauli algebraで評価する`mizuta2026-commutator-ideal-rigorous`も明示指定できます。Aftab 2024の任意次数条件を有限打切りで厳密と呼ばない理由を含む詳細は[`docs/mpf_error_bounds.md`](docs/mpf_error_bounds.md)に記載しています。以前の`alpha_eff = min(alpha, W2^(1/3))`規則は過去benchmark再現用の`legacy-w2-proxy`としてのみ残り、常に非厳密と表示されます。
-4. **QSVT**: `exp(-iHt)=cos(Ht)-i sin(Ht)` の偶・奇成分は、Jacobi--Anger展開から同じscaleで生成します。厳密claimはscale誤差・cos/sin tail・ideal cubic OAAまでを対象とします。`pyqsp`のfloating phase residualは2049点gridの観測値であり、構築回路全体の一様保証には昇格しません。`sym_qsp`の目標多項式はWx応答の虚部に現れるため、各成分は`V`と`V^dagger`のLCUで実blockとして抽出します。生の位相配列を受け取る公開APIはありません。
-5. **MPF**: 各segmentの増幅前zero-branch blockを`B=M/2`とすると、3-step OAA後のblockは厳密に`3B - 4 B B^dagger B`です。同じbranch register上で増幅step unitaryを反復するため、最終blockを単純な`M**segments`や`(PWP)**segments`と同一視しません。Low/W2/Mizutaの`ideal-mpf` claimとは別に、unitarity-defect envelopeとGilyén--Su--Low--Wiebeのreused-ancilla block-encoding積を使い、`P W**segments P`に保守的な厳密上界を付けます。この上界がtargetを満たすかはideal claimとは独立です。metadataにはphysical/padding/unused branch数、負係数数、PREPARE/SELECT/reflection数も保存します。
-6. **大規模モデル**: 多重制御ゲートの CNOT 数はアーキテクチャ、clean/dirty ancilla、コンパイラで変わります。この実装の解析値は比較用の明記された分解モデルです。
-7. **解析コストと具体回路の対応**: 既定の解析式は具体回路の構造（QSVT の quadrature 抽出、cos/sin LCU、3-step OAA、MPF の identity padding・branch 幅・segment ごとの OAA factor 3）を反映します。したがって 3 手法とも「決定的動作あたり」の比較です。ただし controlled 応答回路については、`V` と `V^dagger` が block-encoding query を共有し projector 位相だけを選択する効率的コンパイルを仮定します。`transpile_circuits=True` は Qiskit の汎用 `.control()` 分解を使うため、これよりかなり大きな数値になります（校正時はこの差に注意）。
-
-## Resumable resource grids
-
-Large Cartesian studies use the dedicated `(model, N)`-sharded runner:
+通常のテストはすべて実行されます。
 
 ```powershell
-hamiltonian-resource-grid run --preset sanity-low --workers 4 --progress
-hamiltonian-resource-grid run --preset full --workers 4 --resume --progress
+.\.venv\Scripts\python.exe -m pytest
 ```
 
-See [`docs/resource_grid.md`](docs/resource_grid.md) for configuration, output,
-validation, and resume semantics. `notebooks/resource_grid_viewer.ipynb` only
-loads and plots completed raw data; it never runs estimators.
-
-## テスト
-
-```powershell
-pytest
-ruff check src tests
-```
-
-## 参考文献
-
-- G. H. Low, V. Kliuchnikov, N. Wiebe, [Well-conditioned multiproduct Hamiltonian simulation](https://arxiv.org/abs/1907.11679)
-- J. Aftab, D. An, K. Trivisa, [Multi-product Hamiltonian simulation with explicit commutator scaling](https://arxiv.org/abs/2403.08922)
-- K. Mizuta, [On the commutator scaling in Hamiltonian simulation with multi-product formulas](https://quantum-journal.org/papers/q-2026-01-19-1974/)
-- A. M. Childs et al., [Theory of Trotter Error with Commutator Scaling](https://arxiv.org/abs/1912.08854)
-- A. Schubert, C. B. Mendl, [Trotter error with commutator scaling for the Fermi-Hubbard model](https://arxiv.org/abs/2306.10603)
-- A. Gilyén et al., [Quantum singular value transformation and beyond](https://arxiv.org/abs/1806.01838)
-- [Qiskit `PauliEvolutionGate`](https://docs.quantum.ibm.com/api/qiskit/qiskit.circuit.library.PauliEvolutionGate)
-- [pyqsp](https://pypi.org/project/pyqsp/)（QSP 位相合成）
+Linux/macOS では `.venv/bin/python -m pytest` を使用します。

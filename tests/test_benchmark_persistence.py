@@ -5,11 +5,8 @@ import pytest
 
 from hamiltonian_resources import (
     BenchmarkConfig,
-    HamiltonianSpec,
     MultiproductMethod,
-    QSVTMethod,
     TimeScaling,
-    TrotterMethod,
     load_benchmark,
     load_benchmark_job,
     run_benchmark,
@@ -21,23 +18,8 @@ from hamiltonian_resources.benchmark_cli import _worker_count
 
 
 @pytest.fixture
-def small_config():
-    return BenchmarkConfig(
-        hamiltonian=HamiltonianSpec(
-            parameters={"coupling": 1.0, "field": 0.7, "periodic": False}
-        ),
-        system_sizes=[2, 3],
-        target_errors=[1e-2, 1e-3],
-        time=TimeScaling("fixed", 0.2),
-        fixed_system_size=3,
-        fixed_target_error=1e-2,
-        methods=[TrotterMethod(2), MultiproductMethod(3), QSVTMethod()],
-    )
-
-
-@pytest.fixture
-def benchmark_frame(small_config):
-    return run_benchmark(small_config)
+def benchmark_frame(small_benchmark_config):
+    return run_benchmark(small_benchmark_config)
 
 
 def test_default_job_uses_proportional_time_and_resolves_output_root():
@@ -49,6 +31,11 @@ def test_default_job_uses_proportional_time_and_resolves_output_root():
     assert job.benchmark.system_sizes == [2, 4, 6, 8, 10, 12]
     assert job.output_root == path.parent / "benchmark_outputs"
     assert job.output_formats == ["png", "pdf"]
+    assert all(
+        method.schedule == "new"
+        for method in job.benchmark.methods
+        if isinstance(method, MultiproductMethod)
+    )
 
 
 def test_cli_worker_selection_is_capped_and_validated(monkeypatch):
@@ -61,15 +48,17 @@ def test_cli_worker_selection_is_capped_and_validated(monkeypatch):
 
 
 def test_python_run_is_in_memory_and_explicit_save_is_collision_free(
-    tmp_path, small_config
+    tmp_path, small_benchmark_config
 ):
-    first = run_benchmark(small_config, sweeps="system-size")
+    first = run_benchmark(small_benchmark_config, sweeps="system-size")
     assert list(tmp_path.iterdir()) == []
     first_directory, first_csv, first_metadata = save_benchmark(
-        first, small_config, output_root=tmp_path
+        first, small_benchmark_config, output_root=tmp_path
     )
-    second = run_benchmark(small_config, sweeps="system-size")
-    second_directory, _, _ = save_benchmark(second, small_config, output_root=tmp_path)
+    second = run_benchmark(small_benchmark_config, sweeps="system-size")
+    second_directory, _, _ = save_benchmark(
+        second, small_benchmark_config, output_root=tmp_path
+    )
 
     assert first_directory != second_directory
     assert first_csv.name == "benchmark.csv"
@@ -242,7 +231,7 @@ def test_save_standard_plots(tmp_path, benchmark_frame):
 
 
 def test_cli_creates_a_new_run_directory_and_reports_failures(
-    monkeypatch, tmp_path, small_config
+    monkeypatch, tmp_path, small_benchmark_config
 ):
     import hamiltonian_resources.benchmark_suite as suite
 
@@ -250,7 +239,7 @@ def test_cli_creates_a_new_run_directory_and_reports_failures(
     job_path.write_text(
         json.dumps(
             {
-                "benchmark": small_config.as_dict(),
+                "benchmark": small_benchmark_config.as_dict(),
                 "output": {"root": "runs", "formats": ["png"]},
             }
         ),

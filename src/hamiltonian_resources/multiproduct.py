@@ -307,6 +307,8 @@ def optimal_mpf_exponents(
     ``new`` is the default table optimized for the three-query OAA construction:
     it reduces ``sum(k_j)`` while retaining coefficient 1-norm below two.
     ``legacy`` preserves the previous, more conservatively conditioned table.
+    It is a compatibility and benchmark-reproduction option, not the default
+    schedule for new comparisons.
     """
     if isinstance(m, bool) or not isinstance(m, Integral):
         raise TypeError("m must be an integer")

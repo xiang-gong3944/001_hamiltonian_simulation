@@ -23,19 +23,8 @@ from hamiltonian_resources import (
 
 
 @pytest.fixture
-def benchmark_frame():
-    config = BenchmarkConfig(
-        hamiltonian=HamiltonianSpec(
-            parameters={"coupling": 1.0, "field": 0.7, "periodic": False}
-        ),
-        system_sizes=[2, 3],
-        target_errors=[1e-2, 1e-3],
-        time=TimeScaling("fixed", 0.2),
-        fixed_system_size=3,
-        fixed_target_error=1e-2,
-        methods=[TrotterMethod(2), MultiproductMethod(3), QSVTMethod()],
-    )
-    return run_benchmark(config)
+def benchmark_frame(small_benchmark_config):
+    return run_benchmark(small_benchmark_config)
 
 
 def test_full_plot_defaults_and_arbitrary_metric(benchmark_frame):

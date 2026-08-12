@@ -124,6 +124,9 @@ class MultiproductMethod:
                 "'best-rigorous-ideal', 'legacy-w2-proxy', or "
                 "'empirical-operator-norm'"
             )
+        # The historical spellings remain accepted so persisted benchmark jobs
+        # and comparison data can be reproduced.  New callers should select a
+        # current explicit policy rather than relying on either legacy option.
         if self.branch_count_policy == "fixed":
             if isinstance(self.term_count, bool) or not isinstance(self.term_count, Integral):
                 raise ValueError("fixed MPF branch-count policy requires an integer term_count")

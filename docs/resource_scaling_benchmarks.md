@@ -1,5 +1,10 @@
 # Analytical resource-scaling benchmarks
 
+> この文書は現行のベンチマーク API、JSON 入出力、CSV schema の正本です。
+> 概要と最短の実行例はリポジトリの [README](../README.md)、資料の分類は
+> [ドキュメント案内](README.md)を参照してください。履歴用の MPF 方針は互換性の
+> ために読み込めますが、新規比較の既定値ではありません。
+
 The schema-2 benchmark API is designed for interactive use. A mutable
 `BenchmarkConfig` accepts Python sequences, NumPy arrays, or pandas indexes,
 evaluates only the requested method specifications, and returns one in-memory

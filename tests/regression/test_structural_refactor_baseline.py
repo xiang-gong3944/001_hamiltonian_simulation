@@ -1,7 +1,8 @@
-"""Numerical parameter/resource checks for the c88df30 baseline.
+"""Compatibility regression for the c88df30 structural-refactor baseline.
 
-Error-certification semantics are tested separately because this session
-intentionally corrects their object and scope.
+Certification-scope semantics intentionally evolved after this baseline.  This
+test keeps the numerical parameter and resource rows reproducible without
+reviving its former certification claims.
 """
 
 import json
@@ -22,7 +23,7 @@ from hamiltonian_resources import (
 
 
 _BASELINE = json.loads(
-    (Path(__file__).parent / "data" / "c88df30_structural_refactor_baseline.json").read_text(
+    (Path(__file__).parents[1] / "data" / "c88df30_structural_refactor_baseline.json").read_text(
         encoding="utf-8"
     )
 )
@@ -58,9 +59,7 @@ def test_c88df30_structural_refactor_baseline(case):
 
     assert row["status"] == "ok"
     for field, expected in case["expected"].items():
-        if field.startswith(("bound_", "circuit_")) or field == (
-            "nominal_success_probability"
-        ):
+        if field.startswith(("bound_", "circuit_")) or field == "nominal_success_probability":
             continue
         if isinstance(expected, float):
             assert row[field] == pytest.approx(expected), field
